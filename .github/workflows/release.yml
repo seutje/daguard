@@ -260,6 +260,8 @@ jobs:
       contents: write
       id-token: write
     steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
       - name: Download verified platform archives
         uses: actions/download-artifact@v4
         with:

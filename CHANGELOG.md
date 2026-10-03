@@ -8,6 +8,14 @@ once releases begin.
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-10-03
+
+### Fixed
+
+- Check out the tagged source in the release publishing job so
+  `gh release create --verify-tag` can resolve the repository and verify the
+  release tag before publishing artifacts.
+
 ## [0.0.6] - 2026-10-03
 
 ### Fixed
