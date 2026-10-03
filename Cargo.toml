@@ -1,6 +1,6 @@
 [package]
 name = "daguard"
-version = "0.0.0"
+version = "0.0.2"
 edition = "2024"
 rust-version = "1.99"
 description = "Pre-execution policy guard for AI coding agents working on Drupal projects"
