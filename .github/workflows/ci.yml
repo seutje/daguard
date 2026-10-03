@@ -55,3 +55,28 @@ jobs:
         with:
           name: dependency-license-inventory
           path: dependency-inventory.json
+
+  performance:
+    name: Release performance report (informational timings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust toolchain and target
+        run: rustup show active-toolchain
+      - name: Build optimized guard and benchmark harness
+        env:
+          DAGUARD_GIT_SHA: ${{ github.sha }}
+          DAGUARD_PROVENANCE: github-actions-performance
+        run: |
+          cargo build --locked --release --target x86_64-unknown-linux-musl --bin daguard
+          cargo build --locked --release --target x86_64-unknown-linux-musl --example performance
+      - name: Measure and verify synthetic decisions
+        run: |
+          target/x86_64-unknown-linux-musl/release/examples/performance \
+            --binary target/x86_64-unknown-linux-musl/release/daguard \
+            --samples 200 --iterations 10 > performance.json
+      - name: Upload performance report for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-${{ github.sha }}
+          path: performance.json

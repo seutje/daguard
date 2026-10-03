@@ -60,6 +60,17 @@ jobs:
           grep -F "($TARGET)" version.txt
           grep -F "git: $GITHUB_SHA" version.txt
           grep -F "Cargo.lock SHA-256: $DAGUARD_CARGO_LOCK_SHA256" version.txt
+      - name: Measure release performance (informational timings)
+        run: |
+          cargo build --locked --release --target x86_64-unknown-linux-musl --example performance
+          target/x86_64-unknown-linux-musl/release/examples/performance \
+            --binary "target/$TARGET/release/daguard" \
+            --samples 200 --iterations 10 > performance.json
+      - name: Upload release performance report for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-performance-${{ github.sha }}
+          path: performance.json
       - name: Install pinned release inventory tools
         run: |
           cargo install cargo-cyclonedx --version 0.5.9 --locked

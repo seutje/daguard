@@ -1738,6 +1738,16 @@ CI SHOULD include microbenchmarks or release smoke benchmarks for:
 
 Performance regressions above an agreed threshold should be visible in release review, but correctness and fail-closed behavior take precedence over latency.
 
+The developer-only `performance` Rust example benchmarks the optimized musl
+binary end to end and reuses production modules for component measurements.
+It verifies synthetic allow/deny responses, uses discarded warmups and
+nearest-rank percentiles, and emits versioned JSON reports. PR/release CI retains
+these reports without timing gates on shared runners. See
+`docs/performance/README.md` for methodology, workload limits, local WSL results,
+and a repeatable regression-review process. The targets above remain proposed
+team acceptance budgets until reviewed on representative hardware; no policy
+semantics, caching, or process lifecycle changes are introduced by the harness.
+
 ## 29. Test strategy
 
 ### 29.1 Rust unit tests

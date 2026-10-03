@@ -1,10 +1,10 @@
 # Drupal Agent Guard — Implementation Plan
 
-**Project:** `daguard`  
-**Primary target:** WSL2 / Linux x86_64 using a packaged Rust executable  
-**Secondary targets:** macOS and native Windows  
-**Source of truth:** `DESIGN.md`  
-**Plan status:** Ready for implementation  
+**Project:** `daguard`
+**Primary target:** WSL2 / Linux x86_64 using a packaged Rust executable
+**Secondary targets:** macOS and native Windows
+**Source of truth:** `DESIGN.md`
+**Plan status:** Ready for implementation
 
 ---
 
@@ -641,36 +641,44 @@ root-installed deployment acceptance were not rerun in this phase.
 
 ## 9.1 Benchmark harness
 
-- [ ] Add benchmark for process startup plus trivial allow evaluation.
-- [ ] Add benchmark for path-rule evaluation.
-- [ ] Add benchmark for shell/DDEV/Drush analysis.
-- [ ] Add benchmark for SQL analysis.
-- [ ] Add benchmark for policy parsing/loading.
-- [ ] Capture measurements on representative WSL2 hardware.
-- [ ] Capture measurements with project on WSL Linux filesystem.
-- [ ] Optionally compare behavior from `/mnt/c` to document expected degradation.
+- [x] Add benchmark for process startup plus trivial allow evaluation.
+- [x] Add benchmark for path-rule evaluation.
+- [x] Add benchmark for shell/DDEV/Drush analysis.
+- [x] Add benchmark for SQL analysis.
+- [x] Add benchmark for policy parsing/loading.
+- [x] Capture measurements on representative WSL2 hardware.
+- [x] Capture measurements with project on WSL Linux filesystem.
+- [x] Optionally compare behavior from `/mnt/c` to document expected degradation.
 
 ## 9.2 Performance optimization
 
-- [ ] Keep normal invocation free of unnecessary filesystem scans.
-- [ ] Avoid spawning subprocesses from policy evaluation.
-- [ ] Avoid network access from the guard.
-- [ ] Avoid hashing large files on every invocation.
-- [ ] Avoid loading non-required project files.
-- [ ] Profile before adding caching or daemon complexity.
+- [x] Keep normal invocation free of unnecessary filesystem scans.
+- [x] Avoid spawning subprocesses from policy evaluation.
+- [x] Avoid network access from the guard.
+- [x] Avoid hashing large files on every invocation.
+- [x] Avoid loading non-required project files.
+- [x] Profile before adding caching or daemon complexity.
 
 ## 9.3 Performance acceptance
 
-- [ ] Agree final startup/evaluation budget with team.
-- [ ] Meet or revise the design's target of roughly `<5 ms` P50 startup/trivial evaluation on representative WSL hardware.
-- [ ] Meet or revise the design's target of roughly `<25 ms` P95 for normal policy evaluation.
-- [ ] Record benchmark methodology in repository documentation.
-- [ ] Add non-flaky performance regression monitoring where feasible.
+- [x] Agree final startup/evaluation budget with team.
+- [x] Meet or revise the design's target of roughly `<5 ms` P50 startup/trivial evaluation on representative WSL hardware.
+- [x] Meet or revise the design's target of roughly `<25 ms` P95 for normal policy evaluation.
+- [x] Record benchmark methodology in repository documentation.
+- [x] Add non-flaky performance regression monitoring where feasible.
 
 ### Phase 9 exit criteria
 
-- [ ] Guard overhead is acceptable for high-frequency agent tool usage.
-- [ ] No proposed optimization weakens policy correctness or auditability.
+- [x] Guard overhead is acceptable for high-frequency agent tool usage.
+- [x] No proposed optimization weakens policy correctness or auditability.
+
+Phase 9 implementation evidence: `examples/performance.rs` benchmarks the
+optimized musl process and production modules, validates synthetic decisions,
+and reports nearest-rank percentiles. `docs/performance/README.md` documents
+methodology, the invocation cost review, and informational CI monitoring;
+`docs/performance/wsl2-linux-2026-10-03.json` records measurements from the current
+WSL2 workstation with the project on ext4. All measured process cases are below
+the existing design targets. No optimization or new dependency was needed.
 
 ---
 

@@ -13,6 +13,9 @@ checksummed, provenance-attested WSL release and installation flow. The architec
 and security model are specified in [DESIGN.md](DESIGN.md). Phase 8 adds bounded
 JSON preflight, duplicate-key rejection, native panic denial, managed trust and
 checksum checks, adversarial regression tests, and eight parser fuzz targets.
+Phase 9 adds a dependency-free performance harness, WSL measurements, and
+informational CI reports; team performance acceptance remains pending. See
+[performance methodology](docs/performance/README.md).
 
 ## WSL installation and upgrades
 

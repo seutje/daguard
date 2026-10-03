@@ -33,6 +33,9 @@ once releases begin.
 - Phase 8 bounded JSON preflight and duplicate-key rejection, native panic
   denials, managed binary/policy trust checks, installation checksum drift
   diagnostics, adversarial regression coverage, and eight libFuzzer targets.
+- Phase 9 release-process and production-module benchmarks, synthetic decision
+  verification, WSL Linux-filesystem measurements, documented startup budgets,
+  and informational PR/release CI performance artifacts.
 - Security fixes for truncated unknown-tool path inspection, unknown-tool
   command fields, shell newlines/continuations and combined shell flags,
   DDEV argv nesting, in-place sed writes, explicit protected-file transfers,

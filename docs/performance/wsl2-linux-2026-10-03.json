@@ -1,0 +1,210 @@
+{
+  "schema": 1,
+  "environment": {
+    "os": "linux",
+    "architecture": "x86_64",
+    "kernel": "5.15.167.4-microsoft-standard-WSL2",
+    "wsl2": true,
+    "cpu_model": "Intel(R) Core(TM) Ultra 7 265H",
+    "logical_cpus": 4,
+    "memory": "MemTotal:        8137588 kB",
+    "project_location": "other (verify filesystem manually)",
+    "binary_version": "daguard 0.0.0 (x86_64-unknown-linux-musl)\nprofile: release\nrustc: rustc 1.99.0 (b940084d7 2026-09-28)\ngit: 332811a037240934083fdbbd24f0d560f0c114a7\nCargo.lock SHA-256: 68767ab001e83c05f815f5d7903e54429995af68c48914230e63fb1a276981cf\nprovenance: local-wsl-performance\n",
+    "harness_profile": "release",
+    "harness_target": "x86_64-unknown-linux-musl"
+  },
+  "warmup_per_case": 20,
+  "policy_bytes": 879,
+  "measurements": [
+    {
+      "name": "process.version",
+      "samples": 1000,
+      "iterations_per_sample": 1,
+      "p50_ns": 154977,
+      "p95_ns": 317494,
+      "p99_ns": 721671,
+      "min_ns": 120286,
+      "max_ns": 1094830
+    },
+    {
+      "name": "process.trivial_allow",
+      "samples": 1000,
+      "iterations_per_sample": 1,
+      "p50_ns": 1324313,
+      "p95_ns": 1709893,
+      "p99_ns": 3056975,
+      "min_ns": 1136056,
+      "max_ns": 3675683
+    },
+    {
+      "name": "evaluate.trivial_allow",
+      "samples": 1000,
+      "iterations_per_sample": 10,
+      "p50_ns": 453,
+      "p95_ns": 464,
+      "p99_ns": 490,
+      "min_ns": 443,
+      "max_ns": 1601
+    },
+    {
+      "name": "process.path_allow",
+      "samples": 1000,
+      "iterations_per_sample": 1,
+      "p50_ns": 2110431,
+      "p95_ns": 2918942,
+      "p99_ns": 4324772,
+      "min_ns": 1826874,
+      "max_ns": 5470141
+    },
+    {
+      "name": "evaluate.path_allow",
+      "samples": 1000,
+      "iterations_per_sample": 10,
+      "p50_ns": 464207,
+      "p95_ns": 618571,
+      "p99_ns": 730444,
+      "min_ns": 432685,
+      "max_ns": 996139
+    },
+    {
+      "name": "process.path_deny",
+      "samples": 1000,
+      "iterations_per_sample": 1,
+      "p50_ns": 1573524,
+      "p95_ns": 1913502,
+      "p99_ns": 3579851,
+      "min_ns": 1393848,
+      "max_ns": 3925491
+    },
+    {
+      "name": "evaluate.path_deny",
+      "samples": 1000,
+      "iterations_per_sample": 10,
+      "p50_ns": 126340,
+      "p95_ns": 162468,
+      "p99_ns": 250510,
+      "min_ns": 117890,
+      "max_ns": 497438
+    },
+    {
+      "name": "process.ddev_drush",
+      "samples": 1000,
+      "iterations_per_sample": 1,
+      "p50_ns": 1319300,
+      "p95_ns": 1669236,
+      "p99_ns": 3021433,
+      "min_ns": 1131650,
+      "max_ns": 4036430
+    },
+    {
+      "name": "evaluate.ddev_drush",
+      "samples": 1000,
+      "iterations_per_sample": 10,
+      "p50_ns": 650,
+      "p95_ns": 893,
+      "p99_ns": 916,
+      "min_ns": 594,
+      "max_ns": 1922
+    },
+    {
+      "name": "process.sql_read",
+      "samples": 1000,
+      "iterations_per_sample": 1,
+      "p50_ns": 1330111,
+      "p95_ns": 1653328,
+      "p99_ns": 3252842,
+      "min_ns": 1163788,
+      "max_ns": 3712222
+    },
+    {
+      "name": "evaluate.sql_read",
+      "samples": 1000,
+      "iterations_per_sample": 10,
+      "p50_ns": 4465,
+      "p95_ns": 6312,
+      "p99_ns": 7165,
+      "min_ns": 4248,
+      "max_ns": 10725
+    },
+    {
+      "name": "process.sql_mutation",
+      "samples": 1000,
+      "iterations_per_sample": 1,
+      "p50_ns": 1322921,
+      "p95_ns": 1589671,
+      "p99_ns": 3037979,
+      "min_ns": 1159240,
+      "max_ns": 3691452
+    },
+    {
+      "name": "evaluate.sql_mutation",
+      "samples": 1000,
+      "iterations_per_sample": 10,
+      "p50_ns": 1556,
+      "p95_ns": 1850,
+      "p99_ns": 3095,
+      "min_ns": 1535,
+      "max_ns": 20832
+    },
+    {
+      "name": "process.complex_shell",
+      "samples": 1000,
+      "iterations_per_sample": 1,
+      "p50_ns": 1339256,
+      "p95_ns": 1649156,
+      "p99_ns": 2961331,
+      "min_ns": 1162574,
+      "max_ns": 3776233
+    },
+    {
+      "name": "evaluate.complex_shell",
+      "samples": 1000,
+      "iterations_per_sample": 10,
+      "p50_ns": 4116,
+      "p95_ns": 5687,
+      "p99_ns": 11261,
+      "min_ns": 3852,
+      "max_ns": 16188
+    },
+    {
+      "name": "policy.parse_validate",
+      "samples": 1000,
+      "iterations_per_sample": 10,
+      "p50_ns": 554176,
+      "p95_ns": 679677,
+      "p99_ns": 765177,
+      "min_ns": 519504,
+      "max_ns": 899541
+    },
+    {
+      "name": "policy.load_validate",
+      "samples": 1000,
+      "iterations_per_sample": 10,
+      "p50_ns": 569406,
+      "p95_ns": 755276,
+      "p99_ns": 879806,
+      "min_ns": 534839,
+      "max_ns": 1027996
+    },
+    {
+      "name": "sql.analyze",
+      "samples": 1000,
+      "iterations_per_sample": 10,
+      "p50_ns": 3308,
+      "p95_ns": 3348,
+      "p99_ns": 4282,
+      "min_ns": 3097,
+      "max_ns": 14103
+    },
+    {
+      "name": "shell.tokenize",
+      "samples": 1000,
+      "iterations_per_sample": 10,
+      "p50_ns": 817,
+      "p95_ns": 874,
+      "p99_ns": 1099,
+      "min_ns": 800,
+      "max_ns": 4803
+    }
+  ]
+}

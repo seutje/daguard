@@ -25,3 +25,7 @@ warnings = "deny"
 [lints.clippy]
 all = "deny"
 pedantic = "deny"
+
+[[example]]
+name = "performance"
+test = true
