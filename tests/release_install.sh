@@ -10,6 +10,22 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+hash_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
+file_mode() {
+    if stat -c '%a' "$1" >/dev/null 2>&1; then
+        stat -c '%a' "$1"
+    else
+        stat -f '%Lp' "$1"
+    fi
+}
+
 prefix=$work/user
 "$bundle/install.sh" --user --bundle "$bundle" --user-prefix "$prefix"
 binary=$prefix/bin/daguard
@@ -19,9 +35,11 @@ policy=$prefix/config/daguard/policy.json
 [ -f "$prefix/share/daguard/opencode/index.js" ]
 [ -f "$bundle/docs/operations/rollout.md" ]
 [ -f "$bundle/docs/operations/rules.md" ]
-[ "$(stat -c '%a' "$binary")" = 755 ]
-[ "$(stat -c '%a' "$policy")" = 600 ]
-"$binary" version | grep -F '(x86_64-unknown-linux-musl)'
+[ "$(file_mode "$binary")" = 755 ]
+[ "$(file_mode "$policy")" = 600 ]
+expected_target=$(sed -n 's/.*"target":"\([^"]*\)".*/\1/p' "$bundle/release.json")
+[ -n "$expected_target" ]
+"$binary" version | grep -F "($expected_target)"
 jq -e '.plugins | (length == 1 and (.[0].package | type == "string"))' \
     "$bundle/config/opencode/opencode.json" >/dev/null
 opencode_config=$work/opencode.json
@@ -109,7 +127,7 @@ PATH="$work/fake-bin:$PATH" "$binary" doctor --policy "$policy" --audit-log "$pr
 PATH="$work/fake-bin:$PATH" evaluate_shell 'ddev drush cr' allow
 
 # A corrupt upgrade is rejected before any installed file is replaced.
-before=$(sha256sum "$binary" | awk '{print $1}')
+before=$(hash_file "$binary")
 tampered=$work/tampered
 cp -R "$bundle" "$tampered"
 printf 'tampered' >> "$tampered/daguard"
@@ -117,13 +135,13 @@ if "$tampered/install.sh" --user --bundle "$tampered" --user-prefix "$prefix"; t
     echo "tampered release unexpectedly installed" >&2
     exit 1
 fi
-after=$(sha256sum "$binary" | awk '{print $1}')
+after=$(hash_file "$binary")
 [ "$before" = "$after" ]
 
 # A normal upgrade preserves the installed organization policy by default.
-policy_before=$(sha256sum "$policy" | awk '{print $1}')
+policy_before=$(hash_file "$policy")
 "$bundle/install.sh" --user --bundle "$bundle" --user-prefix "$prefix"
-policy_after=$(sha256sum "$policy" | awk '{print $1}')
+policy_after=$(hash_file "$policy")
 [ "$policy_before" = "$policy_after" ]
 
 "$bundle/uninstall.sh" --user --user-prefix "$prefix"
@@ -136,7 +154,7 @@ managed_root=$work/managed-root
 "$bundle/install.sh" --managed --destdir "$managed_root" --bundle "$bundle"
 [ -x "$managed_root/usr/local/bin/daguard" ]
 [ -f "$managed_root/etc/daguard/policy.json" ]
-[ "$(stat -c '%a' "$managed_root/usr/local/bin/daguard")" = 755 ]
-[ "$(stat -c '%a' "$managed_root/etc/daguard/policy.json")" = 644 ]
+[ "$(file_mode "$managed_root/usr/local/bin/daguard")" = 755 ]
+[ "$(file_mode "$managed_root/etc/daguard/policy.json")" = 644 ]
 "$bundle/uninstall.sh" --managed --destdir "$managed_root"
 [ -f "$managed_root/etc/daguard/policy.json" ]

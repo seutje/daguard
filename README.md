@@ -21,6 +21,11 @@ Managed rollout procedures, role ownership, upgrades, rollback, support, and the
 no-break-glass decision are in the [operations runbook](docs/operations/rollout.md).
 Stable built-in decisions are summarized in the [rule catalog](docs/operations/rules.md).
 
+Native Apple Silicon and Intel macOS packages are built and exercised on macOS
+CI runners as preview artifacts. No macOS agent/version is declared supported
+until live hook enforcement is recorded on that architecture; see the
+[macOS installation and validation guide](docs/operations/macos.md).
+
 ## WSL installation and upgrades
 
 The supported end-user input is the immutable
@@ -96,6 +101,13 @@ metadata in `daguard version`, generates CycloneDX SBOM plus dependency and
 license inventories, runs the installation/DDEV classification suite, creates
 SHA-256 manifests, and attests the archive before publishing. DDEV is never an
 installer or guard runtime dependency.
+
+The same release workflow builds native `aarch64-apple-darwin` and transitional
+`x86_64-apple-darwin` archives, runs the Rust suite and packaged-install security
+smoke tests on matching macOS hardware, and includes them in release checksums
+and provenance attestations. They are unsigned and unnotarized pending an
+organization Developer ID/distribution decision, and native CI does not claim
+live Codex, Cursor, or OpenCode hook compatibility.
 
 ## CLI
 

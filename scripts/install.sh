@@ -6,6 +6,22 @@ usage() {
     exit 2
 }
 
+hash_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
+verify_checksums() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum --check --strict SHA256SUMS
+    else
+        shasum -a 256 --check SHA256SUMS
+    fi
+}
+
 mode=user
 bundle=
 replace_policy=false
@@ -31,8 +47,14 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-case "$(uname -s)" in Linux) ;; *) echo "daguard: this installer supports Linux/WSL only" >&2; exit 1 ;; esac
-case "$(uname -m)" in x86_64|amd64) ;; *) echo "daguard: this bundle requires x86_64 Linux" >&2; exit 1 ;; esac
+host_os=$(uname -s)
+host_arch=$(uname -m)
+case "$host_os:$host_arch" in
+    Linux:x86_64|Linux:amd64) expected_target=x86_64-unknown-linux-musl; root_group=root ;;
+    Darwin:arm64|Darwin:aarch64) expected_target=aarch64-apple-darwin; root_group=wheel ;;
+    Darwin:x86_64) expected_target=x86_64-apple-darwin; root_group=wheel ;;
+    *) echo "daguard: unsupported installation platform: $host_os $host_arch" >&2; exit 1 ;;
+esac
 
 if [ -z "$bundle" ]; then
     script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -42,9 +64,13 @@ bundle=$(CDPATH= cd -- "$bundle" && pwd)
 [ -f "$bundle/SHA256SUMS" ] || { echo "daguard: bundle is missing SHA256SUMS" >&2; exit 1; }
 (
     cd "$bundle"
-    sha256sum --check --strict SHA256SUMS
+    verify_checksums
 )
 [ -x "$bundle/daguard" ] || { echo "daguard: verified bundle has no executable" >&2; exit 1; }
+"$bundle/daguard" version | grep -F "($expected_target)" >/dev/null || {
+    echo "daguard: release bundle does not match this host ($expected_target required)" >&2
+    exit 1
+}
 
 if [ "$mode" = managed ]; then
     [ -z "$user_prefix" ] || usage
@@ -77,7 +103,7 @@ fi
 mkdir -p "$bin_dir" "$config_dir" "$share_dir"
 chmod "$dir_mode" "$config_dir" "$share_dir"
 if [ "$mode" = managed ] && [ -z "$destdir" ]; then
-    chown root:root "$config_dir" "$share_dir"
+    chown "root:$root_group" "$config_dir" "$share_dir"
 fi
 
 policy=$config_dir/policy.json
@@ -152,8 +178,8 @@ if [ -n "$policy_tmp" ]; then
     policy_tmp=
 fi
 {
-    printf '%s  %s\n' "$(sha256sum "$bin_dir/daguard" | awk '{print $1}')" daguard
-    printf '%s  %s\n' "$(sha256sum "$policy" | awk '{print $1}')" policy.json
+    printf '%s  %s\n' "$(hash_file "$bin_dir/daguard")" daguard
+    printf '%s  %s\n' "$(hash_file "$policy")" policy.json
 } > "$checksums_tmp"
 chmod "$file_mode" "$checksums_tmp"
 mv -f "$metadata_tmp" "$config_dir/version.json"
@@ -163,9 +189,9 @@ checksums_tmp=
 chmod "$file_mode" "$policy" "$config_dir/version.json" "$config_dir/SHA256SUMS"
 chmod "$dir_mode" "$share_dir/opencode"
 if [ "$mode" = managed ] && [ -z "$destdir" ]; then
-    chown root:root "$bin_dir/daguard" "$policy" "$config_dir/version.json" \
+    chown "root:$root_group" "$bin_dir/daguard" "$policy" "$config_dir/version.json" \
         "$config_dir/SHA256SUMS" "$share_dir/opencode"
-    chown -R root:root "$share_dir/opencode"
+    chown -R "root:$root_group" "$share_dir/opencode"
 fi
 mutated=false
 rm -rf "$rollback_dir"

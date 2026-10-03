@@ -14,13 +14,9 @@ env:
   TARGET: x86_64-unknown-linux-musl
 
 jobs:
-  package:
+  package-linux:
     name: Build and verify WSL release
     runs-on: ubuntu-latest
-    permissions:
-      attestations: write
-      contents: write
-      id-token: write
     steps:
       - uses: actions/checkout@v4
       - name: Install pinned Rust toolchain and target
@@ -88,11 +84,115 @@ jobs:
             --binary "target/$TARGET/release/daguard" \
             --output dist \
             --version "${{ steps.version.outputs.value }}" \
+            --target "$TARGET" \
             --sbom daguard.cdx.json \
             --dependencies dependency-inventory.json \
             --licenses license-inventory.json
           tests/release_install.sh "dist/daguard-${{ steps.version.outputs.value }}-$TARGET"
-      - name: Attest release artifacts
+      - name: Upload verified release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ env.TARGET }}
+          path: dist/*.tar.gz
+
+  package-macos:
+    name: Build and verify ${{ matrix.target }} release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            machine: arm64
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            machine: x86_64
+    runs-on: ${{ matrix.runner }}
+    env:
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify native runner and install pinned Rust target
+        run: |
+          test "$(uname -m)" = "${{ matrix.machine }}"
+          rustup show active-toolchain
+          rustup target add "$TARGET"
+      - name: Select release version
+        id: version
+        run: |
+          package_version=$(cargo metadata --locked --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "daguard") | .version')
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$package_version" ]]; then
+            echo "tag $GITHUB_REF_NAME does not match Cargo package version $package_version" >&2
+            exit 1
+          fi
+          echo "value=$package_version" >> "$GITHUB_OUTPUT"
+      - name: Test and build native optimized binary
+        env:
+          DAGUARD_GIT_SHA: ${{ github.sha }}
+          DAGUARD_PROVENANCE: github-actions
+        run: |
+          cargo test --locked --target "$TARGET"
+          echo "DAGUARD_RUSTC_VERSION=$(rustc --version)" >> "$GITHUB_ENV"
+          echo "DAGUARD_CARGO_LOCK_SHA256=$(shasum -a 256 Cargo.lock | awk '{print $1}')" >> "$GITHUB_ENV"
+          DAGUARD_RUSTC_VERSION=$(rustc --version) \
+          DAGUARD_CARGO_LOCK_SHA256=$(shasum -a 256 Cargo.lock | awk '{print $1}') \
+            cargo build --locked --release --target "$TARGET"
+      - name: Verify Mach-O target and embedded metadata
+        run: |
+          binary="target/$TARGET/release/daguard"
+          file "$binary" | tee binary-file.txt
+          file "$binary" | grep -F 'Mach-O 64-bit executable'
+          file "$binary" | grep -F "${{ matrix.machine }}"
+          "$binary" version | tee version.txt
+          grep -F "($TARGET)" version.txt
+          grep -F "git: $GITHUB_SHA" version.txt
+          grep -F "Cargo.lock SHA-256: $DAGUARD_CARGO_LOCK_SHA256" version.txt
+      - name: Install pinned release inventory tools
+        run: |
+          cargo install cargo-cyclonedx --version 0.5.9 --locked
+          cargo install cargo-deny --version 0.20.2 --locked
+      - name: Generate SBOM and dependency/license inventories
+        run: |
+          cargo cyclonedx --format json --spec-version 1.5 --target "$TARGET" --all-features --override-filename daguard.cdx
+          cargo metadata --locked --format-version 1 > dependency-inventory.json
+          cargo deny list --format json > license-inventory.json
+      - name: Assemble and test native release bundle
+        run: |
+          SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)
+          export SOURCE_DATE_EPOCH
+          scripts/package-release.sh \
+            --binary "target/$TARGET/release/daguard" \
+            --output dist \
+            --version "${{ steps.version.outputs.value }}" \
+            --target "$TARGET" \
+            --sbom daguard.cdx.json \
+            --dependencies dependency-inventory.json \
+            --licenses license-inventory.json
+          tests/release_install.sh "dist/daguard-${{ steps.version.outputs.value }}-$TARGET"
+      - name: Upload verified release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/*.tar.gz
+
+  publish:
+    name: Attest and publish release artifacts
+    needs: [package-linux, package-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - name: Download verified platform archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Create combined release checksums
+        run: cd dist && sha256sum *.tar.gz > SHA256SUMS
+      - name: Attest release archives
         uses: actions/attest-build-provenance@v3
         with:
           subject-path: "dist/*.tar.gz"
@@ -100,10 +200,10 @@ jobs:
         uses: actions/attest-build-provenance@v3
         with:
           subject-path: "dist/SHA256SUMS"
-      - name: Upload verified release artifacts
+      - name: Upload complete verified release set
         uses: actions/upload-artifact@v4
         with:
-          name: daguard-${{ steps.version.outputs.value }}-${{ env.TARGET }}
+          name: daguard-release-${{ github.sha }}
           path: |
             dist/*.tar.gz
             dist/SHA256SUMS

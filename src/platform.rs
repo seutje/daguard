@@ -36,8 +36,8 @@ fn is_executable_file(path: &Path) -> bool {
     }
 }
 
-/// Root ownership and mode checks for the primary Linux/WSL managed deployment.
-/// Other platforms need an explicit ACL implementation before managed support.
+/// Root ownership and mode checks for managed Unix deployments.
+/// Native Windows needs an explicit ACL implementation before managed support.
 pub(crate) fn managed_metadata_is_trusted(metadata: &fs::Metadata) -> bool {
     #[cfg(unix)]
     {

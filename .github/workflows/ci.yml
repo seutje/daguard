@@ -31,6 +31,40 @@ jobs:
       - name: Test OpenCode bridge
         run: node --test integrations/opencode/daguard-plugin.test.js
 
+  macos:
+    name: Native macOS smoke (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            machine: arm64
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            machine: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify native runner and pinned toolchain
+        run: |
+          test "$(uname -m)" = "${{ matrix.machine }}"
+          rustup show active-toolchain
+          rustup target add "${{ matrix.target }}"
+      - name: Run native Rust suite
+        run: cargo test --locked --target "${{ matrix.target }}"
+      - name: Build native optimized binary
+        env:
+          DAGUARD_GIT_SHA: ${{ github.sha }}
+          DAGUARD_PROVENANCE: github-actions-macos-smoke
+        run: |
+          DAGUARD_RUSTC_VERSION=$(rustc --version) \
+          DAGUARD_CARGO_LOCK_SHA256=$(shasum -a 256 Cargo.lock | awk '{print $1}') \
+            cargo build --locked --release --target "${{ matrix.target }}"
+          binary="target/${{ matrix.target }}/release/daguard"
+          file "$binary" | grep -F 'Mach-O 64-bit executable'
+          "$binary" version | grep -F '(${{ matrix.target }})'
+
   supply-chain:
     name: Dependency security and licenses
     runs-on: ubuntu-latest

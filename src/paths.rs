@@ -139,6 +139,26 @@ mod tests {
     }
 
     #[test]
+    fn normalizes_native_macos_paths_lexically() {
+        assert_eq!(
+            normalize(
+                "/Users/developer/Projects/drupal site",
+                "web/modules/custom/../custom/example.module",
+            )
+            .unwrap(),
+            "/Users/developer/Projects/drupal site/web/modules/custom/example.module"
+        );
+        assert_eq!(
+            normalize(
+                "/Users/developer/Projects/drupal",
+                "/Users/developer/Library/../.config/daguard/policy.json",
+            )
+            .unwrap(),
+            "/Users/developer/.config/daguard/policy.json"
+        );
+    }
+
+    #[test]
     fn normalizes_traversal_before_matching() {
         let path = normalize(
             "/workspace/project",

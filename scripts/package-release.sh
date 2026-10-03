@@ -2,19 +2,28 @@
 set -eu
 
 usage() {
-    echo "usage: package-release.sh --binary PATH --output DIR --version VERSION --sbom PATH --dependencies PATH --licenses PATH" >&2
+    echo "usage: package-release.sh --binary PATH --output DIR --version VERSION --target TARGET --sbom PATH --dependencies PATH --licenses PATH" >&2
     exit 2
+}
+
+hash_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
 }
 
 binary=
 output=
 version=
+target=
 sbom=
 dependencies=
 licenses=
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --binary|--output|--version|--sbom|--dependencies|--licenses)
+        --binary|--output|--version|--target|--sbom|--dependencies|--licenses)
             [ "$#" -ge 2 ] || usage
             key=$1
             value=$2
@@ -23,6 +32,7 @@ while [ "$#" -gt 0 ]; do
                 --binary) binary=$value ;;
                 --output) output=$value ;;
                 --version) version=$value ;;
+                --target) target=$value ;;
                 --sbom) sbom=$value ;;
                 --dependencies) dependencies=$value ;;
                 --licenses) licenses=$value ;;
@@ -36,8 +46,11 @@ done
 case "$version" in
     ''|*[!0-9A-Za-z.+-]*) usage ;;
 esac
+case "$target" in
+    x86_64-unknown-linux-musl|aarch64-apple-darwin|x86_64-apple-darwin) ;;
+    *) usage ;;
+esac
 
-target=x86_64-unknown-linux-musl
 bundle_name=daguard-$version-$target
 bundle=$output/$bundle_name
 "$binary" version | grep -F "daguard $version ($target)" >/dev/null || {
@@ -58,6 +71,7 @@ install -m 0644 config/cursor/hooks.json "$bundle/config/cursor/hooks.json"
 install -m 0644 config/opencode/opencode.json "$bundle/config/opencode/opencode.json"
 install -m 0644 docs/operations/rollout.md "$bundle/docs/operations/rollout.md"
 install -m 0644 docs/operations/rules.md "$bundle/docs/operations/rules.md"
+install -m 0644 docs/operations/macos.md "$bundle/docs/operations/macos.md"
 install -m 0644 integrations/opencode/index.js "$bundle/integrations/opencode/index.js"
 install -m 0644 integrations/opencode/package.json "$bundle/integrations/opencode/package.json"
 install -m 0644 "$sbom" "$bundle/inventory/sbom.cdx.json"
@@ -68,11 +82,17 @@ printf '{"schema":1,"version":"%s","target":"%s"}\n' "$version" "$target" > "$bu
 
 (
     cd "$bundle"
-    find . -type f ! -name SHA256SUMS -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > SHA256SUMS
+    find . -type f ! -name SHA256SUMS | LC_ALL=C sort | while IFS= read -r path; do
+        printf '%s  %s\n' "$(hash_file "$path")" "$path"
+    done > SHA256SUMS
 )
-tar --sort=name --mtime="@${SOURCE_DATE_EPOCH:-0}" --owner=0 --group=0 --numeric-owner \
-    -C "$output" -czf "$output/$bundle_name.tar.gz" "$bundle_name"
+if tar --version 2>/dev/null | grep -q 'GNU tar'; then
+    tar --sort=name --mtime="@${SOURCE_DATE_EPOCH:-0}" --owner=0 --group=0 --numeric-owner \
+        -C "$output" -czf "$output/$bundle_name.tar.gz" "$bundle_name"
+else
+    COPYFILE_DISABLE=1 tar -C "$output" -czf "$output/$bundle_name.tar.gz" "$bundle_name"
+fi
 (
     cd "$output"
-    sha256sum "$bundle_name.tar.gz" > SHA256SUMS
+    printf '%s  %s\n' "$(hash_file "$bundle_name.tar.gz")" "$bundle_name.tar.gz" > SHA256SUMS
 )

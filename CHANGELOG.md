@@ -10,6 +10,11 @@ once releases begin.
 
 ### Added
 
+- Phase 12 preview packaging for native Apple Silicon and Intel macOS, including
+  native CI tests, portable checksums/install smoke tests, architecture checks,
+  root-owned macOS installation support, and install/uninstall guidance. Live
+  agent compatibility, Developer ID signing, and notarization remain explicit
+  release gates rather than inferred support.
 - Phase 11 managed-rollout and support documentation, including explicit
   policy/security/compatibility ownership, installation, upgrade, rollback,
   troubleshooting, a published rule catalog, and the version 1 decision not to

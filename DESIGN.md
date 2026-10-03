@@ -206,6 +206,16 @@ daguard-<version>-x86_64-apple-darwin
 
 macOS installation should require only copying the binary into a trusted executable path and installing policy/hook configuration. Full static linking of macOS system libraries is neither expected nor required; "zero dependencies" means no separately installed third-party runtime.
 
+The release pipeline builds Apple Silicon and Intel artifacts on matching native
+GitHub-hosted macOS runners and runs the Rust and packaged-install smoke suites
+there. Intel is a transitional preview target for existing hardware and should
+be reassessed before hosted Intel runner availability ends. A CI pass validates
+the executable and shared adapter fixtures, but support is declared only after a
+live allow/deny hook test records the exact agent version and architecture.
+Developer ID signing and notarization are release-policy gates: unsigned preview
+artifacts are permitted for validation, while broad distribution must follow the
+organization's Gatekeeper policy.
+
 ### 5.2 Optional native Windows support
 
 Native Windows support is secondary because the team's standard workflow uses WSL. A Windows artifact may be useful for Cursor or other agent components that execute hooks on the Windows side.
@@ -1594,6 +1604,12 @@ The optional macOS install flow SHOULD mirror Linux:
 ```
 
 or equivalent organization-managed locations. No Homebrew formula is required for v1, although one may be added later for convenience if it does not become a prerequisite.
+
+The packaged POSIX installer recognizes `arm64`/`aarch64` and `x86_64` Darwin
+hosts, rejects a bundle for the wrong native target, uses macOS-provided SHA-256
+tooling when GNU coreutils is absent, and applies `root:wheel` ownership for a
+managed installation. User installs retain the same weaker-boundary warning as
+Linux. Uninstall preserves mandatory policy by default.
 
 ### 24.6 Windows installer
 

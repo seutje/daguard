@@ -825,12 +825,24 @@ allow/deny evidence.
 - [ ] Build `aarch64-apple-darwin` artifact.
 - [ ] Test path normalization on macOS.
 - [ ] Test supported agents on Apple Silicon.
-- [ ] Determine whether Intel macOS is needed.
+- [x] Determine whether Intel macOS is needed. (Retain as transitional preview compatibility through the hosted-runner window.)
 - [ ] Build/test `x86_64-apple-darwin` if required.
 - [ ] Code-sign macOS artifacts if organizational distribution requires it.
 - [ ] Notarize macOS artifacts if required.
-- [ ] Add macOS installation/uninstallation guidance.
-- [ ] Add macOS native CI smoke tests where infrastructure permits.
+- [x] Add macOS installation/uninstallation guidance.
+- [x] Add macOS native CI smoke tests where infrastructure permits.
+
+Implementation note (2026-10-03): Native Apple Silicon and Intel build, test,
+packaging, installation, and release-attestation lanes are configured. Portable
+bundle checksums and installer smoke tests cover both Darwin targets, and path
+tests include native macOS layouts. This Linux development environment cannot
+execute those lanes, so artifact-build, native-test, and exit-criterion boxes
+remain open until CI passes. The artifacts are documented as previews; no agent
+version is support-declared without a live macOS allow/deny test. Intel is kept
+as transitional compatibility for existing Intel Macs and must be reassessed
+before GitHub's announced August 2027 hosted Intel runner retirement. Signing
+and notarization remain open pending an organizational Developer ID and
+Gatekeeper distribution decision.
 
 ### Phase 12 exit criteria
 
