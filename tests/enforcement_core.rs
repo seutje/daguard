@@ -127,6 +127,28 @@ fn temporary_path(name: &str) -> PathBuf {
     ))
 }
 
+fn installed_opencode_config(name: &str) -> (PathBuf, PathBuf) {
+    let plugin = temporary_path(&format!("{name}-plugin"));
+    fs::create_dir_all(&plugin).unwrap();
+    fs::write(plugin.join("index.js"), "export default {}\n").unwrap();
+    let config = temporary_path(&format!("{name}-config.json"));
+    fs::write(
+        &config,
+        serde_json::to_vec(&json!({
+            "plugins": [{
+                "package": plugin,
+                "options": {
+                    "guard": "/usr/local/bin/daguard",
+                    "policy": "/etc/daguard/policy.json"
+                }
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    (config, plugin)
+}
+
 fn request(capability: &str, path: &str) -> Vec<u8> {
     serde_json::to_vec(&json!({
         "protocol": 1,
@@ -379,7 +401,7 @@ fn doctor_reports_installation_policy_hash_and_integrations() {
     let policy = format!("{manifest}/policy/default-policy.json");
     let codex = format!("{manifest}/config/codex/hooks.json");
     let cursor = format!("{manifest}/config/cursor/hooks.json");
-    let opencode = format!("{manifest}/config/opencode/opencode.json");
+    let (opencode, opencode_plugin) = installed_opencode_config("doctor-report");
     let output = run(
         &[
             "doctor",
@@ -390,7 +412,7 @@ fn doctor_reports_installation_policy_hash_and_integrations() {
             "--cursor-hooks",
             &cursor,
             "--opencode-config",
-            &opencode,
+            opencode.to_str().unwrap(),
         ],
         b"",
     );
@@ -402,6 +424,9 @@ fn doctor_reports_installation_policy_hash_and_integrations() {
     assert!(report.contains("Codex hook valid"));
     assert!(report.contains("Cursor hook valid"));
     assert!(report.contains("OpenCode hook valid"));
+
+    fs::remove_file(opencode).unwrap();
+    fs::remove_dir_all(opencode_plugin).unwrap();
 
     let invalid = format!("{manifest}/tests/fixtures/invalid-policy.json");
     let failed = run(&["doctor", "--policy", &invalid], b"");
@@ -667,17 +692,23 @@ fn codex_doctor_accepts_the_shipped_hook_template() {
 }
 
 #[test]
-fn opencode_doctor_accepts_the_shipped_configuration() {
-    let config = format!(
-        "{}/config/opencode/opencode.json",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    let output = run(&["doctor", "opencode", &config], b"");
+fn opencode_doctor_requires_the_v2_local_directory_entrypoint() {
+    let (config, plugin) = installed_opencode_config("doctor-opencode");
+    let output = run(&["doctor", "opencode", config.to_str().unwrap()], b"");
     assert!(
         output.status.success(),
         "doctor failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+
+    fs::remove_file(plugin.join("index.js")).unwrap();
+    fs::write(plugin.join("daguard-plugin.js"), "export default {}\n").unwrap();
+    let missing = run(&["doctor", "opencode", config.to_str().unwrap()], b"");
+    assert_eq!(missing.status.code(), Some(3));
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("required index.js entrypoint"));
+
+    fs::remove_file(config).unwrap();
+    fs::remove_dir_all(plugin).unwrap();
 }
 
 #[test]

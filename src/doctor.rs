@@ -101,7 +101,7 @@ pub(crate) fn diagnose(options: &DoctorOptions) -> DoctorReport {
             .opencode_config
             .clone()
             .or_else(|| home_join(".config/opencode/opencode.json")),
-        |bytes| opencode::validate_config(bytes).map_err(|error| error.to_string()),
+        |bytes| opencode::validate_installed_config(bytes).map_err(|error| error.to_string()),
     );
     let has_errors = lines.iter().any(|line| line.starts_with("[ERROR]"));
     DoctorReport { lines, has_errors }

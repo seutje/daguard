@@ -16,10 +16,25 @@ binary=$prefix/bin/daguard
 policy=$prefix/config/daguard/policy.json
 [ -x "$binary" ]
 [ -r "$policy" ]
+[ -f "$prefix/share/daguard/opencode/index.js" ]
 [ "$(stat -c '%a' "$binary")" = 755 ]
 [ "$(stat -c '%a' "$policy")" = 600 ]
 "$binary" version | grep -F '(x86_64-unknown-linux-musl)'
-"$binary" doctor --policy "$policy" --audit-log "$prefix/config/daguard/audit.jsonl"
+jq -e '.plugins | (length == 1 and (.[0].package | type == "string"))' \
+    "$bundle/config/opencode/opencode.json" >/dev/null
+opencode_config=$work/opencode.json
+jq --arg package "$prefix/share/daguard/opencode" \
+    --arg guard "$binary" \
+    --arg policy "$policy" \
+    '.plugins[0].package = $package |
+     .plugins[0].options.guard = $guard |
+     .plugins[0].options.policy = $policy |
+     .plugins[0].options.managed = false' \
+    "$bundle/config/opencode/opencode.json" > "$opencode_config"
+"$binary" doctor opencode "$opencode_config"
+"$binary" doctor --policy "$policy" \
+    --audit-log "$prefix/config/daguard/audit.jsonl" \
+    --opencode-config "$opencode_config"
 
 evaluate_shell() {
     command=$1

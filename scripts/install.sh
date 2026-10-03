@@ -129,7 +129,7 @@ trap cleanup EXIT HUP INT TERM
 
 install -m 0755 "$bundle/daguard" "$binary_tmp"
 install -m "$file_mode" "$bundle/release.json" "$metadata_tmp"
-install -m 0644 "$bundle/integrations/opencode/daguard-plugin.js" "$plugin_tmp/daguard-plugin.js"
+install -m 0644 "$bundle/integrations/opencode/index.js" "$plugin_tmp/index.js"
 install -m 0644 "$bundle/integrations/opencode/package.json" "$plugin_tmp/package.json"
 if [ ! -f "$policy" ] || [ "$replace_policy" = true ]; then
     policy_tmp=$(mktemp "$config_dir/.policy.XXXXXX")

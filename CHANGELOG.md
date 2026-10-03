@@ -16,6 +16,10 @@ once releases begin.
 
 ### Fixed
 
+- Install the OpenCode v2 bridge as `index.js`, the local-directory entrypoint
+  that OpenCode CLI v2.0.22 actually resolves. The previous package contained
+  only `daguard-plugin.js`; OpenCode does not consult `package.json` exports for
+  an absolute local plugin directory, so the bridge was never loaded.
 - Apply organization and project path deny lists to recognized shell file
   operands, including nested and DDEV-wrapped commands. Recursive `/**` policy
   patterns now cover the directory root, closing directory-only search bypasses

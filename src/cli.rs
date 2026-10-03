@@ -443,7 +443,7 @@ fn doctor(args: &[String]) -> Result<(), CliError> {
                 .map_err(|error| CliError::config(error.to_string()))?,
             "cursor" => cursor::validate_hooks_config(&bytes)
                 .map_err(|error| CliError::config(error.to_string()))?,
-            "opencode" => opencode::validate_config(&bytes)
+            "opencode" => opencode::validate_installed_config(&bytes)
                 .map_err(|error| CliError::config(error.to_string()))?,
             _ => return Err(CliError::usage("unsupported doctor adapter")),
         }

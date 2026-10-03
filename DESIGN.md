@@ -664,6 +664,13 @@ trusted paths for the plugin, guard executable, and mandatory policy. The
 bridge is dependency-free and runs inside OpenCode's existing JavaScript
 runtime; it does not add a workstation runtime prerequisite.
 
+OpenCode CLI v2.0.22 accepts configured local directories through the `plugins`
+object form, but its local resolver probes the directory for `server` and then
+`index`; it does not consult the directory's `package.json` export for this
+path. The release therefore installs the bridge as `index.js`. Installation
+must reload OpenCode and complete a live denied-tool smoke test; configuration
+parsing alone is not proof of enforcement.
+
 Conceptually:
 
 ```javascript
@@ -1490,7 +1497,7 @@ Cargo.toml
 Cargo.lock
 src/
 policy/default-policy.json
-integrations/opencode/daguard-plugin.js
+integrations/opencode/index.js
 scripts/install.sh
 scripts/install.ps1
 scripts/uninstall.sh
@@ -2380,7 +2387,7 @@ daguard/
 │       └── opencode.rs
 ├── integrations/
 │   └── opencode/
-│       └── daguard-plugin.js
+│       └── index.js
 ├── policy/
 │   └── default-policy.json
 ├── tests/

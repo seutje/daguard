@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import plugin, { createToolHook } from "./daguard-plugin.js"
+import plugin, { createToolHook } from "./index.js"
 
 const options = {
   guard: "/usr/local/bin/daguard",

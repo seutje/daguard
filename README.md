@@ -227,6 +227,38 @@ example package, guard, and organization-policy paths with absolute trusted
 installation paths. OpenCode supplies the JavaScript runtime; the bridge adds no
 Node.js, npm, Bun, or other separately installed runtime requirement.
 
+OpenCode CLI v2.0.22 resolves an absolute local plugin directory by probing for
+`server` and then `index`; it does not use that directory's `package.json`
+export. The release therefore installs the bridge as `index.js`. After
+deploying the configuration, run `opencode reload` and confirm the bridge with
+a live denied-tool smoke test; configuration parsing alone is not an
+enforcement test.
+
+A user-owned WSL pilot entry is:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      "package": "/home/USER/.local/share/daguard/opencode",
+      "options": {
+        "guard": "/home/USER/.local/bin/daguard",
+        "policy": "/home/USER/.config/daguard/policy.json",
+        "timeoutMs": 5000,
+        "managed": false
+      }
+    }
+  ]
+}
+```
+
+Replace `USER` with the WSL account name; OpenCode does not expand `~` or
+environment variables in these paths. For a harmless live denial test, use a
+disposable nonexistent path ending in `sites/default/settings.php`: the hook
+must report `drupal.secret.settings_php` before the read tool can report that
+the file is missing.
+
 The bridge passes the unmodified tool name and arguments to
 `daguard --adapter opencode --event pre-tool` without invoking a shell. It
 allows execution only after a valid schema-1 `allow` response. A denial,
@@ -234,8 +266,9 @@ canonical `ask`, timeout, missing executable, non-zero exit, oversized output,
 or malformed response throws from the pre-execution hook and blocks the tool.
 The bridge never rewrites tool arguments and contains no Drupal policy.
 
-The fixtures and bridge contract were checked against OpenCode CLI v2.0.22 and
-the [official OpenCode v2 plugin documentation](https://opencode.ai/v2/docs/build/plugins)
+The fixtures, bridge contract, configuration schema, and local-directory
+entrypoint behavior were checked against OpenCode CLI v2.0.22, its tagged
+source, and the [official OpenCode v2 plugin documentation](https://opencode.ai/v2/docs/build/plugins)
 on 2026-10-03. OpenCode v2's tool event does not expose a per-call working
 directory, so the bridge uses the plugin instance's `ctx.location.directory`;
 multi-location behavior must be retested if OpenCode changes that contract.

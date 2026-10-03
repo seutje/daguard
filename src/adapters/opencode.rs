@@ -1,7 +1,7 @@
 //! `OpenCode` v2 tool-hook request normalization and response rendering.
 
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -210,7 +210,27 @@ pub(crate) fn error_response() -> Response {
 
 /// Checks that an `OpenCode` v2 configuration loads the bridge from an absolute
 /// location and supplies absolute trusted guard and organization-policy paths.
+#[cfg(test)]
 pub(crate) fn validate_config(input: &[u8]) -> Result<(), OpenCodeError> {
+    configured_plugin_paths(input).map(|_| ())
+}
+
+/// Validates the configuration and confirms that `OpenCode`'s v2.0.22 local
+/// directory resolver can find the installed server entrypoint.
+pub(crate) fn validate_installed_config(input: &[u8]) -> Result<(), OpenCodeError> {
+    let plugins = configured_plugin_paths(input)?;
+    if plugins
+        .iter()
+        .any(|package| package.join("index.js").is_file())
+    {
+        return Ok(());
+    }
+    Err(OpenCodeError::Invalid(
+        "OpenCode plugin directory does not contain the required index.js entrypoint",
+    ))
+}
+
+fn configured_plugin_paths(input: &[u8]) -> Result<Vec<PathBuf>, OpenCodeError> {
     let root: Value = serde_json::from_slice(input).map_err(OpenCodeError::Json)?;
     let plugins = root
         .get("plugins")
@@ -218,35 +238,33 @@ pub(crate) fn validate_config(input: &[u8]) -> Result<(), OpenCodeError> {
         .ok_or(OpenCodeError::Invalid(
             "opencode.json must define plugins as an array",
         ))?;
-    let configured = plugins.iter().any(|plugin| {
-        let Some(plugin) = plugin.as_object() else {
-            return false;
-        };
-        let Some(package) = plugin.get("package").and_then(Value::as_str) else {
-            return false;
-        };
-        let Some(options) = plugin.get("options").and_then(Value::as_object) else {
-            return false;
-        };
-        Path::new(package).is_absolute()
-            && options
-                .get("guard")
-                .and_then(Value::as_str)
-                .is_some_and(|path| {
-                    let path = Path::new(path);
-                    path.is_absolute() && path.file_name().is_some_and(|name| name == "daguard")
-                })
-            && options
-                .get("policy")
-                .and_then(Value::as_str)
-                .is_some_and(|path| Path::new(path).is_absolute())
-    });
-    if !configured {
+    let configured = plugins
+        .iter()
+        .filter_map(|plugin| {
+            let plugin = plugin.as_object()?;
+            let package = plugin.get("package").and_then(Value::as_str)?;
+            let options = plugin.get("options").and_then(Value::as_object)?;
+            (Path::new(package).is_absolute()
+                && options
+                    .get("guard")
+                    .and_then(Value::as_str)
+                    .is_some_and(|path| {
+                        let path = Path::new(path);
+                        path.is_absolute() && path.file_name().is_some_and(|name| name == "daguard")
+                    })
+                && options
+                    .get("policy")
+                    .and_then(Value::as_str)
+                    .is_some_and(|path| Path::new(path).is_absolute()))
+            .then(|| PathBuf::from(package))
+        })
+        .collect::<Vec<_>>();
+    if configured.is_empty() {
         return Err(OpenCodeError::Invalid(
             "no OpenCode plugin uses absolute bridge, guard, and policy paths",
         ));
     }
-    Ok(())
+    Ok(configured)
 }
 
 #[derive(Debug)]

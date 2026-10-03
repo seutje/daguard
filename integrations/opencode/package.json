@@ -3,5 +3,5 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": "./daguard-plugin.js"
+  "exports": "./index.js"
 }

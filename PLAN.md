@@ -476,6 +476,8 @@ Goal: enforce Drupal-development semantics rather than only filesystem patterns.
 - [x] Record tested OpenCode CLI versions.
 - [x] Record tested OpenCode desktop behavior separately if applicable.
 - [x] Document known version-specific limitations.
+- [x] Package the bridge at the `index.js` entrypoint resolved for an absolute
+  local plugin directory by OpenCode CLI v2.0.22.
 
 ## 6.3 Three-agent policy parity
 
@@ -539,11 +541,15 @@ Goal: enforce Drupal-development semantics rather than only filesystem patterns.
 - [x] Provide Codex hook configuration template.
 - [x] Provide Cursor hook configuration template.
 - [x] Provide OpenCode plugin installation instructions.
+- [x] Document OpenCode reload plus a live denied-tool smoke test instead of
+  treating configuration parsing alone as enforcement proof.
 - [x] Prefer absolute paths to trusted installed executable.
 - [x] Document how central management should prevent repository-local disablement where supported.
 
 ## 7.6 WSL/DDEV integration tests
 
+- [ ] Run the packaged bridge's live denied-tool smoke test in OpenCode v2.0.22
+  before publishing the corrective release.
 - [x] Test installation on clean WSL environment.
 - [x] Test `daguard version` immediately after installation.
 - [x] Test `daguard doctor` immediately after installation.
