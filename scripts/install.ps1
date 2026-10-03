@@ -101,8 +101,10 @@ if (-not (Test-Path -LiteralPath $binarySource -PathType Leaf)) {
     throw 'Release bundle does not contain daguard.exe.'
 }
 
-$version = & $binarySource version
-if ($LASTEXITCODE -ne 0 -or $version -notmatch '\(x86_64-pc-windows-msvc\)') {
+$versionLines = @(& $binarySource version)
+$versionExitCode = $LASTEXITCODE
+$version = $versionLines -join "`n"
+if ($versionExitCode -ne 0 -or -not $version.Contains('(x86_64-pc-windows-msvc)')) {
     throw 'Release binary is not the expected native Windows target.'
 }
 & $binarySource policy lint $policySource | Out-Null

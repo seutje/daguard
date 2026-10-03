@@ -8,6 +8,13 @@ once releases begin.
 
 ## [Unreleased]
 
+### Fixed
+
+- Treat multiline `daguard version` output as one metadata report in native
+  Windows CI, packaging, and installation checks. PowerShell's collection-aware
+  `-notmatch` operator previously rejected valid binaries when other output
+  lines did not contain the target triple.
+
 ## [0.0.5] - 2026-10-03
 
 ### Added

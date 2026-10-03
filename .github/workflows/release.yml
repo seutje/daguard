@@ -208,8 +208,11 @@ jobs:
           $env:DAGUARD_CARGO_LOCK_SHA256 = (Get-FileHash Cargo.lock -Algorithm SHA256).Hash.ToLowerInvariant()
           cargo build --locked --release --target $env:TARGET
           $binary = "target\$env:TARGET\release\daguard.exe"
-          $version = & $binary version
-          if ($version -notmatch "\($env:TARGET\)" -or $version -notmatch "git: $env:GITHUB_SHA" -or $version -notmatch "Cargo.lock SHA-256: $env:DAGUARD_CARGO_LOCK_SHA256") {
+          $versionLines = @(& $binary version)
+          $versionExitCode = $LASTEXITCODE
+          $version = $versionLines -join "`n"
+          if ($versionExitCode -ne 0 -or -not $version.Contains("($env:TARGET)") -or -not $version.Contains("git: $env:GITHUB_SHA") -or -not $version.Contains("Cargo.lock SHA-256: $env:DAGUARD_CARGO_LOCK_SHA256")) {
+            Write-Host "Reported build metadata:`n$version"
             throw 'Native Windows build metadata verification failed.'
           }
       - name: Inspect PE runtime imports

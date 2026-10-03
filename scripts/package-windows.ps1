@@ -12,9 +12,10 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $target = 'x86_64-pc-windows-msvc'
 $binary = (Resolve-Path -LiteralPath $Binary).Path
-$reported = & $binary version
-$expectedVersion = [regex]::Escape("daguard $Version ($target)")
-if ($LASTEXITCODE -ne 0 -or $reported -notmatch $expectedVersion) {
+$reported = @(& $binary version)
+$versionExitCode = $LASTEXITCODE
+$expectedVersion = "daguard $Version ($target)"
+if ($versionExitCode -ne 0 -or $reported -notcontains $expectedVersion) {
     throw 'Binary version or target does not match the requested bundle.'
 }
 $bundleName = "daguard-$Version-$target"
