@@ -208,14 +208,11 @@ fn canonical_limits_and_native_metadata_compatibility() {
         } else {
             let output = run(&["--adapter", adapter, "--event", "pre-tool"], &bytes);
             let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-            assert_eq!(
-                if adapter == "codex" {
-                    &value["hookSpecificOutput"]["permissionDecision"]
-                } else {
-                    &value["permission"]
-                },
-                "allow"
-            );
+            if adapter == "codex" {
+                assert_eq!(value, json!({}));
+            } else {
+                assert_eq!(value["permission"], "allow");
+            }
         }
     }
 }

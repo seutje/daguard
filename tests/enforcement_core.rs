@@ -5,6 +5,45 @@ use std::{fs, path::PathBuf};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+#[test]
+fn codex_safe_calls_return_empty_output_without_an_unsupported_allow_decision() {
+    let output = run_codex(
+        &codex_request("Bash", &json!({"command":"git status"})),
+        &[],
+    );
+    assert!(output.status.success());
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response, json!({}));
+}
+
+#[test]
+fn environment_settings_reads_are_denied_directly_and_through_shells() {
+    for command in [
+        "cat env/settings.local.php",
+        "head ./env/dev/settings.php",
+        "cat web/../env/settings.local.php",
+        "bash -c 'cat env/settings.local.php'",
+        "ddev exec cat env/settings.local.php",
+        "rg -n -i -C 3 'synthetic_pattern' env/settings.local.php env 2>/dev/null",
+    ] {
+        let decision = shell_decision(command);
+        assert_eq!(decision["decision"], "deny", "{command}");
+        assert_eq!(decision["rule_id"], "drupal.secret.settings_php");
+    }
+    for path in ["env/settings.local.php", "env/dev/settings.php"] {
+        let output = run(&["check"], &request("file_read", path));
+        let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(decision["decision"], "deny", "{path}");
+    }
+    for command in [
+        "cat environment/settings.local.php",
+        "cat env/README.md",
+        "cat web/modules/custom/example/settings.local.php",
+    ] {
+        assert_eq!(shell_decision(command)["decision"], "allow", "{command}");
+    }
+}
+
 #[derive(Deserialize)]
 struct Fixture {
     capability: String,
@@ -383,10 +422,14 @@ fn codex_adapter_enforces_protected_and_safe_file_operations() {
             String::from_utf8_lossy(&output.stderr)
         );
         let response: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(
-            response["hookSpecificOutput"]["permissionDecision"], expected,
-            "tool {tool}"
-        );
+        if expected == "allow" {
+            assert_eq!(response, json!({}), "tool {tool}");
+        } else {
+            assert_eq!(
+                response["hookSpecificOutput"]["permissionDecision"], expected,
+                "tool {tool}"
+            );
+        }
     }
 }
 
@@ -499,7 +542,11 @@ fn assert_adapter_matrix(extra_args: &[&str]) {
             let response: Value = serde_json::from_slice(&output.stdout).unwrap();
             let (decision, rule_id) = match adapter {
                 "codex" => (
-                    response["hookSpecificOutput"]["permissionDecision"].as_str(),
+                    if response == json!({}) {
+                        Some("allow")
+                    } else {
+                        response["hookSpecificOutput"]["permissionDecision"].as_str()
+                    },
                     response["hookSpecificOutput"]["permissionDecisionReason"]
                         .as_str()
                         .and_then(|value| value.rsplit_once(' ').map(|(_, rule)| rule)),

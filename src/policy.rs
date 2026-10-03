@@ -43,7 +43,12 @@ const BUILT_INS: &[BuiltInRule] = &[
         "Reading Drupal settings.php is prohibited.",
         Severity::Critical,
         RuleOperation::Read,
-        &["**/sites/*/settings.php", "**/sites/*/settings.local.php"],
+        &[
+            "**/sites/*/settings.php",
+            "**/sites/*/settings.local.php",
+            "**/env/**/settings.php",
+            "**/env/**/settings.local.php",
+        ],
     ),
     BuiltInRule::new(
         "filesystem.secret.private_key",
@@ -630,7 +635,7 @@ fn analyze_path_argv(
         {
             Some((RuleOperation::Write, args))
         }
-        "cat" | "head" | "tail" | "less" | "more" | "grep" | "sed" | "awk" | "wc" => {
+        "cat" | "head" | "tail" | "less" | "more" | "grep" | "rg" | "sed" | "awk" | "wc" => {
             Some((RuleOperation::Read, args))
         }
         "rm" | "touch" | "mkdir" | "tee" => Some((RuleOperation::Write, args)),

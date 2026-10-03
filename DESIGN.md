@@ -557,12 +557,7 @@ tool_input   -> request.input
 Allow:
 
 ```json
-{
-  "hookSpecificOutput": {
-    "hookEventName": "PreToolUse",
-    "permissionDecision": "allow"
-  }
-}
+{}
 ```
 
 Deny:
@@ -576,6 +571,14 @@ Deny:
   }
 }
 ```
+
+An allowed operation emits an empty JSON object, leaving the host's normal
+permission checks intact. A bare `permissionDecision: "allow"` is rejected by
+reported Codex IDE hosts. Upstream documents allow with `updatedInput` for
+rewrites; the guard does not rewrite tool inputs. The historical CLI safe-call
+claim did not establish bare-allow compatibility and is superseded by this
+regression. The corrected response needs live verification on each supported
+host/version, including the IDE extension.
 
 The internal `ask` decision MUST be mapped to `deny` for `PreToolUse` while
 Codex reports `permissionDecision: "ask"` as unsupported. Returning an
@@ -945,6 +948,16 @@ candidate rules, rather than suppressing mandatory enforcement. See
 
 
 ## 15. Path handling
+
+The mandatory `drupal.secret.settings_php` rule also covers
+`**/env/**/settings.php` and `**/env/**/settings.local.php`, including files directly
+under `env/`. Other files under `env/` are not made built-in secrets by this
+rule; the shipped organization policy separately denies reads of `**/env/**`.
+Recognized shell file readers include `rg`; explicit file arguments receive
+built-in path checks without executing the search. Directory-only recursive
+searches and arbitrary organization path lists inside shell commands remain
+outside this explicit-file coverage and require follow-up analysis. The guard
+does not scan directory contents to evaluate a command.
 
 Path handling is security-sensitive and must be centralized.
 

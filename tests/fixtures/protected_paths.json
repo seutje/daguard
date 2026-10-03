@@ -5,6 +5,8 @@
   {"capability":"file_read","path":"config/composer-auth.json","decision":"deny","rule_id":"composer.secret.auth_json"},
   {"capability":"file_read","path":"web/sites/default/settings.php","decision":"deny","rule_id":"drupal.secret.settings_php"},
   {"capability":"file_read","path":"web/sites/default/settings.local.php","decision":"deny","rule_id":"drupal.secret.settings_php"},
+  {"capability":"file_read","path":"env/settings.local.php","decision":"deny","rule_id":"drupal.secret.settings_php"},
+  {"capability":"file_read","path":"env/dev/settings.php","decision":"deny","rule_id":"drupal.secret.settings_php"},
   {"capability":"file_read","path":"web/sites/example.test/settings.php","decision":"deny","rule_id":"drupal.secret.settings_php"},
   {"capability":"file_read","path":"keys/development.pem","decision":"deny","rule_id":"filesystem.secret.private_key"},
   {"capability":"file_read","path":"keys/development.key","decision":"deny","rule_id":"filesystem.secret.private_key"},

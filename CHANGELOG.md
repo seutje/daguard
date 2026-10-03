@@ -10,6 +10,15 @@ once releases begin.
 
 ### Fixed
 
+- Codex permitted calls emit `{}` instead of unsupported bare `permissionDecision:
+  allow` responses. Native deny/ask-to-deny responses are unchanged.
+- Explicit `rg` file reads now receive built-in path checks. The existing
+  `drupal.secret.settings_php` rule also protects settings files in `env/`
+  layouts, including direct, traversed, nested-shell and DDEV-wrapped reads.
+  Directory-only recursive searches remain a known limitation.
+
+### Fixed
+
 - Eliminate a CI broken-pipe race in the enforcement test helper when the guard
   rejects policy before reading stdin; retain exit-status and output assertions.
 

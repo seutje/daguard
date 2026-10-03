@@ -725,6 +725,18 @@ unchanged; Section 10.1 checkboxes retain their commit/evidence gates.
 
 ## 10.3 Policy tuning
 
+Security pilot follow-up (2026-10-03): A reported VS Code command-hook failure
+reproduced two gaps: unsupported bare Codex allow output and explicit `rg` reads
+of settings files under `env/`. Regression tests failed before the fixes.
+Codex permits now use `{}`; deny/ask rendering is unchanged. Shared shell analysis
+recognizes `rg` file arguments, and `drupal.secret.settings_php` also covers
+environment settings layouts. Formatting, strict all-target/all-feature Clippy,
+and `cargo test --locked` passed (139 tests, including three-agent parity).
+The fix is not in released v0.0.0. A patched package and a live synthetic
+allow/deny retest on the exact VS Code extension version are still required.
+Directory-only recursive search and generic organization path rules within shell
+commands remain separate follow-up work; no Phase 10 acceptance is claimed.
+
 - [ ] Review every false positive by rule ID.
 - [ ] Add narrowly scoped exceptions only where justified.
 - [ ] Add missing Drupal-specific sensitive tables/paths identified by the team.

@@ -199,30 +199,33 @@ struct HookSpecificOutput {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Response {
-    hook_specific_output: HookSpecificOutput,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hook_specific_output: Option<HookSpecificOutput>,
 }
 
 pub(crate) fn render(decision: &Decision) -> Response {
     let deny = matches!(decision.effect, DecisionEffect::Deny | DecisionEffect::Ask);
     Response {
-        hook_specific_output: HookSpecificOutput {
+        // A bare permissionDecision: allow is unsupported on tested hosts.
+        // An empty JSON object leaves the host's normal permission checks intact.
+        hook_specific_output: deny.then(|| HookSpecificOutput {
             hook_event_name: PRE_TOOL_USE,
-            permission_decision: if deny { "deny" } else { "allow" },
+            permission_decision: "deny",
             permission_decision_reason: deny
                 .then(|| format!("Blocked by team policy: {}", decision.rule_id)),
-        },
+        }),
     }
 }
 
 pub(crate) fn error_response() -> Response {
     Response {
-        hook_specific_output: HookSpecificOutput {
+        hook_specific_output: Some(HookSpecificOutput {
             hook_event_name: PRE_TOOL_USE,
             permission_decision: "deny",
             permission_decision_reason: Some(
                 "Blocked by team policy: guard.evaluation_error".to_owned(),
             ),
-        },
+        }),
     }
 }
 

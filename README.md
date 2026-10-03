@@ -171,6 +171,13 @@ unknown local tools into the canonical core. It maps the currently unsupported
 canonical `ask` result to `deny`; it never returns Codex's unsupported
 `permissionDecision: "ask"` form.
 
+Allowed Codex calls now emit `{}`. Release v0.0.0 emitted a bare
+`permissionDecision: "allow"`, which was rejected by a reported VS Code host.
+The corrected response requires a synthetic live allow/deny smoke test on the
+installed IDE version; the previous CLI claim does not establish IDE compatibility.
+The shared core now recognizes explicit `rg` file reads and protects settings
+files in `env/` layouts. Directory-only recursive searches remain a known gap.
+
 Codex currently continues a tool call when a `PreToolUse` callback crashes,
 times out, or returns malformed/unsupported output. To reduce that fail-open
 surface, `daguard` converts parsing, configuration, and evaluation failures into

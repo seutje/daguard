@@ -1,5 +1,27 @@
 [
   {
+    "name": "ripgrep explicit environment settings read",
+    "codex_tool": "Bash",
+    "cursor_tool": "Shell",
+    "opencode_tool": "bash",
+    "codex_input": {"command": "rg -n -i -C 3 'synthetic_pattern' env/settings.local.php env 2>/dev/null"},
+    "cursor_input": {"command": "rg -n -i -C 3 'synthetic_pattern' env/settings.local.php env 2>/dev/null"},
+    "opencode_input": {"command": "rg -n -i -C 3 'synthetic_pattern' env/settings.local.php env 2>/dev/null"},
+    "decision": "deny",
+    "rule_id": "drupal.secret.settings_php"
+  },
+  {
+    "name": "ripgrep safe custom module read",
+    "codex_tool": "Bash",
+    "cursor_tool": "Shell",
+    "opencode_tool": "bash",
+    "codex_input": {"command": "rg -n 'synthetic_pattern' web/modules/custom/example/example.module"},
+    "cursor_input": {"command": "rg -n 'synthetic_pattern' web/modules/custom/example/example.module"},
+    "opencode_input": {"command": "rg -n 'synthetic_pattern' web/modules/custom/example/example.module"},
+    "decision": "allow",
+    "rule_id": null
+  },
+  {
     "name": "protected settings read",
     "codex_tool": "read_file",
     "cursor_tool": "Read",

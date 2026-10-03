@@ -15,4 +15,11 @@ hook through the invocation configuration layer and requesting one synthetic
 `apply_patch` add under `web/core`. Codex reported the
 `filesystem.write.core` denial, and the target file did not exist afterward.
 The complementary custom-module patch completed without a hook-schema error,
-confirming the native allow response as well.
+The earlier interpretation that this confirmed the bare native allow response
+is withdrawn: a VS Code deployment reported that bare
+`permissionDecision: "allow"` is unsupported. Safe-call output now uses `{}`,
+which leaves host permission checks unchanged. Deny output is unchanged. The
+corrected safe-call response and deny interception must be live-tested on the
+participant's exact IDE extension version; no such live verification is claimed
+for this fix. Regression fixtures cover the exact empty-object response and
+synthetic explicit `rg` reads of environment settings files.
