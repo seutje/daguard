@@ -773,39 +773,50 @@ adapter contracts, or dependencies changed.
 
 ## 11.1 Critical hard blocks
 
-- [ ] Enable mandatory denial for `settings.php`.
-- [ ] Enable mandatory denial for `.env` files.
-- [ ] Enable mandatory denial for private keys.
-- [ ] Enable mandatory denial for protected dependency writes.
-- [ ] Enable mandatory denial for Drush eval.
-- [ ] Enable mandatory denial for destructive SQL.
-- [ ] Enable mandatory denial for Git force push.
+- [x] Enable mandatory denial for `settings.php`.
+- [x] Enable mandatory denial for `.env` files.
+- [x] Enable mandatory denial for private keys.
+- [x] Enable mandatory denial for protected dependency writes.
+- [x] Enable mandatory denial for Drush eval.
+- [x] Enable mandatory denial for destructive SQL.
+- [x] Enable mandatory denial for Git force push.
 
 ## 11.2 Operational readiness
 
-- [ ] Publish installation documentation.
-- [ ] Publish upgrade documentation.
-- [ ] Publish rollback documentation.
-- [ ] Publish rule catalog/explanations.
-- [ ] Publish support/troubleshooting guidance.
+- [x] Publish installation documentation.
+- [x] Publish upgrade documentation.
+- [x] Publish rollback documentation.
+- [x] Publish rule catalog/explanations.
+- [x] Publish support/troubleshooting guidance.
 - [ ] Establish ownership for policy changes.
-- [ ] Establish review requirements for security-rule changes.
+- [x] Establish review requirements for security-rule changes.
 - [ ] Establish agent compatibility testing responsibility.
 
 ## 11.3 Break-glass decision
 
-- [ ] Decide whether break-glass is required.
-- [ ] If not required, document that decision.
-- [ ] If required, define time-bounded, auditable semantics.
-- [ ] Ensure break-glass cannot be triggered silently by an agent.
-- [ ] Ensure break-glass events are conspicuous in audit logs.
-- [ ] Add tests for break-glass expiry and scope.
+- [x] Decide whether break-glass is required.
+- [x] If not required, document that decision.
+- [x] If required, define time-bounded, auditable semantics. (Not applicable.)
+- [x] Ensure break-glass cannot be triggered silently by an agent. (No break-glass exists.)
+- [x] Ensure break-glass events are conspicuous in audit logs. (Not applicable.)
+- [x] Add tests for break-glass expiry and scope. (Not applicable.)
+
+Implementation note (2026-10-03): All seven critical classes are built-in
+denials and the packaged-release smoke test covers their installed behavior,
+including every destructive SQL keyword and a nearby safe custom-code write.
+The release bundle now contains the managed operations runbook and rule catalog.
+Version 1 deliberately has no break-glass mechanism; rollback addresses broken
+software, while exceptional operations remain human actions outside the agent.
+The two deployment exit criteria below remain open until the organization
+completes Phase 10, assigns named people to the documented roles in its private
+operations system, deploys the root-owned policy/hooks, and records live agent
+allow/deny evidence.
 
 ### Phase 11 exit criteria
 
 - [ ] Mandatory organization policy is deployed outside project repositories.
 - [ ] Critical rules are actively blocking for pilot/production users.
-- [ ] Support and rollback processes exist before broader rollout.
+- [x] Support and rollback processes exist before broader rollout.
 
 ---
 

@@ -8,6 +8,15 @@ once releases begin.
 
 ## [Unreleased]
 
+### Added
+
+- Phase 11 managed-rollout and support documentation, including explicit
+  policy/security/compatibility ownership, installation, upgrade, rollback,
+  troubleshooting, a published rule catalog, and the version 1 decision not to
+  implement break-glass without a concrete operational requirement.
+- Release-bundle smoke coverage for every critical hard-block class and all
+  destructive SQL keywords.
+
 ## [0.0.4] - 2026-10-03
 
 ### Added

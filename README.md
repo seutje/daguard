@@ -17,6 +17,10 @@ Phase 9 adds a dependency-free performance harness, WSL measurements, and
 informational CI reports; team performance acceptance remains pending. See
 [performance methodology](docs/performance/README.md).
 
+Managed rollout procedures, role ownership, upgrades, rollback, support, and the
+no-break-glass decision are in the [operations runbook](docs/operations/rollout.md).
+Stable built-in decisions are summarized in the [rule catalog](docs/operations/rules.md).
+
 ## WSL installation and upgrades
 
 The supported end-user input is the immutable
@@ -58,6 +62,12 @@ the verified policy from that release. Binary/policy schema incompatibility is
 rejected before replacement. To roll back, run the installer from the previous
 verified immutable bundle; its default policy-preservation behavior keeps the
 currently deployed organization policy.
+
+Before a team rollout, assign the policy, security-review, release, agent
+compatibility, and support roles described in the operations runbook. The first
+blocking release intentionally provides no break-glass bypass; operators roll
+back broken software, and humans perform legitimately exceptional operations
+outside the agent boundary.
 
 Uninstall while retaining policy for a later reinstall:
 

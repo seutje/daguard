@@ -17,6 +17,8 @@ policy=$prefix/config/daguard/policy.json
 [ -x "$binary" ]
 [ -r "$policy" ]
 [ -f "$prefix/share/daguard/opencode/index.js" ]
+[ -f "$bundle/docs/operations/rollout.md" ]
+[ -f "$bundle/docs/operations/rules.md" ]
 [ "$(stat -c '%a' "$binary")" = 755 ]
 [ "$(stat -c '%a' "$policy")" = 600 ]
 "$binary" version | grep -F '(x86_64-unknown-linux-musl)'
@@ -65,13 +67,39 @@ evaluate_path() {
     }' | "$binary" check --policy "$policy" - | jq -e --arg rule "$expected_rule" '.decision == "deny" and .rule_id == $rule' >/dev/null
 }
 
+evaluate_path_decision() {
+    capability=$1
+    path=$2
+    expected=$3
+    jq -n --arg capability "$capability" --arg path "$path" '{
+        protocol: 1,
+        agent: "release-test",
+        event: "pre_tool_use",
+        cwd: "/workspace/project",
+        tool: {native_name: "file", capability: $capability},
+        input: {},
+        facts: {paths: [$path]}
+    }' | "$binary" check --policy "$policy" - | jq -e --arg expected "$expected" '.decision == $expected' >/dev/null
+}
+
 # DDEV is not installed or started in this clean test environment. Wrapped
 # commands must still be classified without invoking it.
 evaluate_shell 'ddev start' allow
 evaluate_shell 'ddev drush cr' allow
 evaluate_shell 'ddev drush php:eval "print(1)"' deny
 evaluate_path file_read web/sites/default/settings.php drupal.secret.settings_php
+evaluate_path file_read .env.local drupal.secret.env
+evaluate_path file_read keys/synthetic.key filesystem.secret.private_key
 evaluate_path file_write web/core/lib/Drupal.php filesystem.write.core
+evaluate_path file_write vendor/example/package.php filesystem.write.vendor
+evaluate_path file_write web/modules/contrib/example/example.module filesystem.write.contrib_module
+evaluate_path file_write web/themes/contrib/example/example.info.yml filesystem.write.contrib_theme
+evaluate_path_decision file_write web/modules/custom/example/example.module allow
+evaluate_shell 'git push --force origin main' deny
+
+for keyword in INSERT UPDATE DELETE DROP ALTER TRUNCATE REPLACE CREATE GRANT REVOKE; do
+    evaluate_shell "ddev mysql -e '$keyword synthetic_table'" deny
+done
 
 # Merely finding DDEV must not change decisions or cause the guard to invoke it.
 mkdir -p "$work/fake-bin"

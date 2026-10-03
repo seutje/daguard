@@ -46,7 +46,7 @@ bundle=$output/$bundle_name
 }
 [ ! -e "$bundle" ] || { echo "daguard: output bundle already exists: $bundle" >&2; exit 1; }
 mkdir -p "$bundle/config/codex" "$bundle/config/cursor" "$bundle/config/opencode" \
-    "$bundle/integrations/opencode" "$bundle/inventory"
+    "$bundle/docs/operations" "$bundle/integrations/opencode" "$bundle/inventory"
 
 install -m 0755 "$binary" "$bundle/daguard"
 install -m 0644 policy/default-policy.json "$bundle/default-policy.json"
@@ -56,6 +56,8 @@ install -m 0644 config/codex/hooks.json "$bundle/config/codex/hooks.json"
 install -m 0644 config/codex/managed-requirements.toml "$bundle/config/codex/managed-requirements.toml"
 install -m 0644 config/cursor/hooks.json "$bundle/config/cursor/hooks.json"
 install -m 0644 config/opencode/opencode.json "$bundle/config/opencode/opencode.json"
+install -m 0644 docs/operations/rollout.md "$bundle/docs/operations/rollout.md"
+install -m 0644 docs/operations/rules.md "$bundle/docs/operations/rules.md"
 install -m 0644 integrations/opencode/index.js "$bundle/integrations/opencode/index.js"
 install -m 0644 integrations/opencode/package.json "$bundle/integrations/opencode/package.json"
 install -m 0644 "$sbom" "$bundle/inventory/sbom.cdx.json"

@@ -2223,6 +2223,14 @@ The guard then records that mandatory enforcement was temporarily bypassed.
 
 This feature should not be included in the first pilot unless there is a concrete operational requirement.
 
+For the version 1 mandatory rollout, the organization has no such requirement,
+so no break-glass mechanism is implemented. Operators roll back broken guard or
+adapter releases; a human performs an exceptional blocked operation outside the
+agent boundary. A future break-glass feature requires an explicit design change,
+time-bounded and scoped authorization, conspicuous audit records, and expiry and
+scope tests. An environment variable, project policy, agent-callable CLI flag,
+or silent local file is not an acceptable bypass.
+
 ---
 
 ## 38. Threat model
