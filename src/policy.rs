@@ -359,7 +359,8 @@ fn evaluate_inner(
         .chain(project)
         .flat_map(|policy| policy.sql.sensitive_tables.iter().map(String::as_str))
         .collect::<Vec<_>>();
-    let command_decision = request_command_decision(request, &sensitive_tables)?;
+    let command_decision =
+        request_command_decision(request, &sensitive_tables, organization, project)?;
     // A candidate file rule must never replace a mandatory command denial.
     if let Some(decision) = &command_decision
         && decision.effect == DecisionEffect::Deny
@@ -443,6 +444,8 @@ fn evaluate_inner(
 fn request_command_decision(
     request: &CanonicalRequest,
     sensitive_tables: &[&str],
+    organization: Option<&Policy>,
+    project: Option<&Policy>,
 ) -> Result<Option<Decision>, PolicyError> {
     if !matches!(
         request.tool.capability,
@@ -456,9 +459,15 @@ fn request_command_decision(
             "shell request is missing its command fact",
         ));
     }
+    let context = ShellContext {
+        cwd: &request.cwd,
+        sensitive_tables,
+        organization,
+        project,
+    };
     let mut decisions = Vec::new();
     for command in commands {
-        if let Some(decision) = evaluate_shell(command, &request.cwd, sensitive_tables, 0)? {
+        if let Some(decision) = evaluate_shell(command, &context, 0)? {
             decisions.push(decision);
         }
     }
@@ -467,10 +476,16 @@ fn request_command_decision(
         .max_by_key(|decision| effect_rank(decision.effect)))
 }
 
+struct ShellContext<'a> {
+    cwd: &'a str,
+    sensitive_tables: &'a [&'a str],
+    organization: Option<&'a Policy>,
+    project: Option<&'a Policy>,
+}
+
 fn evaluate_shell(
     command: &str,
-    cwd: &str,
-    sensitive_tables: &[&str],
+    context: &ShellContext<'_>,
     depth: usize,
 ) -> Result<Option<Decision>, PolicyError> {
     if depth > 4 {
@@ -493,13 +508,13 @@ fn evaluate_shell(
     for target in shell::redirect_targets(&tokens)
         .map_err(|_| PolicyError::Invalid("invalid shell redirection"))?
     {
-        if let Some(decision) = evaluate_shell_path(cwd, target, RuleOperation::Write)? {
+        if let Some(decision) = evaluate_shell_path(context, target, RuleOperation::Write)? {
             decisions.push(decision);
         }
     }
     for segment in shell::segments(&tokens) {
         let words = shell::words(segment);
-        if let Some(decision) = analyze_argv(&words, cwd, sensitive_tables, depth)? {
+        if let Some(decision) = analyze_argv(&words, context, depth)? {
             decisions.push(decision);
         }
     }
@@ -510,8 +525,7 @@ fn evaluate_shell(
 
 fn analyze_argv(
     words: &[&str],
-    cwd: &str,
-    sensitive_tables: &[&str],
+    context: &ShellContext<'_>,
     depth: usize,
 ) -> Result<Option<Decision>, PolicyError> {
     if depth > 4 {
@@ -559,7 +573,7 @@ fn analyze_argv(
             )));
         };
         return match args.get(position + 1) {
-            Some(inner) => evaluate_shell(inner, cwd, sensitive_tables, depth + 1),
+            Some(inner) => evaluate_shell(inner, context, depth + 1),
             None => Ok(Some(command_decision(
                 DecisionEffect::Deny,
                 "shell.ambiguous",
@@ -585,45 +599,53 @@ fn analyze_argv(
             analyzers::ddev::Target::Safe => Ok(None),
             analyzers::ddev::Target::Decision(decision) => Ok(Some(decision)),
             analyzers::ddev::Target::Drush(inner) => {
-                Ok(analyzers::drush::analyze(inner, sensitive_tables))
+                Ok(analyzers::drush::analyze(inner, context.sensitive_tables))
             }
             analyzers::ddev::Target::Composer(inner) => Ok(analyzers::composer::analyze(inner)),
-            analyzers::ddev::Target::Sql(sql) => Ok(analyzers::sql::analyze(sql, sensitive_tables)),
+            analyzers::ddev::Target::Sql(sql) => {
+                Ok(analyzers::sql::analyze(sql, context.sensitive_tables))
+            }
             analyzers::ddev::Target::Nested(inner) if inner.len() == 1 => {
-                evaluate_shell(inner[0], cwd, sensitive_tables, depth + 1)
+                evaluate_shell(inner[0], context, depth + 1)
             }
-            analyzers::ddev::Target::Nested(inner) => {
-                analyze_argv(inner, cwd, sensitive_tables, depth + 1)
-            }
+            analyzers::ddev::Target::Nested(inner) => analyze_argv(inner, context, depth + 1),
         };
     }
     let semantic = match program {
-        "drush" => analyzers::drush::analyze(args, sensitive_tables),
+        "drush" => analyzers::drush::analyze(args, context.sensitive_tables),
         "composer" => analyzers::composer::analyze(args),
         "git" => analyzers::git::analyze(args),
         "mysql" => args
             .windows(2)
             .find(|pair| pair[0] == "-e" || pair[0] == "--execute")
-            .and_then(|pair| analyzers::sql::analyze(pair[1], sensitive_tables)),
+            .and_then(|pair| analyzers::sql::analyze(pair[1], context.sensitive_tables)),
         _ => None,
     };
     if semantic.is_some() {
         return Ok(semantic);
     }
-    analyze_path_argv(program, args, cwd)
+    analyze_path_argv(program, args, context)
 }
 
 fn analyze_path_argv(
     program: &str,
     args: &[&str],
-    cwd: &str,
+    context: &ShellContext<'_>,
 ) -> Result<Option<Decision>, PolicyError> {
     if let Some(candidates) = analyzers::network::protected_file_candidates(program, args) {
         for candidate in candidates {
-            if let Some(decision) = evaluate_shell_path(cwd, candidate, RuleOperation::Read)? {
+            if let Some(decision) = evaluate_shell_path(context, candidate, RuleOperation::Read)? {
                 return Ok(Some(decision));
             }
         }
+    }
+    if matches!(program, "grep" | "rg") {
+        for candidate in search_path_candidates(program, args) {
+            if let Some(decision) = evaluate_shell_path(context, candidate, RuleOperation::Read)? {
+                return Ok(Some(decision));
+            }
+        }
+        return Ok(None);
     }
     let path_operation = match program {
         "sed"
@@ -635,7 +657,7 @@ fn analyze_path_argv(
         {
             Some((RuleOperation::Write, args))
         }
-        "cat" | "head" | "tail" | "less" | "more" | "grep" | "rg" | "sed" | "awk" | "wc" => {
+        "cat" | "head" | "tail" | "less" | "more" | "sed" | "awk" | "wc" => {
             Some((RuleOperation::Read, args))
         }
         "rm" | "touch" | "mkdir" | "tee" => Some((RuleOperation::Write, args)),
@@ -650,7 +672,7 @@ fn analyze_path_argv(
             .copied()
             .filter(|argument| !argument.starts_with('-'))
         {
-            if let Some(decision) = evaluate_shell_path(cwd, path, operation)? {
+            if let Some(decision) = evaluate_shell_path(context, path, operation)? {
                 return Ok(Some(decision));
             }
         }
@@ -666,11 +688,109 @@ fn analyze_path_argv(
         .copied()
         .filter(|argument| !argument.starts_with('-'))
     {
-        if let Some(decision) = evaluate_shell_path(cwd, path, RuleOperation::Read)? {
+        if let Some(decision) = evaluate_shell_path(context, path, RuleOperation::Read)? {
             return Ok(Some(decision));
         }
     }
     Ok(None)
+}
+
+/// Extract explicit filesystem operands from grep-compatible command lines.
+///
+/// The first positional operand is the search expression unless `-e` or `-f`
+/// supplied one. Treating that expression as a path creates false positives
+/// for searches whose text happens to equal a protected directory name.
+fn search_path_candidates<'a>(program: &str, args: &'a [&'a str]) -> Vec<&'a str> {
+    let mut candidates = Vec::new();
+    let mut pattern_supplied = false;
+    let mut positional_pattern_seen = false;
+    let mut positional_only = false;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index];
+        if !positional_only && argument == "--" {
+            positional_only = true;
+            index += 1;
+            continue;
+        }
+        if !positional_only && argument.starts_with('-') && argument != "-" {
+            if matches!(argument, "-e" | "--regexp" | "-f" | "--file")
+                && let Some(value) = args.get(index + 1)
+            {
+                if matches!(argument, "-f" | "--file") {
+                    candidates.push(*value);
+                }
+                pattern_supplied = true;
+                index += 2;
+                continue;
+            }
+            if let Some(value) = argument.strip_prefix("--file=").or_else(|| {
+                argument
+                    .strip_prefix("-f")
+                    .filter(|value| !value.is_empty())
+            }) {
+                candidates.push(value);
+                pattern_supplied = true;
+                index += 1;
+                continue;
+            }
+            if argument.starts_with("--regexp=")
+                || argument
+                    .strip_prefix("-e")
+                    .is_some_and(|value| !value.is_empty())
+            {
+                pattern_supplied = true;
+                index += 1;
+                continue;
+            }
+            if search_option_takes_value(program, argument) {
+                index += 2;
+                continue;
+            }
+            index += 1;
+            continue;
+        }
+        if pattern_supplied || positional_pattern_seen {
+            candidates.push(argument);
+        } else {
+            positional_pattern_seen = true;
+        }
+        index += 1;
+    }
+    candidates
+}
+
+fn search_option_takes_value(program: &str, argument: &str) -> bool {
+    if program == "rg" && matches!(argument, "-r" | "--replace") {
+        return true;
+    }
+    matches!(
+        argument,
+        "-A" | "--after-context"
+            | "-B"
+            | "--before-context"
+            | "-C"
+            | "--context"
+            | "-g"
+            | "--glob"
+            | "--iglob"
+            | "-j"
+            | "--threads"
+            | "-m"
+            | "--max-count"
+            | "--max-columns"
+            | "--max-depth"
+            | "--path-separator"
+            | "-t"
+            | "--type"
+            | "-T"
+            | "--type-not"
+            | "--type-add"
+            | "--encoding"
+            | "--engine"
+            | "--sort"
+            | "--sortr"
+    )
 }
 
 fn command_name(program: &str) -> &str {
@@ -687,11 +807,11 @@ fn is_assignment(word: &str) -> bool {
 }
 
 fn evaluate_shell_path(
-    cwd: &str,
+    context: &ShellContext<'_>,
     path: &str,
     operation: RuleOperation,
 ) -> Result<Option<Decision>, PolicyError> {
-    let normalized = paths::normalize(cwd, path).map_err(PolicyError::Path)?;
+    let normalized = paths::normalize(context.cwd, path).map_err(PolicyError::Path)?;
     for rule in BUILT_INS {
         if matches!(
             (operation, rule.operation),
@@ -700,6 +820,31 @@ fn evaluate_shell_path(
         ) && first_matching_path(std::slice::from_ref(&normalized), rule.patterns)?.is_some()
         {
             return Ok(Some(rule.decision(normalized)));
+        }
+    }
+    for (policy, layer) in [
+        (context.organization, PolicyLayer::Organization),
+        (context.project, PolicyLayer::Project),
+    ] {
+        let Some(policy) = policy else {
+            continue;
+        };
+        let (patterns, suffix, reason) = match operation {
+            RuleOperation::Read => (
+                &policy.paths.deny_read,
+                "path.deny_read",
+                "Reading a path denied by policy is prohibited.",
+            ),
+            RuleOperation::Write => (
+                &policy.paths.deny_write,
+                "path.deny_write",
+                "Writing a path denied by policy is prohibited.",
+            ),
+        };
+        if first_matching_owned_path(std::slice::from_ref(&normalized), patterns)?.is_some() {
+            return Ok(Some(policy_path_decision(
+                suffix, reason, layer, normalized,
+            )));
         }
     }
     Ok(None)

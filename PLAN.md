@@ -734,8 +734,19 @@ environment settings layouts. Formatting, strict all-target/all-feature Clippy,
 and `cargo test --locked` passed (139 tests, including three-agent parity).
 The fix is not in released v0.0.0. A patched package and a live synthetic
 allow/deny retest on the exact VS Code extension version are still required.
-Directory-only recursive search and generic organization path rules within shell
-commands remain separate follow-up work; no Phase 10 acceptance is claimed.
+At that point, directory-only recursive search and generic organization path
+rules within shell commands remained separate follow-up work; no Phase 10
+acceptance was claimed.
+
+Security follow-up (2026-10-03): Organization and project `deny_read` /
+`deny_write` patterns now apply to recognized shell path operands, including
+nested and DDEV-wrapped commands. Recursive `/**` patterns include the directory
+root, closing directory-only `rg` searches, while search expressions remain
+distinct from paths to avoid false positives. Formatting, strict all-target /
+all-feature Clippy, and the full locked suite passed (142 tests). No rule IDs,
+adapter contracts, or dependencies changed.
+
+- [x] Close directory-only recursive search and shell policy-path enforcement gaps.
 
 - [ ] Review every false positive by rule ID.
 - [ ] Add narrowly scoped exceptions only where justified.

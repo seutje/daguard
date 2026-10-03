@@ -8,6 +8,13 @@ once releases begin.
 
 ## [Unreleased]
 
+### Fixed
+
+- Apply organization and project path deny lists to recognized shell file
+  operands, including nested and DDEV-wrapped commands. Recursive `/**` policy
+  patterns now cover the directory root, closing directory-only search bypasses
+  without requiring duplicate exact-directory patterns.
+
 ## [0.0.3] - 2026-10-03
 
 ### Fixed

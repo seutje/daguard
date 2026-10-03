@@ -67,6 +67,7 @@ pub(crate) fn normalize(cwd: &str, candidate: &str) -> Result<String, PathError>
 
 pub(crate) struct PathPattern {
     matcher: GlobMatcher,
+    directory_root_matcher: Option<GlobMatcher>,
 }
 
 impl PathPattern {
@@ -86,11 +87,34 @@ impl PathPattern {
             .build()
             .map_err(PathError::Pattern)?
             .compile_matcher();
-        Ok(Self { matcher })
+        // Treat a recursive directory policy as covering the directory entry
+        // itself as well as its descendants. `globset` intentionally does not
+        // make `foo/**` match `foo`, but that distinction is unsafe and
+        // surprising for access-control rules.
+        let directory_root_matcher = pattern
+            .strip_suffix("/**")
+            .map(|root| {
+                GlobBuilder::new(root)
+                    .literal_separator(true)
+                    .backslash_escape(false)
+                    .build()
+                    .map(|glob| glob.compile_matcher())
+                    .map_err(PathError::Pattern)
+            })
+            .transpose()?;
+        Ok(Self {
+            matcher,
+            directory_root_matcher,
+        })
     }
 
     pub(crate) fn matches(&self, normalized: &str) -> bool {
-        self.matcher.is_match(normalized.trim_start_matches('/'))
+        let relative = normalized.trim_start_matches('/');
+        self.matcher.is_match(relative)
+            || self
+                .directory_root_matcher
+                .as_ref()
+                .is_some_and(|matcher| matcher.is_match(relative))
     }
 }
 
@@ -130,6 +154,14 @@ mod tests {
         let pattern = PathPattern::compile("**/sites/*/settings.php").unwrap();
         assert!(pattern.matches("/workspace/web/sites/example/settings.php"));
         assert!(!pattern.matches("/workspace/web/modules/custom/site/settings.php"));
+    }
+
+    #[test]
+    fn recursive_patterns_include_the_directory_root() {
+        let pattern = PathPattern::compile("**/env/**").unwrap();
+        assert!(pattern.matches("/workspace/project/env"));
+        assert!(pattern.matches("/workspace/project/env/local/settings.json"));
+        assert!(!pattern.matches("/workspace/project/environment"));
     }
 
     #[test]

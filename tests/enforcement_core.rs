@@ -44,6 +44,41 @@ fn environment_settings_reads_are_denied_directly_and_through_shells() {
     }
 }
 
+#[test]
+fn organization_directory_read_policy_applies_to_recursive_shell_searches() {
+    let policy = format!("{}/policy/default-policy.json", env!("CARGO_MANIFEST_DIR"));
+    let output = run(
+        &["check", "--policy", &policy],
+        &request("file_read", "env"),
+    );
+    let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(decision["decision"], "deny");
+    assert_eq!(decision["rule_id"], "organization.path.deny_read");
+
+    for command in [
+        "rg synthetic_pattern env",
+        "ddev exec rg synthetic_pattern env",
+    ] {
+        let output = run(&["check", "--policy", &policy], &shell_request(command));
+        assert!(output.status.success(), "{command}");
+        let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(decision["decision"], "deny", "{command}");
+        assert_eq!(
+            decision["rule_id"], "organization.path.deny_read",
+            "{command}"
+        );
+    }
+
+    for command in [
+        "rg synthetic_pattern web/modules/custom",
+        "rg env web/modules/custom",
+    ] {
+        let output = run(&["check", "--policy", &policy], &shell_request(command));
+        let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(decision["decision"], "allow", "{command}");
+    }
+}
+
 #[derive(Deserialize)]
 struct Fixture {
     capability: String,

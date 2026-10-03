@@ -176,7 +176,10 @@ Allowed Codex calls now emit `{}`. Release v0.0.0 emitted a bare
 The corrected response requires a synthetic live allow/deny smoke test on the
 installed IDE version; the previous CLI claim does not establish IDE compatibility.
 The shared core now recognizes explicit `rg` file reads and protects settings
-files in `env/` layouts. Directory-only recursive searches remain a known gap.
+files in `env/` layouts. Organization and project path denies also apply to
+recognized shell file operands. Recursive patterns such as `**/env/**` cover
+both the directory itself and its descendants, including directory-only `rg`
+searches.
 
 Codex currently continues a tool call when a `PreToolUse` callback crashes,
 times out, or returns malformed/unsupported output. To reduce that fail-open

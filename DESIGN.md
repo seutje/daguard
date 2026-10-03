@@ -953,11 +953,13 @@ The mandatory `drupal.secret.settings_php` rule also covers
 `**/env/**/settings.php` and `**/env/**/settings.local.php`, including files directly
 under `env/`. Other files under `env/` are not made built-in secrets by this
 rule; the shipped organization policy separately denies reads of `**/env/**`.
-Recognized shell file readers include `rg`; explicit file arguments receive
-built-in path checks without executing the search. Directory-only recursive
-searches and arbitrary organization path lists inside shell commands remain
-outside this explicit-file coverage and require follow-up analysis. The guard
-does not scan directory contents to evaluate a command.
+Recognized shell file readers include `rg`; explicit file and directory arguments
+receive built-in, organization, and project path checks without executing the
+search. A policy pattern ending in `/**` includes the directory root as well as
+its descendants, so `**/env/**` protects a directory-only recursive search of
+`env`. Search expressions are separated from explicit path operands to avoid
+treating matching text as a filesystem path. The guard does not scan directory
+contents to evaluate a command.
 
 Path handling is security-sensitive and must be centralized.
 
