@@ -265,102 +265,102 @@ Goal: enforce Drupal-development semantics rather than only filesystem patterns.
 
 ## 3.1 Shell analysis foundation
 
-- [ ] Implement bounded shell tokenization suitable for policy inspection.
-- [ ] Do not attempt to become a full shell interpreter.
-- [ ] Detect command chaining with `;`.
-- [ ] Detect `&&` and `||`.
-- [ ] Detect pipelines.
-- [ ] Detect output redirection relevant to writes.
-- [ ] Detect common shell wrappers such as `sh -c` and `bash -c`.
-- [ ] Define conservative behavior for unsupported/ambiguous constructs.
-- [ ] Add adversarial tokenizer fixtures.
+- [x] Implement bounded shell tokenization suitable for policy inspection.
+- [x] Do not attempt to become a full shell interpreter.
+- [x] Detect command chaining with `;`.
+- [x] Detect `&&` and `||`.
+- [x] Detect pipelines.
+- [x] Detect output redirection relevant to writes.
+- [x] Detect common shell wrappers such as `sh -c` and `bash -c`.
+- [x] Define conservative behavior for unsupported/ambiguous constructs.
+- [x] Add adversarial tokenizer fixtures.
 
 ## 3.2 DDEV analyzer
 
-- [ ] Detect `ddev` command wrapping.
-- [ ] Normalize `ddev drush ...` into a Drush analysis target.
-- [ ] Normalize `ddev composer ...` into a Composer analysis target.
-- [ ] Detect `ddev exec` and analyze nested command text where possible.
-- [ ] Detect `ddev ssh` as a broad shell escape.
-- [ ] Detect database import/export operations.
-- [ ] Define policy for `ddev start`.
-- [ ] Define policy for `ddev describe`.
-- [ ] Add normal Drupal workflow fixtures.
+- [x] Detect `ddev` command wrapping.
+- [x] Normalize `ddev drush ...` into a Drush analysis target.
+- [x] Normalize `ddev composer ...` into a Composer analysis target.
+- [x] Detect `ddev exec` and analyze nested command text where possible.
+- [x] Detect `ddev ssh` as a broad shell escape.
+- [x] Detect database import/export operations.
+- [x] Define policy for `ddev start`.
+- [x] Define policy for `ddev describe`.
+- [x] Add normal Drupal workflow fixtures.
 
 ## 3.3 Drush analyzer
 
-- [ ] Allow `drush cr` by default.
-- [ ] Allow `drush status` by default.
-- [ ] Allow `drush pm:list` by default.
-- [ ] Allow safe config-status operations.
-- [ ] Deny `drush php:eval`.
-- [ ] Deny `drush ev`.
-- [ ] Deny equivalent eval aliases.
-- [ ] Deny or policy-gate `drush sql:dump`.
-- [ ] Define handling for `drush sql:cli`.
-- [ ] Classify config import and update-db operations for approval/policy handling.
-- [ ] Add DDEV-wrapped Drush fixtures for every rule.
+- [x] Allow `drush cr` by default.
+- [x] Allow `drush status` by default.
+- [x] Allow `drush pm:list` by default.
+- [x] Allow safe config-status operations.
+- [x] Deny `drush php:eval`.
+- [x] Deny `drush ev`.
+- [x] Deny equivalent eval aliases.
+- [x] Deny or policy-gate `drush sql:dump`.
+- [x] Define handling for `drush sql:cli`.
+- [x] Classify config import and update-db operations for approval/policy handling.
+- [x] Add DDEV-wrapped Drush fixtures for every rule.
 
 ## 3.4 SQL analyzer
 
-- [ ] Identify SQL text embedded in supported Drush/DDEV commands.
-- [ ] Deny `INSERT`.
-- [ ] Deny `UPDATE`.
-- [ ] Deny `DELETE`.
-- [ ] Deny `DROP`.
-- [ ] Deny `ALTER`.
-- [ ] Deny `TRUNCATE`.
-- [ ] Deny `REPLACE`.
-- [ ] Deny `CREATE`.
-- [ ] Deny `GRANT`.
-- [ ] Deny `REVOKE`.
-- [ ] Define handling for read-only `SELECT`.
-- [ ] Detect configured sensitive Drupal tables.
-- [ ] Add tests for comments/case/whitespace variations.
-- [ ] Add tests for chained SQL statements.
-- [ ] Add tests for quoted strings so keywords inside values do not trivially create false positives where avoidable.
+- [x] Identify SQL text embedded in supported Drush/DDEV commands.
+- [x] Deny `INSERT`.
+- [x] Deny `UPDATE`.
+- [x] Deny `DELETE`.
+- [x] Deny `DROP`.
+- [x] Deny `ALTER`.
+- [x] Deny `TRUNCATE`.
+- [x] Deny `REPLACE`.
+- [x] Deny `CREATE`.
+- [x] Deny `GRANT`.
+- [x] Deny `REVOKE`.
+- [x] Define handling for read-only `SELECT`.
+- [x] Detect configured sensitive Drupal tables.
+- [x] Add tests for comments/case/whitespace variations.
+- [x] Add tests for chained SQL statements.
+- [x] Add tests for quoted strings so keywords inside values do not trivially create false positives where avoidable.
 
 ## 3.5 Composer analyzer
 
-- [ ] Allow `composer validate`.
-- [ ] Allow `composer audit`.
-- [ ] Classify `composer require`.
-- [ ] Classify `composer update`.
-- [ ] Detect script-running behavior where relevant.
-- [ ] Ensure the analyzer recognizes `ddev composer ...`.
-- [ ] Protect Composer credential files independently of Composer command policy.
+- [x] Allow `composer validate`.
+- [x] Allow `composer audit`.
+- [x] Classify `composer require`.
+- [x] Classify `composer update`.
+- [x] Detect script-running behavior where relevant.
+- [x] Ensure the analyzer recognizes `ddev composer ...`.
+- [x] Protect Composer credential files independently of Composer command policy.
 
 ## 3.6 Git analyzer
 
-- [ ] Allow `git status`.
-- [ ] Allow `git diff`.
-- [ ] Allow `git log`.
-- [ ] Define policy for ordinary `git commit`.
-- [ ] Define policy for ordinary `git push`.
-- [ ] Deny `git push --force`.
-- [ ] Deny `git push -f`.
-- [ ] Detect common argument-order variations for force push.
-- [ ] Detect credential-related Git configuration changes where practical.
-- [ ] Add regression tests for false positives on harmless flags containing `-f` substrings.
+- [x] Allow `git status`.
+- [x] Allow `git diff`.
+- [x] Allow `git log`.
+- [x] Define policy for ordinary `git commit`.
+- [x] Define policy for ordinary `git push`.
+- [x] Deny `git push --force`.
+- [x] Deny `git push -f`.
+- [x] Detect common argument-order variations for force push.
+- [x] Detect credential-related Git configuration changes where practical.
+- [x] Add regression tests for false positives on harmless flags containing `-f` substrings.
 
 ## 3.7 Command-security tests
 
-- [ ] Test direct dangerous commands.
-- [ ] Test DDEV-wrapped dangerous commands.
-- [ ] Test nested `bash -c` variants.
-- [ ] Test command chaining where a safe command precedes a denied command.
-- [ ] Test command chaining where a denied command precedes a safe command.
-- [ ] Test whitespace and quoting variations.
-- [ ] Test relative path traversal inside shell commands.
+- [x] Test direct dangerous commands.
+- [x] Test DDEV-wrapped dangerous commands.
+- [x] Test nested `bash -c` variants.
+- [x] Test command chaining where a safe command precedes a denied command.
+- [x] Test command chaining where a denied command precedes a safe command.
+- [x] Test whitespace and quoting variations.
+- [x] Test relative path traversal inside shell commands.
 
 ### Phase 3 exit criteria
 
-- [ ] Normal DDEV/Drupal workflows remain low-friction.
-- [ ] Arbitrary Drush evaluation is denied.
-- [ ] Destructive SQL is denied.
-- [ ] Writes to protected dependency areas are denied even through shell commands.
-- [ ] Force push is denied.
-- [ ] The shell analyzer behaves conservatively on ambiguous syntax.
+- [x] Normal DDEV/Drupal workflows remain low-friction.
+- [x] Arbitrary Drush evaluation is denied.
+- [x] Destructive SQL is denied.
+- [x] Writes to protected dependency areas are denied even through shell commands.
+- [x] Force push is denied.
+- [x] The shell analyzer behaves conservatively on ambiguous syntax.
 
 ---
 

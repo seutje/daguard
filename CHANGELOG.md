@@ -15,3 +15,6 @@ once releases begin.
   lexical path enforcement, core CLI commands, and protected-path fixtures.
 - Phase 2 Codex `PreToolUse` normalization, native allow/deny rendering,
   deployment templates, configuration diagnostics, and golden fixtures.
+- Phase 3 bounded shell parsing and shared DDEV, Drush, SQL, Composer, and Git
+  enforcement, including protected shell-path operations and configurable
+  sensitive SQL tables.

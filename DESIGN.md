@@ -689,6 +689,11 @@ Suggested defaults:
 
 Team policy should decide whether database import/export is merely approval-gated or always denied to agents.
 
+The v1 built-in policy denies database import/export, unrestricted `ddev ssh`,
+and interactive `ddev mysql`. It allows lifecycle and diagnostic commands such
+as `start`, `stop`, `restart`, `describe`, and `logs`; `ddev exec` is inspected
+as a nested command.
+
 ---
 
 ## 13. Policy layering
@@ -1162,6 +1167,10 @@ git config credential.*
 ```
 
 A normal `git push` should normally use the agent's approval mechanism rather than be silently allowed.
+
+In v1, ordinary `git commit` and `git push`, dependency-changing Composer
+commands, and Drush config import/update-db commands return `ask`. Adapters that
+cannot reliably represent approval must render `ask` as deny.
 
 ---
 

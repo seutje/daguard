@@ -37,6 +37,29 @@ fn request(capability: &str, path: &str) -> Vec<u8> {
     .unwrap()
 }
 
+fn shell_request(command: &str) -> Vec<u8> {
+    serde_json::to_vec(&json!({
+        "protocol": 1,
+        "agent": "synthetic-test-agent",
+        "event": "pre_tool_use",
+        "cwd": "/workspace/project",
+        "tool": {"native_name": "Bash", "capability": "shell_execute"},
+        "input": {"command": command},
+        "facts": {"command": command}
+    }))
+    .unwrap()
+}
+
+fn shell_decision(command: &str) -> Value {
+    let output = run(&["check"], &shell_request(command));
+    assert!(
+        output.status.success(),
+        "shell check failed for {command}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
 fn codex_request(tool_name: &str, tool_input: &Value) -> Vec<u8> {
     serde_json::to_vec(&json!({
         "session_id": "thr_synthetic",
@@ -250,4 +273,149 @@ fn codex_doctor_accepts_the_shipped_hook_template() {
         "doctor failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn normal_drupal_commands_remain_allowed() {
+    for command in [
+        "ddev start",
+        "ddev describe",
+        "drush cr",
+        "drush status",
+        "drush pm:list",
+        "drush config:status",
+        "ddev drush cr",
+        "composer validate",
+        "composer audit",
+        "ddev composer validate",
+        "git status",
+        "git diff --find-renames",
+        "git log -n 2",
+        "drush sql:query 'SELECT title FROM node_field_data'",
+    ] {
+        assert_eq!(shell_decision(command)["decision"], "allow", "{command}");
+    }
+}
+
+#[test]
+fn dangerous_drush_and_sql_are_denied_directly_and_through_ddev() {
+    let cases = [
+        ("drush php:eval 'print 1'", "shell.drush.eval"),
+        ("drush ev 'print 1'", "shell.drush.eval"),
+        ("ddev drush php-eval 'print 1'", "shell.drush.eval"),
+        ("ddev drush sql:dump", "shell.drush.sql_dump"),
+        ("ddev drush sql:cli", "shell.drush.sql_cli"),
+        ("ddev exec drush ev 'print 1'", "shell.drush.eval"),
+        ("ddev exec \"drush ev 'print 1'\"", "shell.drush.eval"),
+        ("drush sql:dump", "shell.drush.sql_dump"),
+        ("drush sql:cli", "shell.drush.sql_cli"),
+        ("drush sql:query 'DELETE FROM node'", "sql.mutation.delete"),
+        (
+            "ddev drush sql:query 'uPdAtE node SET title = 1'",
+            "sql.mutation.update",
+        ),
+        ("mysql -e 'DROP TABLE node'", "sql.mutation.drop"),
+        (
+            "ddev mysql 'CREATE TABLE unsafe (id INT)'",
+            "sql.mutation.create",
+        ),
+        (
+            "drush sql:query 'SELECT * FROM site_users_field_data'",
+            "sql.read.sensitive_table",
+        ),
+    ];
+    for (command, rule) in cases {
+        let decision = shell_decision(command);
+        assert_eq!(decision["decision"], "deny", "{command}");
+        assert_eq!(decision["rule_id"], rule, "{command}");
+    }
+}
+
+#[test]
+fn chaining_nested_shells_force_push_and_shell_escapes_are_denied() {
+    let cases = [
+        "git status && drush ev 'print 1'",
+        "drush ev 'print 1' || git status",
+        "git status | drush php:eval 'print 1'",
+        "bash -c \"git status; git push --force origin main\"",
+        "git -C repo push origin main -f",
+        "ddev ssh",
+        "ddev --yes drush ev 'print 1'",
+        "ddev import-db --file snapshot.sql.gz",
+        "sudo git status",
+        "/usr/bin/sudo git status",
+        "env SITE=local drush ev 'print 1'",
+        "/usr/bin/git push origin main --force",
+        "drush --uri=example.test ev 'print 1'",
+        "php -r 'print 1'",
+    ];
+    for command in cases {
+        assert_eq!(shell_decision(command)["decision"], "deny", "{command}");
+    }
+}
+
+#[test]
+fn protected_paths_are_enforced_for_shell_reads_writes_and_traversal() {
+    let cases = [
+        (
+            "cat web/sites/default/settings.php",
+            "drupal.secret.settings_php",
+        ),
+        (
+            "cat web/modules/custom/example/../../../sites/default/settings.php",
+            "drupal.secret.settings_php",
+        ),
+        (
+            "echo changed > web/core/lib/Drupal.php",
+            "filesystem.write.core",
+        ),
+        (
+            "touch vendor/example/package/file.php",
+            "filesystem.write.vendor",
+        ),
+        (
+            "cp patch.php web/modules/contrib/example/example.module",
+            "filesystem.write.contrib_module",
+        ),
+        ("grep password .env", "drupal.secret.env"),
+        ("cp .env /tmp/example", "drupal.secret.env"),
+    ];
+    for (command, rule) in cases {
+        let decision = shell_decision(command);
+        assert_eq!(decision["decision"], "deny", "{command}");
+        assert_eq!(decision["rule_id"], rule, "{command}");
+    }
+    assert_eq!(
+        shell_decision("touch web/modules/custom/example/new.php")["decision"],
+        "allow"
+    );
+}
+
+#[test]
+fn ambiguous_shell_syntax_fails_closed() {
+    for command in [
+        "echo $(git status)",
+        "echo 'unterminated",
+        "cat < input.txt",
+    ] {
+        let decision = shell_decision(command);
+        assert_eq!(decision["decision"], "deny", "{command}");
+        assert_eq!(decision["rule_id"], "shell.ambiguous", "{command}");
+    }
+}
+
+#[test]
+fn state_changing_development_commands_require_approval() {
+    for command in [
+        "composer require drupal/example",
+        "composer update --no-scripts",
+        "composer run-script post-install-cmd",
+        "ddev composer exec tool",
+        "drush config:import",
+        "ddev drush updatedb",
+        "git commit -m synthetic",
+        "git push origin main",
+    ] {
+        assert_eq!(shell_decision(command)["decision"], "ask", "{command}");
+    }
 }

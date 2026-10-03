@@ -34,5 +34,8 @@
       "**/tests/**"
     ]
   },
+  "sql": {
+    "sensitive_tables": []
+  },
   "rules": []
 }

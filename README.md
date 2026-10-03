@@ -5,12 +5,10 @@ intercept coding-agent tool calls and apply shared, deterministic policy before 
 operation runs. Its primary deployment target is WSL2 with DDEV; Codex, Cursor,
 and OpenCode are the first planned integrations.
 
-The repository includes the Phase 1 enforcement core defined in [PLAN.md](PLAN.md):
-versioned canonical requests, deterministic layered policy, lexical path
-normalization, and immutable protection for the initial sensitive read and
-managed-code write boundaries. Agent-native adapters are introduced in later
-phases. The architecture and security model are specified in
-[DESIGN.md](DESIGN.md).
+The repository includes the first three phases defined in [PLAN.md](PLAN.md):
+the canonical enforcement core, Codex adapter, and bounded command analysis for
+shell, DDEV, Drush, SQL, Composer, and Git operations. The architecture and
+security model are specified in [DESIGN.md](DESIGN.md).
 
 ## CLI
 
@@ -41,6 +39,17 @@ configuration error and never emits an allow decision.
 
 Documented optional policy fields default safely when absent. Unknown fields are
 rejected so a misspelled mandatory setting cannot silently weaken enforcement.
+Organization and project policies may extend `sql.sensitive_tables` with bare
+table names; built-in Drupal-sensitive tables remain protected regardless.
+
+Shell inspection recognizes common quoting, chaining, pipelines, redirects,
+`sh -c`/`bash -c`, and DDEV wrappers without executing commands. It denies
+Drush evaluation, destructive SQL, force pushes, unrestricted DDEV shells,
+privilege escalation, and protected-path access through recognized file
+commands. Dependency-changing Composer commands, ordinary Git commit/push, and
+Drush config imports/database updates produce `ask`; adapters without stable
+approval support map that result to deny. Unsupported expansion, heredoc,
+background, or input-redirection syntax is denied conservatively.
 
 Exit codes are stable at this process boundary: `0` means a decision or requested
 informational output was emitted, `2` is invalid CLI usage, `3` is a policy or

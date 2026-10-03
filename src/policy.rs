@@ -12,6 +12,7 @@ use crate::model::{
     PolicyLayer, Severity,
 };
 use crate::paths::{self, PathPattern};
+use crate::{analyzers, shell};
 
 pub(crate) const POLICY_SCHEMA_VERSION: u16 = 1;
 const MAX_POLICY_BYTES: u64 = 1024 * 1024;
@@ -100,7 +101,16 @@ pub(crate) struct Policy {
     #[serde(default)]
     paths: PathPolicy,
     #[serde(default)]
+    sql: SqlPolicy,
+    #[serde(default)]
     rules: Vec<Rule>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SqlPolicy {
+    #[serde(default)]
+    sensitive_tables: Vec<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -197,6 +207,19 @@ impl Policy {
         validate_patterns(&self.paths.deny_read)?;
         validate_patterns(&self.paths.deny_write)?;
         validate_patterns(&self.paths.writable)?;
+        if self.sql.sensitive_tables.len() > MAX_PATTERNS_PER_RULE
+            || self.sql.sensitive_tables.iter().any(|table| {
+                table.is_empty()
+                    || table.len() > 128
+                    || !table
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+            })
+        {
+            return Err(PolicyError::Invalid(
+                "SQL sensitive table configuration is invalid",
+            ));
+        }
         let mut ids = HashSet::new();
         for rule in &self.rules {
             validate_rule_id(&rule.id)?;
@@ -252,6 +275,23 @@ pub(crate) fn evaluate(
     organization: Option<&Policy>,
     project: Option<&Policy>,
 ) -> Result<Decision, PolicyError> {
+    let sensitive_tables = organization
+        .into_iter()
+        .chain(project)
+        .flat_map(|policy| policy.sql.sensitive_tables.iter().map(String::as_str))
+        .collect::<Vec<_>>();
+    if matches!(request.tool.capability, Capability::ShellExecute) {
+        let command = request
+            .facts
+            .command
+            .as_deref()
+            .ok_or(PolicyError::Invalid(
+                "shell request is missing its command fact",
+            ))?;
+        if let Some(decision) = evaluate_shell(command, &request.cwd, &sensitive_tables, 0)? {
+            return Ok(decision);
+        }
+    }
     let normalized_paths = request
         .candidate_paths()
         .into_iter()
@@ -302,6 +342,222 @@ pub(crate) fn evaluate(
         policy_layer: PolicyLayer::Default,
         details: Evidence { matched_path: None },
     })
+}
+
+fn evaluate_shell(
+    command: &str,
+    cwd: &str,
+    sensitive_tables: &[&str],
+    depth: usize,
+) -> Result<Option<Decision>, PolicyError> {
+    if depth > 4 {
+        return Ok(Some(command_decision(
+            DecisionEffect::Deny,
+            "shell.nesting_limit",
+            "Shell wrapper nesting exceeds safe analysis limits.",
+            Severity::High,
+        )));
+    }
+    let Ok(tokens) = shell::tokenize(command) else {
+        return Ok(Some(command_decision(
+            DecisionEffect::Deny,
+            "shell.ambiguous",
+            "The shell command contains syntax that cannot be inspected safely.",
+            Severity::High,
+        )));
+    };
+    let mut decisions = Vec::new();
+    for target in shell::redirect_targets(&tokens)
+        .map_err(|_| PolicyError::Invalid("invalid shell redirection"))?
+    {
+        if let Some(decision) = evaluate_shell_path(cwd, target, RuleOperation::Write)? {
+            decisions.push(decision);
+        }
+    }
+    for segment in shell::segments(&tokens) {
+        let words = shell::words(segment);
+        if let Some(decision) = analyze_argv(&words, cwd, sensitive_tables, depth)? {
+            decisions.push(decision);
+        }
+    }
+    Ok(decisions
+        .into_iter()
+        .max_by_key(|decision| effect_rank(decision.effect)))
+}
+
+fn analyze_argv(
+    words: &[&str],
+    cwd: &str,
+    sensitive_tables: &[&str],
+    depth: usize,
+) -> Result<Option<Decision>, PolicyError> {
+    let mut words = words;
+    while let Some((first, rest)) = words.split_first() {
+        let name = command_name(first);
+        if matches!(name, "env" | "command")
+            || (words.len() != 1 && (first.starts_with('-') || is_assignment(first)))
+        {
+            words = rest;
+        } else {
+            break;
+        }
+    }
+    let Some((program, args)) = words.split_first() else {
+        return Ok(None);
+    };
+    let program = command_name(program);
+    if program == "sudo" || program == "su" {
+        return Ok(Some(command_decision(
+            DecisionEffect::Deny,
+            "shell.privilege_escalation",
+            "Privilege escalation commands are prohibited.",
+            Severity::Critical,
+        )));
+    }
+    if matches!(program, "sh" | "bash") && args.first().is_some_and(|arg| *arg == "-c") {
+        return match args.get(1) {
+            Some(inner) => evaluate_shell(inner, cwd, sensitive_tables, depth + 1),
+            None => Ok(Some(command_decision(
+                DecisionEffect::Deny,
+                "shell.ambiguous",
+                "A shell wrapper is missing its command text.",
+                Severity::High,
+            ))),
+        };
+    }
+    if matches!(program, "python" | "python3" | "php" | "node")
+        && args
+            .first()
+            .is_some_and(|arg| matches!(*arg, "-c" | "-r" | "-e"))
+    {
+        return Ok(Some(command_decision(
+            DecisionEffect::Deny,
+            "shell.language_eval",
+            "Arbitrary language evaluation cannot be inspected safely.",
+            Severity::High,
+        )));
+    }
+    if program == "ddev" {
+        return match analyzers::ddev::unwrap(args) {
+            analyzers::ddev::Target::Safe => Ok(None),
+            analyzers::ddev::Target::Decision(decision) => Ok(Some(decision)),
+            analyzers::ddev::Target::Drush(inner) => {
+                Ok(analyzers::drush::analyze(inner, sensitive_tables))
+            }
+            analyzers::ddev::Target::Composer(inner) => Ok(analyzers::composer::analyze(inner)),
+            analyzers::ddev::Target::Sql(sql) => Ok(analyzers::sql::analyze(sql, sensitive_tables)),
+            analyzers::ddev::Target::Nested(inner) if inner.len() == 1 => {
+                evaluate_shell(inner[0], cwd, sensitive_tables, depth + 1)
+            }
+            analyzers::ddev::Target::Nested(inner) => {
+                analyze_argv(inner, cwd, sensitive_tables, depth + 1)
+            }
+        };
+    }
+    let semantic = match program {
+        "drush" => analyzers::drush::analyze(args, sensitive_tables),
+        "composer" => analyzers::composer::analyze(args),
+        "git" => analyzers::git::analyze(args),
+        "mysql" => args
+            .windows(2)
+            .find(|pair| pair[0] == "-e" || pair[0] == "--execute")
+            .and_then(|pair| analyzers::sql::analyze(pair[1], sensitive_tables)),
+        _ => None,
+    };
+    if semantic.is_some() {
+        return Ok(semantic);
+    }
+    analyze_path_argv(program, args, cwd)
+}
+
+fn analyze_path_argv(
+    program: &str,
+    args: &[&str],
+    cwd: &str,
+) -> Result<Option<Decision>, PolicyError> {
+    let path_operation = match program {
+        "cat" | "head" | "tail" | "less" | "more" | "grep" | "sed" | "awk" | "wc" => {
+            Some((RuleOperation::Read, args))
+        }
+        "rm" | "touch" | "mkdir" | "tee" => Some((RuleOperation::Write, args)),
+        "cp" | "mv" | "install" => args
+            .last()
+            .map(|target| (RuleOperation::Write, std::slice::from_ref(target))),
+        _ => None,
+    };
+    if let Some((operation, candidates)) = path_operation {
+        for path in candidates
+            .iter()
+            .copied()
+            .filter(|argument| !argument.starts_with('-'))
+        {
+            if let Some(decision) = evaluate_shell_path(cwd, path, operation)? {
+                return Ok(Some(decision));
+            }
+        }
+    }
+    if matches!(program, "cp" | "mv") {
+        for path in args[..args.len().saturating_sub(1)]
+            .iter()
+            .copied()
+            .filter(|argument| !argument.starts_with('-'))
+        {
+            if let Some(decision) = evaluate_shell_path(cwd, path, RuleOperation::Read)? {
+                return Ok(Some(decision));
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn command_name(program: &str) -> &str {
+    program.rsplit('/').next().unwrap_or(program)
+}
+
+fn is_assignment(word: &str) -> bool {
+    word.split_once('=').is_some_and(|(name, _)| {
+        !name.is_empty()
+            && name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    })
+}
+
+fn evaluate_shell_path(
+    cwd: &str,
+    path: &str,
+    operation: RuleOperation,
+) -> Result<Option<Decision>, PolicyError> {
+    let normalized = paths::normalize(cwd, path).map_err(PolicyError::Path)?;
+    for rule in BUILT_INS {
+        if matches!(
+            (operation, rule.operation),
+            (RuleOperation::Read, RuleOperation::Read)
+                | (RuleOperation::Write, RuleOperation::Write)
+        ) && first_matching_path(std::slice::from_ref(&normalized), rule.patterns)?.is_some()
+        {
+            return Ok(Some(rule.decision(normalized)));
+        }
+    }
+    Ok(None)
+}
+
+fn command_decision(
+    effect: DecisionEffect,
+    rule_id: &str,
+    reason: &str,
+    severity: Severity,
+) -> Decision {
+    Decision {
+        protocol: PROTOCOL_VERSION,
+        effect,
+        rule_id: rule_id.to_owned(),
+        severity,
+        category: "shell".to_owned(),
+        reason: reason.to_owned(),
+        policy_layer: PolicyLayer::BuiltIn,
+        details: Evidence { matched_path: None },
+    }
 }
 
 const fn unknown_default_effect(default: UnknownToolDefault) -> DecisionEffect {
@@ -551,6 +807,10 @@ mod tests {
     fn policy(input: &serde_json::Value, kind: PolicyKind) -> Policy {
         Policy::from_slice(serde_json::to_string(input).unwrap().as_bytes(), kind).unwrap()
     }
+    fn shell_request(command: &str) -> CanonicalRequest {
+        let value = json!({"protocol":1,"agent":"fixture","event":"pre_tool_use","cwd":"/workspace/project","tool":{"native_name":"Bash","capability":"shell_execute"},"input":{"command":command},"facts":{"command":command}});
+        CanonicalRequest::from_slice(serde_json::to_string(&value).unwrap().as_bytes()).unwrap()
+    }
 
     #[test]
     fn built_in_deny_cannot_be_weakened_by_organization_allow() {
@@ -648,5 +908,20 @@ mod tests {
         )
         .unwrap();
         assert_eq!(decision.rule_id, "organization.deny.first");
+    }
+
+    #[test]
+    fn organization_and_project_can_add_sensitive_sql_tables() {
+        let organization = policy(
+            &json!({"schema":1,"sql":{"sensitive_tables":["customer_payments"]}}),
+            PolicyKind::Organization,
+        );
+        let decision = evaluate(
+            &shell_request("drush sql:query 'SELECT * FROM customer_payments'"),
+            Some(&organization),
+            None,
+        )
+        .unwrap();
+        assert_eq!(decision.rule_id, "sql.read.sensitive_table");
     }
 }
