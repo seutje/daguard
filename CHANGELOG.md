@@ -8,6 +8,8 @@ once releases begin.
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-10-03
+
 ### Added
 
 - Support `*` globs in `sql.sensitive_tables`, including Drupal-prefixed table

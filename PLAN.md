@@ -548,7 +548,7 @@ Goal: enforce Drupal-development semantics rather than only filesystem patterns.
 
 ## 7.6 WSL/DDEV integration tests
 
-- [ ] Run the packaged bridge's live denied-tool smoke test in OpenCode v2.0.22
+- [x] Run the packaged bridge's live denied-tool smoke test in OpenCode v2.0.22
   before publishing the corrective release.
 - [x] Test installation on clean WSL environment.
 - [x] Test `daguard version` immediately after installation.
