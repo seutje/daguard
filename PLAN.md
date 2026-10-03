@@ -28,52 +28,52 @@ Rules for using the checklist:
 
 ## 0.1 Project bootstrap
 
-- [ ] Create the Rust Cargo project with binary name `daguard`.
-- [ ] Add and pin `rust-toolchain.toml`.
-- [ ] Commit `Cargo.lock` and require locked builds in CI.
-- [ ] Add `.gitignore` appropriate for Rust and local test artifacts.
-- [ ] Add `README.md` with a concise project overview and local developer build instructions.
-- [ ] Add `SECURITY.md` describing how security issues should be reported.
-- [ ] Add `CHANGELOG.md` using a documented release format.
-- [ ] Add `LICENSE` or organization-approved licensing metadata.
-- [ ] Ensure `DESIGN.md`, `PLAN.md`, and `AGENTS.md` are present at repository root.
+- [x] Create the Rust Cargo project with binary name `daguard`.
+- [x] Add and pin `rust-toolchain.toml`.
+- [x] Commit `Cargo.lock` and require locked builds in CI.
+- [x] Add `.gitignore` appropriate for Rust and local test artifacts.
+- [x] Add `README.md` with a concise project overview and local developer build instructions.
+- [x] Add `SECURITY.md` describing how security issues should be reported.
+- [x] Add `CHANGELOG.md` using a documented release format.
+- [x] Add `LICENSE` or organization-approved licensing metadata.
+- [x] Ensure `DESIGN.md`, `PLAN.md`, and `AGENTS.md` are present at repository root.
 
 ## 0.2 Initial source layout
 
-- [ ] Create `src/main.rs`.
-- [ ] Create `src/cli.rs`.
-- [ ] Create `src/model.rs`.
-- [ ] Create `src/policy.rs`.
-- [ ] Create `src/paths.rs`.
-- [ ] Create `src/shell.rs`.
-- [ ] Create `src/audit.rs`.
-- [ ] Create `src/project.rs`.
-- [ ] Create `src/platform.rs`.
-- [ ] Create `src/adapters/mod.rs`.
-- [ ] Create `src/adapters/codex.rs`.
-- [ ] Create `src/adapters/cursor.rs`.
-- [ ] Create `src/adapters/opencode.rs`.
-- [ ] Create `src/analyzers/mod.rs`.
-- [ ] Create analyzer modules for DDEV, Drush, SQL, Git, Composer, and network behavior.
-- [ ] Create `policy/default-policy.json`.
-- [ ] Create `tests/fixtures/`.
+- [x] Create `src/main.rs`.
+- [x] Create `src/cli.rs`.
+- [x] Create `src/model.rs`.
+- [x] Create `src/policy.rs`.
+- [x] Create `src/paths.rs`.
+- [x] Create `src/shell.rs`.
+- [x] Create `src/audit.rs`.
+- [x] Create `src/project.rs`.
+- [x] Create `src/platform.rs`.
+- [x] Create `src/adapters/mod.rs`.
+- [x] Create `src/adapters/codex.rs`.
+- [x] Create `src/adapters/cursor.rs`.
+- [x] Create `src/adapters/opencode.rs`.
+- [x] Create `src/analyzers/mod.rs`.
+- [x] Create analyzer modules for DDEV, Drush, SQL, Git, Composer, and network behavior.
+- [x] Create `policy/default-policy.json`.
+- [x] Create `tests/fixtures/`.
 
 ## 0.3 CI baseline
 
-- [ ] Add CI job for `cargo fmt --check`.
-- [ ] Add CI job for `cargo clippy`.
-- [ ] Add CI job for `cargo test --locked`.
-- [ ] Configure warnings policy for security-critical modules.
-- [ ] Add dependency vulnerability scanning.
-- [ ] Add dependency license inventory/checking.
-- [ ] Ensure CI fails when `Cargo.lock` is out of date.
+- [x] Add CI job for `cargo fmt --check`.
+- [x] Add CI job for `cargo clippy`.
+- [x] Add CI job for `cargo test --locked`.
+- [x] Configure warnings policy for security-critical modules.
+- [x] Add dependency vulnerability scanning.
+- [x] Add dependency license inventory/checking.
+- [x] Ensure CI fails when `Cargo.lock` is out of date.
 
 ### Phase 0 exit criteria
 
-- [ ] Fresh clone builds successfully with the pinned Rust toolchain.
-- [ ] CI runs formatting, linting, and unit-test jobs.
-- [ ] Repository structure matches the architecture in `DESIGN.md`.
-- [ ] No security policy decisions exist inside adapter modules.
+- [x] Fresh clone builds successfully with the pinned Rust toolchain.
+- [x] CI runs formatting, linting, and unit-test jobs.
+- [x] Repository structure matches the architecture in `DESIGN.md`.
+- [x] No security policy decisions exist inside adapter modules.
 
 ---
 
@@ -891,4 +891,3 @@ Keep these unchecked unless the scope is intentionally expanded.
 - [ ] Native GUI.
 - [ ] MSI/PKG installers unless operationally justified.
 - [ ] Support for additional agents beyond Codex, Cursor, and OpenCode.
-

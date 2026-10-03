@@ -1,0 +1,17 @@
+[package]
+name = "daguard"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+description = "Pre-execution policy guard for AI coding agents working on Drupal projects"
+license = "MIT"
+publish = false
+
+[dependencies]
+
+[lints.rust]
+warnings = "deny"
+
+[lints.clippy]
+all = "deny"
+pedantic = "deny"

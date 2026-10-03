@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  quality:
+    name: Formatting, linting, and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Verify lockfile is current
+        run: cargo check --locked
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Lint
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Test
+        run: cargo test --locked
+
+  supply-chain:
+    name: Dependency security and licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Scan dependency vulnerabilities
+        run: cargo audit
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      - name: Check dependency licenses and sources
+        run: cargo deny check licenses sources bans
+      - name: Write dependency license inventory
+        run: cargo metadata --locked --format-version 1 > dependency-inventory.json
+      - name: Upload dependency license inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-license-inventory
+          path: dependency-inventory.json
