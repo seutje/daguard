@@ -8,6 +8,8 @@ once releases begin.
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-10-03
+
 ### Fixed
 
 - Treat multiline `daguard version` output as one metadata report in native
