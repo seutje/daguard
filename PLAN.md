@@ -719,11 +719,11 @@ unchanged; Section 10.1 checkboxes retain their commit/evidence gates.
 
 ## 10.2 Pilot deployment
 
-- [ ] Select a small representative developer group.
-- [ ] Include users of Codex.
+- [x] Select a small representative developer group.
+- [x] Include users of Codex.
 - [ ] Include users of Cursor.
-- [ ] Include users of OpenCode if supported in pilot.
-- [ ] Run representative Drupal/DDEV workflows.
+- [x] Include users of OpenCode if supported in pilot.
+- [x] Run representative Drupal/DDEV workflows.
 - [ ] Collect false positives.
 - [ ] Collect unknown-tool cases.
 - [ ] Collect performance measurements.
