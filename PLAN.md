@@ -1,0 +1,894 @@
+# Drupal Agent Guard — Implementation Plan
+
+**Project:** `daguard`  
+**Primary target:** WSL2 / Linux x86_64 using a packaged Rust executable  
+**Secondary targets:** macOS and native Windows  
+**Source of truth:** `DESIGN.md`  
+**Plan status:** Ready for implementation  
+
+---
+
+## How to use this plan
+
+This document is intended to be updated by the coding agent or developer performing the work.
+
+Rules for using the checklist:
+
+- Mark a task complete only after the implementation, tests, and relevant documentation are committed together.
+- Do not mark a phase complete until its **Exit criteria** are satisfied.
+- If implementation reveals that a design assumption is incorrect, update `DESIGN.md` before or together with the implementation change.
+- Security-relevant behavior must be covered by automated tests before the corresponding task is checked off.
+- Adapter-specific behavior must not leak policy logic into adapter code.
+- Do not weaken organization policy to make a failing test pass; determine whether the rule, fixture, adapter, or test expectation is wrong.
+- Prefer small pull requests that complete one coherent group of checkboxes.
+
+---
+
+# Phase 0 — Repository foundation and engineering controls
+
+## 0.1 Project bootstrap
+
+- [ ] Create the Rust Cargo project with binary name `daguard`.
+- [ ] Add and pin `rust-toolchain.toml`.
+- [ ] Commit `Cargo.lock` and require locked builds in CI.
+- [ ] Add `.gitignore` appropriate for Rust and local test artifacts.
+- [ ] Add `README.md` with a concise project overview and local developer build instructions.
+- [ ] Add `SECURITY.md` describing how security issues should be reported.
+- [ ] Add `CHANGELOG.md` using a documented release format.
+- [ ] Add `LICENSE` or organization-approved licensing metadata.
+- [ ] Ensure `DESIGN.md`, `PLAN.md`, and `AGENTS.md` are present at repository root.
+
+## 0.2 Initial source layout
+
+- [ ] Create `src/main.rs`.
+- [ ] Create `src/cli.rs`.
+- [ ] Create `src/model.rs`.
+- [ ] Create `src/policy.rs`.
+- [ ] Create `src/paths.rs`.
+- [ ] Create `src/shell.rs`.
+- [ ] Create `src/audit.rs`.
+- [ ] Create `src/project.rs`.
+- [ ] Create `src/platform.rs`.
+- [ ] Create `src/adapters/mod.rs`.
+- [ ] Create `src/adapters/codex.rs`.
+- [ ] Create `src/adapters/cursor.rs`.
+- [ ] Create `src/adapters/opencode.rs`.
+- [ ] Create `src/analyzers/mod.rs`.
+- [ ] Create analyzer modules for DDEV, Drush, SQL, Git, Composer, and network behavior.
+- [ ] Create `policy/default-policy.json`.
+- [ ] Create `tests/fixtures/`.
+
+## 0.3 CI baseline
+
+- [ ] Add CI job for `cargo fmt --check`.
+- [ ] Add CI job for `cargo clippy`.
+- [ ] Add CI job for `cargo test --locked`.
+- [ ] Configure warnings policy for security-critical modules.
+- [ ] Add dependency vulnerability scanning.
+- [ ] Add dependency license inventory/checking.
+- [ ] Ensure CI fails when `Cargo.lock` is out of date.
+
+### Phase 0 exit criteria
+
+- [ ] Fresh clone builds successfully with the pinned Rust toolchain.
+- [ ] CI runs formatting, linting, and unit-test jobs.
+- [ ] Repository structure matches the architecture in `DESIGN.md`.
+- [ ] No security policy decisions exist inside adapter modules.
+
+---
+
+# Phase 1 — Canonical protocol and enforcement core
+
+Goal: establish the stable internal request/decision protocol and deterministic policy evaluation engine before implementing broad agent support.
+
+## 1.1 Canonical request model
+
+- [ ] Define a versioned canonical request schema.
+- [ ] Include protocol/schema version.
+- [ ] Include agent identifier.
+- [ ] Include hook/event type.
+- [ ] Include session identifier when available.
+- [ ] Include tool/call identifier when available.
+- [ ] Include working directory.
+- [ ] Include normalized capability.
+- [ ] Include original tool name.
+- [ ] Include raw-but-bounded tool arguments required for policy analysis.
+- [ ] Define behavior for absent optional fields.
+- [ ] Define explicit representation for unknown tools/capabilities.
+- [ ] Ensure malformed canonical input can never implicitly become `allow`.
+
+## 1.2 Capability model
+
+- [ ] Implement `FILE_READ` capability.
+- [ ] Implement `FILE_WRITE` capability.
+- [ ] Implement `FILE_DELETE` capability.
+- [ ] Implement `SHELL_EXECUTE` capability.
+- [ ] Implement `NETWORK_READ` capability.
+- [ ] Implement `NETWORK_WRITE` capability.
+- [ ] Implement `MCP_CALL` capability.
+- [ ] Implement `UNKNOWN` capability.
+- [ ] Document mapping rules in code comments and tests.
+
+## 1.3 Canonical decision model
+
+- [ ] Define `allow` decision.
+- [ ] Define `deny` decision.
+- [ ] Define optional approval/ask semantic internally without requiring every adapter to support it.
+- [ ] Include stable rule identifier.
+- [ ] Include human-readable reason.
+- [ ] Include severity/category fields.
+- [ ] Include safe evidence fields that do not contain secrets.
+- [ ] Include policy source/layer information where useful.
+- [ ] Ensure deny reasons are useful to developers but do not echo sensitive input.
+
+## 1.4 Policy loader
+
+- [ ] Implement JSON policy loading using a mature pinned parser crate.
+- [ ] Validate policy schema before use.
+- [ ] Reject unknown mandatory schema versions.
+- [ ] Define default behavior for unknown optional policy fields.
+- [ ] Fail closed when mandatory organization policy is unreadable.
+- [ ] Fail closed when mandatory organization policy is invalid.
+- [ ] Implement deterministic rule ordering.
+- [ ] Implement stable rule IDs.
+- [ ] Add `daguard policy lint` command.
+
+## 1.5 Policy layering
+
+- [ ] Implement immutable built-in invariants.
+- [ ] Implement organization policy layer.
+- [ ] Implement optional project policy layer.
+- [ ] Ensure project policy may only preserve or strengthen mandatory rules.
+- [ ] Reject attempted weakening of organization policy.
+- [ ] Add tests for contradictory organization/project rules.
+- [ ] Document policy precedence in CLI help and README.
+
+## 1.6 Path normalization
+
+- [ ] Normalize relative paths against request `cwd`.
+- [ ] Normalize `.` and `..` segments lexically before matching.
+- [ ] Handle repeated path separators.
+- [ ] Handle Linux absolute paths.
+- [ ] Avoid unsafe reliance on path existence for policy matching.
+- [ ] Define symlink handling semantics for v1.
+- [ ] Add traversal test cases such as `foo/../sites/default/settings.php`.
+- [ ] Add path matching tests for Drupal multisite layouts.
+
+## 1.7 Critical built-in file rules
+
+- [ ] Deny read of `**/.env`.
+- [ ] Deny read of `**/.env.*`.
+- [ ] Deny read of `**/auth.json`.
+- [ ] Deny read of `**/composer-auth.json`.
+- [ ] Deny read of `**/sites/*/settings.php`.
+- [ ] Deny read of `**/sites/*/settings.local.php`.
+- [ ] Deny read of `**/*.pem`.
+- [ ] Deny read of `**/*.key`.
+- [ ] Deny write to Drupal core.
+- [ ] Deny write to `vendor/**`.
+- [ ] Deny write to contributed modules.
+- [ ] Deny write to contributed themes.
+- [ ] Allow normal custom-module and custom-theme paths unless another rule blocks them.
+
+## 1.8 CLI shell
+
+- [ ] Implement `daguard version`.
+- [ ] Implement `daguard check` for fixture/manual evaluation.
+- [ ] Implement `daguard explain <rule-id>`.
+- [ ] Implement stable non-zero exit codes for guard failures.
+- [ ] Keep machine-readable stdout separate from diagnostic stderr where adapters require strict JSON output.
+
+## 1.9 Enforcement-core tests
+
+- [ ] Unit test every canonical model parser.
+- [ ] Unit test every path-normalization primitive.
+- [ ] Unit test precedence between policy layers.
+- [ ] Unit test malformed JSON behavior.
+- [ ] Unit test missing-field behavior.
+- [ ] Unit test unknown-capability behavior.
+- [ ] Add fixture tests for all initial protected paths.
+- [ ] Verify tests never embed real credentials or real developer secrets.
+
+### Phase 1 exit criteria
+
+- [ ] Canonical request and decision schemas are stable enough for adapters.
+- [ ] Initial protected file rules are enforced by the core independently of any agent.
+- [ ] Invalid mandatory policy fails closed.
+- [ ] `daguard check` can evaluate synthetic requests from stdin/files.
+- [ ] Test suite proves malformed input cannot result in implicit allow.
+
+---
+
+# Phase 2 — Codex adapter and first end-to-end enforcement path
+
+Goal: get one agent working end-to-end before adding additional adapters.
+
+## 2.1 Codex fixture collection
+
+- [ ] Capture sanitized representative `PreToolUse` payloads for shell execution.
+- [ ] Capture sanitized representative file-read payloads.
+- [ ] Capture sanitized representative file-write/patch payloads.
+- [ ] Capture sanitized MCP/function-tool payloads if exposed through the hook.
+- [ ] Record the Codex version used to collect each fixture.
+- [ ] Store fixtures without secrets or production paths.
+
+## 2.2 Codex normalization
+
+- [ ] Parse current Codex `PreToolUse` input.
+- [ ] Map `tool_name` and `tool_input` into canonical request fields.
+- [ ] Map session/tool identifiers where available.
+- [ ] Map `cwd`.
+- [ ] Map file-oriented tools to capabilities.
+- [ ] Map shell-oriented tools to `SHELL_EXECUTE`.
+- [ ] Map unknown tools explicitly to `UNKNOWN`.
+- [ ] Add golden tests for every captured fixture.
+
+## 2.3 Codex decision rendering
+
+- [ ] Render a valid allow response for supported Codex versions.
+- [ ] Render a valid deny response with a concise reason.
+- [ ] Confirm Codex actually prevents the denied tool call.
+- [ ] Define behavior if Codex rejects a response schema.
+- [ ] Treat unsupported `ask` behavior as non-security-critical until proven stable.
+- [ ] Add regression fixtures for Codex response parsing.
+
+## 2.4 Codex hook configuration
+
+- [ ] Provide documented Codex hook configuration template.
+- [ ] Use an absolute trusted path to `daguard` in managed deployment examples.
+- [ ] Match all relevant tool calls rather than only shell commands.
+- [ ] Document known Codex fail-open/fail-closed limitations.
+- [ ] Add `daguard doctor` checks for Codex hook configuration where practical.
+
+## 2.5 Codex end-to-end security tests
+
+- [ ] Verify `settings.php` read is denied.
+- [ ] Verify `.env` read is denied.
+- [ ] Verify custom module source read is allowed.
+- [ ] Verify custom module source write is allowed.
+- [ ] Verify Drupal core write is denied.
+- [ ] Verify malformed hook input is denied/fails safely.
+- [ ] Verify guard error cannot produce an explicit allow response.
+
+### Phase 2 exit criteria
+
+- [ ] Codex invokes the packaged guard for representative tool calls.
+- [ ] Codex blocks protected file reads and writes based on shared core policy.
+- [ ] Adapter contains normalization/rendering only, not Drupal policy logic.
+- [ ] Golden fixture tests protect the adapter contract.
+
+---
+
+# Phase 3 — Shell analysis, DDEV, Drush, SQL, Composer, and Git
+
+Goal: enforce Drupal-development semantics rather than only filesystem patterns.
+
+## 3.1 Shell analysis foundation
+
+- [ ] Implement bounded shell tokenization suitable for policy inspection.
+- [ ] Do not attempt to become a full shell interpreter.
+- [ ] Detect command chaining with `;`.
+- [ ] Detect `&&` and `||`.
+- [ ] Detect pipelines.
+- [ ] Detect output redirection relevant to writes.
+- [ ] Detect common shell wrappers such as `sh -c` and `bash -c`.
+- [ ] Define conservative behavior for unsupported/ambiguous constructs.
+- [ ] Add adversarial tokenizer fixtures.
+
+## 3.2 DDEV analyzer
+
+- [ ] Detect `ddev` command wrapping.
+- [ ] Normalize `ddev drush ...` into a Drush analysis target.
+- [ ] Normalize `ddev composer ...` into a Composer analysis target.
+- [ ] Detect `ddev exec` and analyze nested command text where possible.
+- [ ] Detect `ddev ssh` as a broad shell escape.
+- [ ] Detect database import/export operations.
+- [ ] Define policy for `ddev start`.
+- [ ] Define policy for `ddev describe`.
+- [ ] Add normal Drupal workflow fixtures.
+
+## 3.3 Drush analyzer
+
+- [ ] Allow `drush cr` by default.
+- [ ] Allow `drush status` by default.
+- [ ] Allow `drush pm:list` by default.
+- [ ] Allow safe config-status operations.
+- [ ] Deny `drush php:eval`.
+- [ ] Deny `drush ev`.
+- [ ] Deny equivalent eval aliases.
+- [ ] Deny or policy-gate `drush sql:dump`.
+- [ ] Define handling for `drush sql:cli`.
+- [ ] Classify config import and update-db operations for approval/policy handling.
+- [ ] Add DDEV-wrapped Drush fixtures for every rule.
+
+## 3.4 SQL analyzer
+
+- [ ] Identify SQL text embedded in supported Drush/DDEV commands.
+- [ ] Deny `INSERT`.
+- [ ] Deny `UPDATE`.
+- [ ] Deny `DELETE`.
+- [ ] Deny `DROP`.
+- [ ] Deny `ALTER`.
+- [ ] Deny `TRUNCATE`.
+- [ ] Deny `REPLACE`.
+- [ ] Deny `CREATE`.
+- [ ] Deny `GRANT`.
+- [ ] Deny `REVOKE`.
+- [ ] Define handling for read-only `SELECT`.
+- [ ] Detect configured sensitive Drupal tables.
+- [ ] Add tests for comments/case/whitespace variations.
+- [ ] Add tests for chained SQL statements.
+- [ ] Add tests for quoted strings so keywords inside values do not trivially create false positives where avoidable.
+
+## 3.5 Composer analyzer
+
+- [ ] Allow `composer validate`.
+- [ ] Allow `composer audit`.
+- [ ] Classify `composer require`.
+- [ ] Classify `composer update`.
+- [ ] Detect script-running behavior where relevant.
+- [ ] Ensure the analyzer recognizes `ddev composer ...`.
+- [ ] Protect Composer credential files independently of Composer command policy.
+
+## 3.6 Git analyzer
+
+- [ ] Allow `git status`.
+- [ ] Allow `git diff`.
+- [ ] Allow `git log`.
+- [ ] Define policy for ordinary `git commit`.
+- [ ] Define policy for ordinary `git push`.
+- [ ] Deny `git push --force`.
+- [ ] Deny `git push -f`.
+- [ ] Detect common argument-order variations for force push.
+- [ ] Detect credential-related Git configuration changes where practical.
+- [ ] Add regression tests for false positives on harmless flags containing `-f` substrings.
+
+## 3.7 Command-security tests
+
+- [ ] Test direct dangerous commands.
+- [ ] Test DDEV-wrapped dangerous commands.
+- [ ] Test nested `bash -c` variants.
+- [ ] Test command chaining where a safe command precedes a denied command.
+- [ ] Test command chaining where a denied command precedes a safe command.
+- [ ] Test whitespace and quoting variations.
+- [ ] Test relative path traversal inside shell commands.
+
+### Phase 3 exit criteria
+
+- [ ] Normal DDEV/Drupal workflows remain low-friction.
+- [ ] Arbitrary Drush evaluation is denied.
+- [ ] Destructive SQL is denied.
+- [ ] Writes to protected dependency areas are denied even through shell commands.
+- [ ] Force push is denied.
+- [ ] The shell analyzer behaves conservatively on ambiguous syntax.
+
+---
+
+# Phase 4 — Cursor adapter
+
+## 4.1 Cursor fixtures
+
+- [ ] Capture sanitized `preToolUse` shell fixture.
+- [ ] Capture sanitized file-read fixture.
+- [ ] Capture sanitized file-write fixture.
+- [ ] Capture relevant MCP/tool fixtures.
+- [ ] Record tested Cursor versions.
+
+## 4.2 Cursor adapter implementation
+
+- [ ] Normalize Cursor input into the canonical request model.
+- [ ] Render Cursor allow response.
+- [ ] Render Cursor deny response.
+- [ ] Include safe user-facing denial explanation.
+- [ ] Configure `failClosed: true` in deployment examples.
+- [ ] Add golden tests for all fixture variants.
+
+## 4.3 Cross-adapter parity tests
+
+- [ ] Run identical protected-path scenarios through Codex and Cursor adapters.
+- [ ] Run identical Drush scenarios through Codex and Cursor adapters.
+- [ ] Run identical SQL scenarios through Codex and Cursor adapters.
+- [ ] Assert canonical decisions are identical independent of agent.
+
+### Phase 4 exit criteria
+
+- [ ] Cursor blocks the same mandatory cases as Codex.
+- [ ] Cursor fail-closed configuration is documented and tested.
+- [ ] No Cursor-specific policy branch exists in the policy engine unless required by a documented capability difference.
+
+---
+
+# Phase 5 — Audit logging, diagnostics, and operator experience
+
+## 5.1 Audit event format
+
+- [ ] Define versioned audit event schema.
+- [ ] Record timestamp.
+- [ ] Record agent name/version when known.
+- [ ] Record adapter/schema version.
+- [ ] Record decision.
+- [ ] Record rule ID.
+- [ ] Record category/severity.
+- [ ] Record non-sensitive normalized operation metadata.
+- [ ] Record session/call IDs where safe and useful.
+- [ ] Do not record full raw tool input by default.
+- [ ] Do not record file contents.
+- [ ] Do not record SQL result data.
+- [ ] Do not record secrets/tokens/passwords.
+
+## 5.2 Local logging
+
+- [ ] Implement local append-only audit logging where configured.
+- [ ] Handle missing/unwritable audit destination safely.
+- [ ] Ensure logging failure cannot silently transform deny into allow.
+- [ ] Implement bounded/log-rotation guidance.
+- [ ] Add redaction tests.
+
+## 5.3 `daguard doctor`
+
+- [ ] Report executable version.
+- [ ] Report OS/architecture.
+- [ ] Report canonical binary path.
+- [ ] Report organization policy path/status.
+- [ ] Report policy schema validity.
+- [ ] Report policy hash.
+- [ ] Detect WSL where practical.
+- [ ] Detect DDEV availability but do not require it.
+- [ ] Check Codex integration where practical.
+- [ ] Check Cursor integration where practical.
+- [ ] Check OpenCode integration where practical once implemented.
+- [ ] Warn when executable or mandatory policy is inside an agent-writable project repository.
+
+## 5.4 Explainability
+
+- [ ] Implement rule documentation registry.
+- [ ] Implement `daguard explain <rule-id>`.
+- [ ] Include remediation/safe alternative where appropriate.
+- [ ] Ensure explanations do not encourage bypassing mandatory policy.
+
+### Phase 5 exit criteria
+
+- [ ] Every deny response has a stable rule ID.
+- [ ] Developers can use `doctor` to diagnose installation issues.
+- [ ] Audit logs do not contain known secret fixtures.
+- [ ] A support engineer can explain a denial without reproducing the sensitive payload.
+
+---
+
+# Phase 6 — OpenCode integration
+
+## 6.1 OpenCode plugin bridge
+
+- [ ] Implement minimal OpenCode plugin under `integrations/opencode/`.
+- [ ] Hook `tool.execute.before` or the currently supported equivalent.
+- [ ] Convert OpenCode input into canonical JSON.
+- [ ] Invoke the native `daguard` executable.
+- [ ] Block execution when `daguard` returns deny.
+- [ ] Block execution when the guard cannot be executed.
+- [ ] Block execution when guard output is malformed.
+- [ ] Avoid relying on argument mutation for security guarantees.
+
+## 6.2 OpenCode fixtures and tests
+
+- [ ] Capture sanitized representative OpenCode hook payloads.
+- [ ] Add adapter golden tests.
+- [ ] Add plugin-level tests where practical.
+- [ ] Record tested OpenCode CLI versions.
+- [ ] Record tested OpenCode desktop behavior separately if applicable.
+- [ ] Document known version-specific limitations.
+
+## 6.3 Three-agent policy parity
+
+- [ ] Build a shared scenario matrix.
+- [ ] Verify protected files receive the same canonical decision across all three agents.
+- [ ] Verify Drush decisions are identical.
+- [ ] Verify destructive SQL decisions are identical.
+- [ ] Verify force-push decisions are identical.
+- [ ] Verify protected writes are identical.
+
+### Phase 6 exit criteria
+
+- [ ] Codex, Cursor, and OpenCode all use the same policy engine.
+- [ ] The same scenario produces the same canonical decision across all adapters.
+- [ ] OpenCode integration fails closed when the guard cannot produce a valid decision.
+
+---
+
+# Phase 7 — WSL release packaging and team installation
+
+## 7.1 Release build
+
+- [ ] Configure `x86_64-unknown-linux-musl` release target.
+- [ ] Produce optimized release artifact.
+- [ ] Confirm executable runs on supported WSL2 Ubuntu installations without installing Rust.
+- [ ] Verify no unexpected dynamic third-party dependencies.
+- [ ] Record compiler version and target triple.
+- [ ] Record `Cargo.lock` hash.
+
+## 7.2 Release metadata
+
+- [ ] Generate SHA-256 checksums.
+- [ ] Generate dependency inventory/SBOM.
+- [ ] Generate license inventory.
+- [ ] Include release/version metadata in `daguard version`.
+- [ ] Add provenance/signature mechanism selected by the team.
+- [ ] Verify artifacts in CI before publishing.
+
+## 7.3 WSL installer
+
+- [ ] Create `scripts/install.sh`.
+- [ ] Support user-managed install to `~/.local/bin/daguard` for pilot deployments.
+- [ ] Support managed install to `/usr/local/bin/daguard`.
+- [ ] Support organization policy install to `/etc/daguard/policy.json`.
+- [ ] Verify binary checksum before installation.
+- [ ] Set appropriate file ownership and permissions.
+- [ ] Refuse to install organization policy from an unverified artifact.
+- [ ] Do not install Rust, Python, Node, or other runtime dependencies.
+- [ ] Do not compile source during normal installation.
+
+## 7.4 Uninstaller and upgrade path
+
+- [ ] Create `scripts/uninstall.sh`.
+- [ ] Define safe upgrade procedure.
+- [ ] Preserve organization policy unless explicitly replacing it.
+- [ ] Prevent partial upgrades where binary and mandatory policy schema are incompatible.
+- [ ] Document rollback procedure.
+
+## 7.5 Managed agent configuration
+
+- [ ] Provide Codex hook configuration template.
+- [ ] Provide Cursor hook configuration template.
+- [ ] Provide OpenCode plugin installation instructions.
+- [ ] Prefer absolute paths to trusted installed executable.
+- [ ] Document how central management should prevent repository-local disablement where supported.
+
+## 7.6 WSL/DDEV integration tests
+
+- [ ] Test installation on clean WSL environment.
+- [ ] Test `daguard version` immediately after installation.
+- [ ] Test `daguard doctor` immediately after installation.
+- [ ] Test with DDEV stopped.
+- [ ] Test with DDEV running.
+- [ ] Test ordinary `ddev start`.
+- [ ] Test ordinary `ddev drush cr`.
+- [ ] Test blocked `ddev drush php:eval`.
+- [ ] Test blocked protected-file read.
+- [ ] Test blocked protected-file write.
+- [ ] Test uninstall/rollback.
+
+### Phase 7 exit criteria
+
+- [ ] Team member can install `daguard` in WSL from release artifacts without a language runtime or compiler.
+- [ ] Linux release is self-contained according to the project's packaging definition.
+- [ ] DDEV is not required for the guard to start or evaluate policy.
+- [ ] Release contains checksums and SBOM.
+
+---
+
+# Phase 8 — Security hardening and robustness
+
+## 8.1 Malformed and adversarial input
+
+- [ ] Define maximum accepted stdin payload size.
+- [ ] Reject oversized payloads safely.
+- [ ] Bound recursion/depth where parser/library options permit.
+- [ ] Test invalid UTF-8 handling where applicable.
+- [ ] Test truncated JSON.
+- [ ] Test duplicate/unexpected fields.
+- [ ] Test huge strings and argument arrays.
+- [ ] Test unknown agent/tool values.
+- [ ] Ensure panic does not result in an allow decision.
+
+## 8.2 Fuzzing
+
+- [ ] Add fuzz target for canonical request decoding.
+- [ ] Add fuzz target for each native adapter decoder.
+- [ ] Add fuzz target for path normalization.
+- [ ] Add fuzz target for shell tokenization/analyzer.
+- [ ] Add fuzz target for SQL classification.
+- [ ] Seed fuzz corpus with real sanitized fixtures.
+- [ ] Add scheduled CI fuzzing or a documented manual fuzz workflow.
+
+## 8.3 Panic/error policy
+
+- [ ] Audit `unwrap()`/`expect()` use in request-processing paths.
+- [ ] Remove avoidable panics from security-critical input handling.
+- [ ] Define top-level panic behavior.
+- [ ] Ensure adapter response on internal error is deny/fail-closed where the host permits.
+- [ ] Ensure diagnostics go to stderr, not machine-output stdout.
+
+## 8.4 Filesystem and configuration integrity
+
+- [ ] Refuse writable-by-project mandatory policy paths in managed mode.
+- [ ] Detect suspicious binary location where practical.
+- [ ] Add `doctor` integrity checks for binary and policy hashes.
+- [ ] Document limits of local-user tamper protection.
+- [ ] Ensure project policy cannot point to arbitrary executable extensions/plugins.
+
+## 8.5 Security regression suite
+
+- [ ] Add direct secret-read cases.
+- [ ] Add indirect path cases.
+- [ ] Add protected write cases.
+- [ ] Add DDEV wrapping cases.
+- [ ] Add destructive SQL cases.
+- [ ] Add exfiltration-related command cases.
+- [ ] Add command chaining cases.
+- [ ] Add shell escape cases.
+- [ ] Add false-positive regression cases for normal Drupal workflows.
+
+### Phase 8 exit criteria
+
+- [ ] No known malformed-input path results in implicit allow.
+- [ ] Security-critical parsers have fuzz coverage.
+- [ ] Critical path contains no unjustified panics.
+- [ ] Regression suite includes both bypass attempts and normal-workflow false-positive tests.
+
+---
+
+# Phase 9 — Performance and startup budget
+
+## 9.1 Benchmark harness
+
+- [ ] Add benchmark for process startup plus trivial allow evaluation.
+- [ ] Add benchmark for path-rule evaluation.
+- [ ] Add benchmark for shell/DDEV/Drush analysis.
+- [ ] Add benchmark for SQL analysis.
+- [ ] Add benchmark for policy parsing/loading.
+- [ ] Capture measurements on representative WSL2 hardware.
+- [ ] Capture measurements with project on WSL Linux filesystem.
+- [ ] Optionally compare behavior from `/mnt/c` to document expected degradation.
+
+## 9.2 Performance optimization
+
+- [ ] Keep normal invocation free of unnecessary filesystem scans.
+- [ ] Avoid spawning subprocesses from policy evaluation.
+- [ ] Avoid network access from the guard.
+- [ ] Avoid hashing large files on every invocation.
+- [ ] Avoid loading non-required project files.
+- [ ] Profile before adding caching or daemon complexity.
+
+## 9.3 Performance acceptance
+
+- [ ] Agree final startup/evaluation budget with team.
+- [ ] Meet or revise the design's target of roughly `<5 ms` P50 startup/trivial evaluation on representative WSL hardware.
+- [ ] Meet or revise the design's target of roughly `<25 ms` P95 for normal policy evaluation.
+- [ ] Record benchmark methodology in repository documentation.
+- [ ] Add non-flaky performance regression monitoring where feasible.
+
+### Phase 9 exit criteria
+
+- [ ] Guard overhead is acceptable for high-frequency agent tool usage.
+- [ ] No proposed optimization weakens policy correctness or auditability.
+
+---
+
+# Phase 10 — Audit-only pilot and policy tuning
+
+## 10.1 Pilot mode
+
+- [ ] Implement or configure audit-only evaluation mode.
+- [ ] Ensure audit-only mode is clearly distinguishable from enforcement mode.
+- [ ] Prevent project-local policy from enabling audit-only mode when organization enforcement is mandatory.
+- [ ] Log would-deny decisions without recording sensitive payload content.
+
+## 10.2 Pilot deployment
+
+- [ ] Select a small representative developer group.
+- [ ] Include users of Codex.
+- [ ] Include users of Cursor.
+- [ ] Include users of OpenCode if supported in pilot.
+- [ ] Run representative Drupal/DDEV workflows.
+- [ ] Collect false positives.
+- [ ] Collect unknown-tool cases.
+- [ ] Collect performance measurements.
+- [ ] Collect adapter compatibility failures.
+
+## 10.3 Policy tuning
+
+- [ ] Review every false positive by rule ID.
+- [ ] Add narrowly scoped exceptions only where justified.
+- [ ] Add missing Drupal-specific sensitive tables/paths identified by the team.
+- [ ] Document accepted risk for operations left allowed.
+- [ ] Update tests before changing enforcement semantics.
+
+### Phase 10 exit criteria
+
+- [ ] False-positive rate is acceptable for mandatory critical rules.
+- [ ] Common Drupal/DDEV workflows are represented in regression fixtures.
+- [ ] Known unknown-tool cases are classified or explicitly handled conservatively.
+
+---
+
+# Phase 11 — Mandatory blocking rollout
+
+## 11.1 Critical hard blocks
+
+- [ ] Enable mandatory denial for `settings.php`.
+- [ ] Enable mandatory denial for `.env` files.
+- [ ] Enable mandatory denial for private keys.
+- [ ] Enable mandatory denial for protected dependency writes.
+- [ ] Enable mandatory denial for Drush eval.
+- [ ] Enable mandatory denial for destructive SQL.
+- [ ] Enable mandatory denial for Git force push.
+
+## 11.2 Operational readiness
+
+- [ ] Publish installation documentation.
+- [ ] Publish upgrade documentation.
+- [ ] Publish rollback documentation.
+- [ ] Publish rule catalog/explanations.
+- [ ] Publish support/troubleshooting guidance.
+- [ ] Establish ownership for policy changes.
+- [ ] Establish review requirements for security-rule changes.
+- [ ] Establish agent compatibility testing responsibility.
+
+## 11.3 Break-glass decision
+
+- [ ] Decide whether break-glass is required.
+- [ ] If not required, document that decision.
+- [ ] If required, define time-bounded, auditable semantics.
+- [ ] Ensure break-glass cannot be triggered silently by an agent.
+- [ ] Ensure break-glass events are conspicuous in audit logs.
+- [ ] Add tests for break-glass expiry and scope.
+
+### Phase 11 exit criteria
+
+- [ ] Mandatory organization policy is deployed outside project repositories.
+- [ ] Critical rules are actively blocking for pilot/production users.
+- [ ] Support and rollback processes exist before broader rollout.
+
+---
+
+# Phase 12 — Optional macOS support
+
+- [ ] Build `aarch64-apple-darwin` artifact.
+- [ ] Test path normalization on macOS.
+- [ ] Test supported agents on Apple Silicon.
+- [ ] Determine whether Intel macOS is needed.
+- [ ] Build/test `x86_64-apple-darwin` if required.
+- [ ] Code-sign macOS artifacts if organizational distribution requires it.
+- [ ] Notarize macOS artifacts if required.
+- [ ] Add macOS installation/uninstallation guidance.
+- [ ] Add macOS native CI smoke tests where infrastructure permits.
+
+### Phase 12 exit criteria
+
+- [ ] macOS support is declared only for architectures/agent versions actually tested.
+
+---
+
+# Phase 13 — Optional native Windows support
+
+- [ ] Build `x86_64-pc-windows-msvc` artifact.
+- [ ] Configure static CRT where appropriate.
+- [ ] Implement/test drive-letter normalization.
+- [ ] Implement/test UNC path handling.
+- [ ] Test Windows path case semantics.
+- [ ] Test WSL/Windows path interop scenarios that are explicitly supported.
+- [ ] Add PowerShell installer.
+- [ ] Add PowerShell uninstaller.
+- [ ] Test agent hook invocation from native Windows processes.
+- [ ] Document differences between native Windows and WSL deployment.
+
+### Phase 13 exit criteria
+
+- [ ] Native Windows support is explicitly scoped and covered by path/adapter integration tests.
+
+---
+
+# Phase 14 — Session taint tracking and exfiltration controls
+
+This phase is intentionally deferred until stateless enforcement is stable.
+
+## 14.1 Post-tool integration
+
+- [ ] Identify supported post-tool hooks per agent.
+- [ ] Define canonical post-tool event model.
+- [ ] Record resource sensitivity metadata without recording returned content.
+- [ ] Add adapter fixtures for post-tool events.
+
+## 14.2 Session state
+
+- [ ] Define session taint categories.
+- [ ] Define taint lifetime.
+- [ ] Define safe local state storage.
+- [ ] Define cleanup/expiry behavior.
+- [ ] Prevent one user's session state from affecting another user's session.
+- [ ] Test crash/restart behavior.
+
+## 14.3 Sink controls
+
+- [ ] Identify network-capable shell commands.
+- [ ] Identify network/MCP sinks.
+- [ ] Block or require policy approval for outbound sinks after sensitive reads.
+- [ ] Prevent raw sensitive data from entering audit records.
+- [ ] Add end-to-end taint/exfiltration scenarios.
+
+### Phase 14 exit criteria
+
+- [ ] Stateless v1 remains usable independently.
+- [ ] Taint tracking has a documented threat model and persistence model.
+- [ ] Sensitive-source to outbound-sink flows are covered by integration tests.
+
+---
+
+# Cross-cutting requirements
+
+These apply to every implementation phase.
+
+## Security invariants
+
+- [ ] The guard never treats parser failure as permission to execute.
+- [ ] Mandatory organization policy cannot be weakened by repository policy.
+- [ ] Adapter code does not decide Drupal security policy.
+- [ ] Sensitive content is not written to logs.
+- [ ] The guard performs no outbound network access during normal evaluation.
+- [ ] The guard executes no user-provided shell command as part of policy analysis.
+- [ ] Unknown high-risk operations are handled conservatively.
+- [ ] Release artifacts are built in CI, not on end-user machines.
+
+## Code quality
+
+- [ ] New behavior includes tests.
+- [ ] Public/internal contracts have concise documentation.
+- [ ] Security-critical parsing avoids avoidable `unwrap()` and `expect()`.
+- [ ] Changes pass `cargo fmt`.
+- [ ] Changes pass `cargo clippy`.
+- [ ] Changes pass the full relevant test suite.
+- [ ] Dependency additions are justified in the pull request.
+- [ ] Dependency additions are pinned via `Cargo.lock` and pass audit/license checks.
+
+## Design alignment
+
+- [ ] Material architecture changes update `DESIGN.md`.
+- [ ] Completed implementation tasks update this `PLAN.md`.
+- [ ] Changes to coding-agent expectations update `AGENTS.md`.
+- [ ] Changes to user/operator behavior update `README.md` or operational documentation.
+
+---
+
+# v1 release gate
+
+Do not call the project v1-ready until every applicable item below is checked.
+
+- [ ] Distributed as a single `x86_64-unknown-linux-musl` executable.
+- [ ] No Rust toolchain or language runtime required on developer workstations.
+- [ ] No unexpected third-party dynamic-library dependency in the WSL artifact.
+- [ ] Runs from WSL without entering DDEV.
+- [ ] Codex adapter blocks protected paths.
+- [ ] Cursor adapter blocks protected paths.
+- [ ] OpenCode integration blocks protected paths.
+- [ ] `ddev drush cr` is allowed.
+- [ ] `ddev drush php:eval` is denied.
+- [ ] Writes to Drupal core/vendor/contrib are denied.
+- [ ] Direct and relative-path reads of `settings.php` are denied.
+- [ ] Destructive SQL is denied.
+- [ ] Force pushes are denied.
+- [ ] Policy parse failure fails closed.
+- [ ] Malformed adapter input cannot cause implicit allow.
+- [ ] Audit logs contain no raw secrets or tool output.
+- [ ] `daguard doctor` validates installation and target information.
+- [ ] Golden tests cover all three agents.
+- [ ] Mandatory policy and executable can be deployed outside project repositories.
+- [ ] Installer does not compile source or install a language runtime.
+- [ ] Release includes SHA-256 checksums and SBOM.
+- [ ] WSL latency is within the agreed performance budget.
+- [ ] Team pilot has been completed and critical false positives resolved.
+- [ ] Rollback/support procedures are documented.
+
+---
+
+# Deferred / explicitly out of v1
+
+Keep these unchecked unless the scope is intentionally expanded.
+
+- [ ] Central remote policy service.
+- [ ] LLM-based security classifier in the enforcement path.
+- [ ] Full shell-language semantic interpretation.
+- [ ] Full network payload DLP inspection.
+- [ ] Centralized audit collection.
+- [ ] Native GUI.
+- [ ] MSI/PKG installers unless operationally justified.
+- [ ] Support for additional agents beyond Codex, Cursor, and OpenCode.
+
