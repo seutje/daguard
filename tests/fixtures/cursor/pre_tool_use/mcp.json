@@ -1,0 +1,6 @@
+{
+  "tool_name": "MCP:filesystem:read_file",
+  "tool_input": { "path": "README.md" },
+  "tool_use_id": "call_cursor_mcp",
+  "cwd": "/workspace/example"
+}

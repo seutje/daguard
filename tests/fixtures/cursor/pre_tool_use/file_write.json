@@ -1,0 +1,6 @@
+{
+  "tool_name": "Write",
+  "tool_input": { "file_path": "web/modules/custom/example/example.module", "contents": "<?php\n" },
+  "tool_use_id": "call_cursor_write",
+  "cwd": "/workspace/example"
+}

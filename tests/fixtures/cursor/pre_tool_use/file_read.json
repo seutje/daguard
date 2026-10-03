@@ -1,0 +1,6 @@
+{
+  "tool_name": "Read",
+  "tool_input": { "file_path": "web/modules/custom/example/example.module" },
+  "tool_use_id": "call_cursor_read",
+  "cwd": "/workspace/example"
+}

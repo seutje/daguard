@@ -368,33 +368,33 @@ Goal: enforce Drupal-development semantics rather than only filesystem patterns.
 
 ## 4.1 Cursor fixtures
 
-- [ ] Capture sanitized `preToolUse` shell fixture.
-- [ ] Capture sanitized file-read fixture.
-- [ ] Capture sanitized file-write fixture.
-- [ ] Capture relevant MCP/tool fixtures.
+- [x] Capture sanitized `preToolUse` shell fixture.
+- [x] Capture sanitized file-read fixture.
+- [x] Capture sanitized file-write fixture.
+- [x] Capture relevant MCP/tool fixtures.
 - [ ] Record tested Cursor versions.
 
 ## 4.2 Cursor adapter implementation
 
-- [ ] Normalize Cursor input into the canonical request model.
-- [ ] Render Cursor allow response.
-- [ ] Render Cursor deny response.
-- [ ] Include safe user-facing denial explanation.
-- [ ] Configure `failClosed: true` in deployment examples.
-- [ ] Add golden tests for all fixture variants.
+- [x] Normalize Cursor input into the canonical request model.
+- [x] Render Cursor allow response.
+- [x] Render Cursor deny response.
+- [x] Include safe user-facing denial explanation.
+- [x] Configure `failClosed: true` in deployment examples.
+- [x] Add golden tests for all fixture variants.
 
 ## 4.3 Cross-adapter parity tests
 
-- [ ] Run identical protected-path scenarios through Codex and Cursor adapters.
-- [ ] Run identical Drush scenarios through Codex and Cursor adapters.
-- [ ] Run identical SQL scenarios through Codex and Cursor adapters.
-- [ ] Assert canonical decisions are identical independent of agent.
+- [x] Run identical protected-path scenarios through Codex and Cursor adapters.
+- [x] Run identical Drush scenarios through Codex and Cursor adapters.
+- [x] Run identical SQL scenarios through Codex and Cursor adapters.
+- [x] Assert canonical decisions are identical independent of agent.
 
 ### Phase 4 exit criteria
 
-- [ ] Cursor blocks the same mandatory cases as Codex.
-- [ ] Cursor fail-closed configuration is documented and tested.
-- [ ] No Cursor-specific policy branch exists in the policy engine unless required by a documented capability difference.
+- [x] Cursor blocks the same mandatory cases as Codex.
+- [x] Cursor fail-closed configuration is documented and tested.
+- [x] No Cursor-specific policy branch exists in the policy engine unless required by a documented capability difference.
 
 ---
 

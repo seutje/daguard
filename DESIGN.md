@@ -598,6 +598,25 @@ The installer SHOULD prefer a user/team-managed configuration over repository-lo
 
 Cursor-specific hooks such as `beforeShellExecution`, `beforeMCPExecution`, and `beforeReadFile` may later be used to improve precision, but v1 should first implement broad `preToolUse` support to keep one integration path.
 
+The native `preToolUse` response is:
+
+```json
+{
+  "permission": "deny",
+  "user_message": "Blocked by team policy: drupal.secret.settings_php",
+  "agent_message": "Blocked by team policy: drupal.secret.settings_php"
+}
+```
+
+An allow response contains only `{"permission":"allow"}`. Until Cursor enforces
+`ask` for `preToolUse`, the adapter maps the canonical `ask` effect to `deny`.
+Malformed input and evaluation errors are rendered as a native deny response
+when stdout remains available; `failClosed: true` covers process failures at the
+host boundary. This contract was checked against the official Cursor Hooks
+documentation retrieved on 2026-10-03. Live application-version compatibility
+remains a release/upgrade validation because Cursor was unavailable in the
+Phase 4 development environment.
+
 ### 11.3 OpenCode
 
 OpenCode provides tool pre-execution hooks and, in its newer plugin API, permission evaluation hooks with `allow`, `ask`, and `deny` effects.

@@ -82,6 +82,23 @@ fn run_codex(input: &[u8], extra_args: &[&str]) -> Output {
     run(&args, input)
 }
 
+fn cursor_request(tool_name: &str, tool_input: &Value) -> Vec<u8> {
+    serde_json::to_vec(&json!({
+        "tool_name": tool_name,
+        "tool_input": tool_input,
+        "tool_use_id": "call_synthetic",
+        "cwd": "/workspace/project",
+        "model": "fixture-model"
+    }))
+    .unwrap()
+}
+
+fn run_cursor(input: &[u8], extra_args: &[&str]) -> Output {
+    let mut args = vec!["--adapter", "cursor", "--event", "pre-tool"];
+    args.extend_from_slice(extra_args);
+    run(&args, input)
+}
+
 #[test]
 fn protected_path_fixtures_produce_expected_decisions() {
     let fixtures: Vec<Fixture> =
@@ -220,6 +237,62 @@ fn codex_adapter_enforces_protected_and_safe_file_operations() {
             "tool {tool}"
         );
     }
+}
+
+#[test]
+fn cursor_adapter_enforces_protected_and_safe_operations() {
+    let cases = [
+        (
+            "Read",
+            json!({"file_path": "web/sites/default/settings.php"}),
+            "deny",
+        ),
+        ("Read", json!({"file_path": ".env"}), "deny"),
+        (
+            "Read",
+            json!({"file_path": "web/modules/custom/example/example.module"}),
+            "allow",
+        ),
+        (
+            "Write",
+            json!({"file_path": "web/modules/custom/example/example.module", "contents": "synthetic"}),
+            "allow",
+        ),
+        (
+            "Write",
+            json!({"file_path": "web/core/lib/Drupal.php", "contents": "synthetic"}),
+            "deny",
+        ),
+        (
+            "Shell",
+            json!({"command": "ddev drush ev 'print(1)'"}),
+            "deny",
+        ),
+        (
+            "Shell",
+            json!({"command": "ddev mysql -e 'DELETE FROM node'"}),
+            "deny",
+        ),
+    ];
+    for (tool, input, expected) in cases {
+        let output = run_cursor(&cursor_request(tool, &input), &[]);
+        assert!(
+            output.status.success(),
+            "Cursor adapter failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(response["permission"], expected, "tool {tool}");
+    }
+}
+
+#[test]
+fn cursor_adapter_errors_emit_a_native_deny_response() {
+    let malformed = run_cursor(br#"{"tool_name":"Read""#, &[]);
+    assert!(malformed.status.success());
+    let response: Value = serde_json::from_slice(&malformed.stdout).unwrap();
+    assert_eq!(response["permission"], "deny");
+    assert!(response["user_message"].as_str().is_some());
 }
 
 #[test]

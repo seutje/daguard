@@ -18,3 +18,5 @@ once releases begin.
 - Phase 3 bounded shell parsing and shared DDEV, Drush, SQL, Composer, and Git
   enforcement, including protected shell-path operations and configurable
   sensitive SQL tables.
+- Phase 4 Cursor `preToolUse` normalization, native fail-closed responses,
+  deployment diagnostics, golden fixtures, and Codex/Cursor policy-parity tests.

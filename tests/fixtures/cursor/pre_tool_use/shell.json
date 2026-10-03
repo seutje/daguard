@@ -1,0 +1,8 @@
+{
+  "tool_name": "Shell",
+  "tool_input": { "command": "git status", "working_directory": "/workspace/example" },
+  "tool_use_id": "call_cursor_shell",
+  "cwd": "/workspace/example",
+  "model": "fixture-model",
+  "agent_message": "Checking repository status."
+}

@@ -5,10 +5,10 @@ intercept coding-agent tool calls and apply shared, deterministic policy before 
 operation runs. Its primary deployment target is WSL2 with DDEV; Codex, Cursor,
 and OpenCode are the first planned integrations.
 
-The repository includes the first three phases defined in [PLAN.md](PLAN.md):
-the canonical enforcement core, Codex adapter, and bounded command analysis for
-shell, DDEV, Drush, SQL, Composer, and Git operations. The architecture and
-security model are specified in [DESIGN.md](DESIGN.md).
+The repository includes the first four phases defined in [PLAN.md](PLAN.md):
+the canonical enforcement core, Codex and Cursor adapters, and bounded command
+analysis for shell, DDEV, Drush, SQL, Composer, and Git operations. The
+architecture and security model are specified in [DESIGN.md](DESIGN.md).
 
 ## CLI
 
@@ -29,6 +29,7 @@ daguard explain drupal.secret.settings_php
 daguard policy lint policy/default-policy.json
 daguard policy lint --layer project .daguard/project.json
 daguard doctor codex config/codex/hooks.json
+daguard doctor cursor config/cursor/hooks.json
 ```
 
 Policy precedence is `built-in deny > organization > project > default`, and
@@ -85,6 +86,27 @@ response schema, specialized tools that bypass hooks, and hosted tools remain
 outside this guarantee. Managed deployment should enable hooks and restrict
 execution to managed hooks, but hooks remain a guardrail rather than an OS
 sandbox. See the [official OpenAI hooks documentation](https://learn.chatgpt.com/docs/hooks).
+
+## Cursor integration
+
+The Cursor adapter implements the native `preToolUse` contract documented on
+2026-10-03. Copy and centrally adapt
+[`config/cursor/hooks.json`](config/cursor/hooks.json); keep the absolute trusted
+binary and organization-policy paths, the all-tools matcher, and
+`failClosed: true`. Use `daguard doctor cursor <hooks.json>` to reject examples
+that omit those controls.
+
+Cursor `Shell`, `Read`, `Write`/`Edit`, `Delete`, and `MCP:*` tools normalize to
+the shared canonical model. Denial messages expose only a stable rule ID. Since
+Cursor does not currently enforce `ask` for `preToolUse`, the adapter maps
+canonical `ask` to `deny`. Invalid native input and evaluation failures emit a
+native deny response whenever stdout remains writable.
+
+The fixture suite is derived from the official
+[Cursor Hooks documentation](https://cursor.com/docs/hooks). Cursor was not
+installed in the Phase 4 development environment, so a live-tested application
+version is not claimed; centrally deployed Cursor versions must run the adapter
+compatibility suite before release or upgrade.
 
 ## Development
 

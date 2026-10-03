@@ -1,0 +1,5 @@
+{
+  "permission": "deny",
+  "user_message": "Blocked by team policy: drupal.secret.settings_php",
+  "agent_message": "Blocked by team policy: drupal.secret.settings_php"
+}
