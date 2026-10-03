@@ -7,6 +7,12 @@ description = "Pre-execution policy guard for AI coding agents working on Drupal
 license = "MIT"
 publish = false
 
+[profile.release]
+codegen-units = 1
+lto = "thin"
+panic = "abort"
+strip = "symbols"
+
 [dependencies]
 globset = "0.4.16"
 serde = { version = "1.0.228", features = ["derive"] }

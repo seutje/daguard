@@ -220,7 +220,13 @@ fn missing_mandatory_policy_never_emits_allow() {
 fn version_and_explain_are_available() {
     let version = run(&["version"], b"");
     assert!(version.status.success());
-    assert!(String::from_utf8_lossy(&version.stdout).starts_with("daguard "));
+    let version = String::from_utf8_lossy(&version.stdout);
+    assert!(version.starts_with("daguard "));
+    assert!(version.contains("profile:"));
+    assert!(version.contains("rustc:"));
+    assert!(version.contains("git:"));
+    assert!(version.contains("Cargo.lock SHA-256:"));
+    assert!(version.contains("provenance:"));
 
     let explain = run(&["explain", "drupal.secret.settings_php"], b"");
     assert!(explain.status.success());

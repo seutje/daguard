@@ -26,3 +26,7 @@ once releases begin.
 - Phase 6 OpenCode v2 adapter and dependency-free pre-execution bridge, with
   fail-closed process/output handling, golden fixtures, diagnostics, and a
   shared three-agent policy-parity matrix.
+- Phase 7 optimized static WSL release packaging, embedded build identity,
+  SHA-256 manifests, SBOM/dependency/license inventories, GitHub provenance
+  attestations, transactional user/managed installers, safe uninstall and
+  rollback paths, and release-bundle integration tests.

@@ -43,7 +43,7 @@ fn dispatch(args: Vec<std::ffi::OsString>) -> Result<(), CliError> {
     }
     match args.remove(0).as_str() {
         "version" | "--version" | "-V" if args.is_empty() => {
-            println!("daguard {}", env!("CARGO_PKG_VERSION"));
+            println!("{}", crate::version::details());
             Ok(())
         }
         "help" | "--help" | "-h" if args.is_empty() => {

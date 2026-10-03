@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  TARGET: x86_64-unknown-linux-musl
+
+jobs:
+  package:
+    name: Build and verify WSL release
+    runs-on: ubuntu-latest
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust toolchain and target
+        run: rustup show active-toolchain
+      - name: Select release version
+        id: version
+        shell: bash
+        run: |
+          package_version=$(cargo metadata --locked --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "daguard") | .version')
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$package_version" ]]; then
+            echo "tag $GITHUB_REF_NAME does not match Cargo package version $package_version" >&2
+            exit 1
+          fi
+          echo "value=$package_version" >> "$GITHUB_OUTPUT"
+      - name: Build optimized static binary
+        env:
+          DAGUARD_GIT_SHA: ${{ github.sha }}
+          DAGUARD_PROVENANCE: github-actions
+        shell: bash
+        run: |
+          echo "DAGUARD_RUSTC_VERSION=$(rustc --version)" >> "$GITHUB_ENV"
+          echo "DAGUARD_CARGO_LOCK_SHA256=$(sha256sum Cargo.lock | awk '{print $1}')" >> "$GITHUB_ENV"
+          DAGUARD_RUSTC_VERSION=$(rustc --version) \
+          DAGUARD_CARGO_LOCK_SHA256=$(sha256sum Cargo.lock | awk '{print $1}') \
+            cargo build --locked --release --target "$TARGET"
+      - name: Verify binary target, metadata, and static linkage
+        shell: bash
+        run: |
+          binary="target/$TARGET/release/daguard"
+          file "$binary" | tee binary-file.txt
+          file "$binary" | grep -E 'ELF 64-bit.*x86-64'
+          if readelf -l "$binary" | grep -q 'Requesting program interpreter'; then
+            echo "release binary unexpectedly has a dynamic interpreter" >&2
+            exit 1
+          fi
+          "$binary" version | tee version.txt
+          grep -F "($TARGET)" version.txt
+          grep -F "git: $GITHUB_SHA" version.txt
+          grep -F "Cargo.lock SHA-256: $DAGUARD_CARGO_LOCK_SHA256" version.txt
+      - name: Install pinned release inventory tools
+        run: |
+          cargo install cargo-cyclonedx --version 0.5.9 --locked
+          cargo install cargo-deny --version 0.20.2 --locked
+      - name: Generate SBOM and dependency/license inventories
+        run: |
+          cargo cyclonedx --format json --spec-version 1.5 --target "$TARGET" --all-features --override-filename daguard.cdx
+          cargo metadata --locked --format-version 1 > dependency-inventory.json
+          cargo deny list --format json > license-inventory.json
+      - name: Assemble and test release bundle
+        run: |
+          SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)
+          export SOURCE_DATE_EPOCH
+          scripts/package-release.sh \
+            --binary "target/$TARGET/release/daguard" \
+            --output dist \
+            --version "${{ steps.version.outputs.value }}" \
+            --sbom daguard.cdx.json \
+            --dependencies dependency-inventory.json \
+            --licenses license-inventory.json
+          tests/release_install.sh "dist/daguard-${{ steps.version.outputs.value }}-$TARGET"
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: "dist/*.tar.gz"
+      - name: Attest checksum manifest
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: "dist/SHA256SUMS"
+      - name: Upload verified release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: daguard-${{ steps.version.outputs.value }}-${{ env.TARGET }}
+          path: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+      - name: Publish tagged release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --verify-tag --generate-notes

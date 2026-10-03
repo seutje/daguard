@@ -5,11 +5,81 @@ intercept coding-agent tool calls and apply shared, deterministic policy before 
 operation runs. Its primary deployment target is WSL2 with DDEV; Codex, Cursor,
 and OpenCode are the first planned integrations.
 
-The repository includes the first six phases defined in [PLAN.md](PLAN.md):
+The repository includes the first seven phases defined in [PLAN.md](PLAN.md):
 the canonical enforcement core, Codex and Cursor adapters, and bounded command
 analysis for shell, DDEV, Drush, SQL, Composer, and Git operations, plus safe
-local auditing, operator diagnostics, and the fail-closed OpenCode v2 bridge. The
-architecture and security model are specified in [DESIGN.md](DESIGN.md).
+local auditing, operator diagnostics, the fail-closed OpenCode v2 bridge, and a
+checksummed, provenance-attested WSL release and installation flow. The architecture
+and security model are specified in [DESIGN.md](DESIGN.md).
+
+## WSL installation and upgrades
+
+The supported end-user input is the immutable
+`daguard-<version>-x86_64-unknown-linux-musl.tar.gz` release bundle. Verify the
+archive against the release `SHA256SUMS` before extracting it. Tagged GitHub
+releases also carry GitHub build-provenance attestations; verify one with your
+organization's GitHub CLI policy before trusting the enclosed checksum manifest.
+The installer then verifies every bundled file and refuses a changed or missing
+organization policy artifact.
+
+For a pilot, user-owned installation:
+
+```bash
+tar -xzf daguard-<version>-x86_64-unknown-linux-musl.tar.gz
+cd daguard-<version>-x86_64-unknown-linux-musl
+./install.sh --user
+```
+
+This installs the executable at `~/.local/bin/daguard`, policy and release
+metadata under `~/.config/daguard/`, and the OpenCode bridge under
+`~/.local/share/daguard/opencode/`. A user-owned deployment is useful for a pilot
+but is not a strong boundary against an agent running as that user.
+
+For the recommended root-owned team deployment:
+
+```bash
+sudo ./install.sh --managed
+```
+
+This installs `/usr/local/bin/daguard`, `/etc/daguard/policy.json`, release
+metadata, and `/usr/local/share/daguard/opencode/` with root ownership. The
+installer never downloads dependencies, invokes a package manager, or compiles
+source. It validates the packaged policy with the new executable before making
+changes and rolls back an interrupted or failed multi-file update.
+
+Rerun a newer verified bundle to upgrade. Existing organization policy is
+preserved by default; pass `--replace-policy` only when intentionally deploying
+the verified policy from that release. Binary/policy schema incompatibility is
+rejected before replacement. To roll back, run the installer from the previous
+verified immutable bundle; its default policy-preservation behavior keeps the
+currently deployed organization policy.
+
+Uninstall while retaining policy for a later reinstall:
+
+```bash
+./uninstall.sh --user
+sudo ./uninstall.sh --managed
+```
+
+Add `--remove-policy` only when the organization policy should also be deleted.
+The uninstaller reports whether policy was preserved or removed.
+
+After a managed installation, centrally merge the shipped
+`config/codex/hooks.json` or `config/codex/managed-requirements.toml` and
+`config/cursor/hooks.json`, and deploy `config/opencode/opencode.json`. These
+templates use absolute root-controlled executable, policy, and plugin paths.
+Where the agent supports central requirements, prevent repository-local hooks
+from replacing or disabling the managed hook. Validate each deployed file with
+`daguard doctor <agent> <path>` and then run `daguard doctor`. User-managed pilots
+must adjust the absolute paths to their user installation and accept the weaker
+tamper boundary.
+
+Release CI builds the pinned `x86_64-unknown-linux-musl` target in the optimized
+release profile, rejects a dynamic interpreter, embeds Git/compiler/target/lock
+metadata in `daguard version`, generates CycloneDX SBOM plus dependency and
+license inventories, runs the installation/DDEV classification suite, creates
+SHA-256 manifests, and attests the archive before publishing. DDEV is never an
+installer or guard runtime dependency.
 
 ## CLI
 
@@ -166,8 +236,15 @@ cargo test --locked
 node --test integrations/opencode/daguard-plugin.test.js
 ```
 
-Normal end-user installation will use a packaged native executable and will not
-require Rust or Cargo.
+`tests/release_install.sh <extracted-bundle>` exercises checksum rejection,
+installation, policy decisions, upgrades, rollback, and uninstall without root.
+On a WSL host with DDEV available,
+`tests/wsl_ddev_live.sh <extracted-bundle>` repeats that suite with an isolated
+temporary DDEV project first running and then stopped, and removes the project on
+exit.
+
+Normal end-user installation uses the packaged native executable and does not
+require Rust, Cargo, Node.js, Python, or another language runtime.
 
 Production dependencies are intentionally limited to `serde`/`serde_json` for
 typed JSON, `globset` for mature path-pattern matching, and `sha2` for standard

@@ -498,70 +498,70 @@ Goal: enforce Drupal-development semantics rather than only filesystem patterns.
 
 ## 7.1 Release build
 
-- [ ] Configure `x86_64-unknown-linux-musl` release target.
-- [ ] Produce optimized release artifact.
-- [ ] Confirm executable runs on supported WSL2 Ubuntu installations without installing Rust.
-- [ ] Verify no unexpected dynamic third-party dependencies.
-- [ ] Record compiler version and target triple.
-- [ ] Record `Cargo.lock` hash.
+- [x] Configure `x86_64-unknown-linux-musl` release target.
+- [x] Produce optimized release artifact.
+- [x] Confirm executable runs on supported WSL2 Ubuntu installations without installing Rust.
+- [x] Verify no unexpected dynamic third-party dependencies.
+- [x] Record compiler version and target triple.
+- [x] Record `Cargo.lock` hash.
 
 ## 7.2 Release metadata
 
-- [ ] Generate SHA-256 checksums.
-- [ ] Generate dependency inventory/SBOM.
-- [ ] Generate license inventory.
-- [ ] Include release/version metadata in `daguard version`.
-- [ ] Add provenance/signature mechanism selected by the team.
-- [ ] Verify artifacts in CI before publishing.
+- [x] Generate SHA-256 checksums.
+- [x] Generate dependency inventory/SBOM.
+- [x] Generate license inventory.
+- [x] Include release/version metadata in `daguard version`.
+- [x] Add provenance/signature mechanism selected by the team.
+- [x] Verify artifacts in CI before publishing.
 
 ## 7.3 WSL installer
 
-- [ ] Create `scripts/install.sh`.
-- [ ] Support user-managed install to `~/.local/bin/daguard` for pilot deployments.
-- [ ] Support managed install to `/usr/local/bin/daguard`.
-- [ ] Support organization policy install to `/etc/daguard/policy.json`.
-- [ ] Verify binary checksum before installation.
-- [ ] Set appropriate file ownership and permissions.
-- [ ] Refuse to install organization policy from an unverified artifact.
-- [ ] Do not install Rust, Python, Node, or other runtime dependencies.
-- [ ] Do not compile source during normal installation.
+- [x] Create `scripts/install.sh`.
+- [x] Support user-managed install to `~/.local/bin/daguard` for pilot deployments.
+- [x] Support managed install to `/usr/local/bin/daguard`.
+- [x] Support organization policy install to `/etc/daguard/policy.json`.
+- [x] Verify binary checksum before installation.
+- [x] Set appropriate file ownership and permissions.
+- [x] Refuse to install organization policy from an unverified artifact.
+- [x] Do not install Rust, Python, Node, or other runtime dependencies.
+- [x] Do not compile source during normal installation.
 
 ## 7.4 Uninstaller and upgrade path
 
-- [ ] Create `scripts/uninstall.sh`.
-- [ ] Define safe upgrade procedure.
-- [ ] Preserve organization policy unless explicitly replacing it.
-- [ ] Prevent partial upgrades where binary and mandatory policy schema are incompatible.
-- [ ] Document rollback procedure.
+- [x] Create `scripts/uninstall.sh`.
+- [x] Define safe upgrade procedure.
+- [x] Preserve organization policy unless explicitly replacing it.
+- [x] Prevent partial upgrades where binary and mandatory policy schema are incompatible.
+- [x] Document rollback procedure.
 
 ## 7.5 Managed agent configuration
 
-- [ ] Provide Codex hook configuration template.
-- [ ] Provide Cursor hook configuration template.
-- [ ] Provide OpenCode plugin installation instructions.
-- [ ] Prefer absolute paths to trusted installed executable.
-- [ ] Document how central management should prevent repository-local disablement where supported.
+- [x] Provide Codex hook configuration template.
+- [x] Provide Cursor hook configuration template.
+- [x] Provide OpenCode plugin installation instructions.
+- [x] Prefer absolute paths to trusted installed executable.
+- [x] Document how central management should prevent repository-local disablement where supported.
 
 ## 7.6 WSL/DDEV integration tests
 
-- [ ] Test installation on clean WSL environment.
-- [ ] Test `daguard version` immediately after installation.
-- [ ] Test `daguard doctor` immediately after installation.
-- [ ] Test with DDEV stopped.
-- [ ] Test with DDEV running.
-- [ ] Test ordinary `ddev start`.
-- [ ] Test ordinary `ddev drush cr`.
-- [ ] Test blocked `ddev drush php:eval`.
-- [ ] Test blocked protected-file read.
-- [ ] Test blocked protected-file write.
-- [ ] Test uninstall/rollback.
+- [x] Test installation on clean WSL environment.
+- [x] Test `daguard version` immediately after installation.
+- [x] Test `daguard doctor` immediately after installation.
+- [x] Test with DDEV stopped.
+- [x] Test with DDEV running.
+- [x] Test ordinary `ddev start`.
+- [x] Test ordinary `ddev drush cr`.
+- [x] Test blocked `ddev drush php:eval`.
+- [x] Test blocked protected-file read.
+- [x] Test blocked protected-file write.
+- [x] Test uninstall/rollback.
 
 ### Phase 7 exit criteria
 
-- [ ] Team member can install `daguard` in WSL from release artifacts without a language runtime or compiler.
-- [ ] Linux release is self-contained according to the project's packaging definition.
-- [ ] DDEV is not required for the guard to start or evaluate policy.
-- [ ] Release contains checksums and SBOM.
+- [x] Team member can install `daguard` in WSL from release artifacts without a language runtime or compiler.
+- [x] Linux release is self-contained according to the project's packaging definition.
+- [x] DDEV is not required for the guard to start or evaluate policy.
+- [x] Release contains checksums and SBOM.
 
 ---
 

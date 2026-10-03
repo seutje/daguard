@@ -26,12 +26,7 @@ pub(crate) struct DoctorReport {
 
 pub(crate) fn diagnose(options: &DoctorOptions) -> DoctorReport {
     let mut lines = Vec::new();
-    lines.push(format!(
-        "[OK] daguard {} ({}-{})",
-        env!("CARGO_PKG_VERSION"),
-        env::consts::ARCH,
-        env::consts::OS
-    ));
+    lines.push(format!("[OK] {}", crate::version::summary()));
 
     let executable = env::current_exe()
         .and_then(fs::canonicalize)

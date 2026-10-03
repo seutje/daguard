@@ -9,6 +9,7 @@ mod platform;
 mod policy;
 mod project;
 mod shell;
+mod version;
 
 fn main() {
     std::process::exit(cli::run());

@@ -1369,6 +1369,12 @@ daguard-<version>-x86_64-unknown-linux-musl.tar.gz
 SHA256SUMS
 ```
 
+The Linux archive also contains the default organization policy, installer and
+uninstaller, managed agent templates, the OpenCode bridge, a CycloneDX JSON SBOM,
+Cargo dependency inventory, license inventory, and an internal `SHA256SUMS` that
+the installer verifies before running any bundled executable. The release-level
+`SHA256SUMS` authenticates the compressed archive.
+
 Optional release set:
 
 ```text
@@ -1378,7 +1384,11 @@ daguard-<version>-x86_64-apple-darwin.tar.gz
 daguard-<version>-x86_64-pc-windows-msvc.zip
 ```
 
-Where organizational tooling permits, release artifacts SHOULD also be signed. Checksums/signatures must be published through the same trusted release process as the binaries.
+Tagged releases use GitHub artifact attestations as the v1 provenance/signature
+mechanism. The attestation binds the archive digest to the repository's trusted
+GitHub Actions identity using OIDC. Checksums and attestations are published by
+the same release workflow as the archive; consumers must authenticate that
+release channel before trusting its checksum file.
 
 ### 24.3 WSL installer
 
@@ -1393,6 +1403,12 @@ Where organizational tooling permits, release artifacts SHOULD also be signed. C
 7. optionally install supported agent hook configuration;
 8. run `daguard doctor`;
 9. run smoke tests.
+
+The implemented installer supports an explicit user-managed pilot and a
+root-owned managed layout. It stages and validates the new binary and effective
+policy before replacement, snapshots installed files, and restores that snapshot
+if a later installation step fails. Existing policy is preserved unless
+`--replace-policy` is explicitly supplied.
 
 It MUST NOT:
 
@@ -1510,6 +1526,12 @@ Recommended initial approach:
 ```
 
 from the trusted internal repository/tag.
+
+Upgrades reuse the same verified bundle installer. A release with an
+incompatible mandatory policy is rejected by the new binary before replacement.
+Rollback consists of running the previous verified immutable bundle; policy is
+preserved unless the operator explicitly requests replacement. Uninstall also
+preserves organization policy unless `--remove-policy` is given.
 
 Do not auto-download and auto-execute updates from the network in v1. Explicit upgrades are easier to audit and safer.
 
@@ -2211,7 +2233,13 @@ daguard-1.0.0-x86_64-unknown-linux-musl/
 ├── default-policy.json
 ├── install.sh
 ├── SHA256SUMS
-└── LICENSES/
+├── release.json
+├── config/
+├── integrations/opencode/
+└── inventory/
+    ├── sbom.cdx.json
+    ├── dependencies.json
+    └── licenses.json
 ```
 
 The installed executable should normally be:
@@ -2270,6 +2298,10 @@ Release CI SHOULD record:
 - dependency inventory / SBOM;
 - vulnerability audit result;
 - signature/provenance metadata where available.
+
+The executable's `version` command prints the package version, exact Rust target,
+build profile, Rust compiler version, Git SHA, `Cargo.lock` SHA-256, and provenance
+builder label. Release CI asserts those values before packaging.
 
 Developer machines consume the packaged artifact; they do not reproduce the build as part of normal installation.
 
