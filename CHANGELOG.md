@@ -8,6 +8,11 @@ once releases begin.
 
 ## [Unreleased]
 
+### Fixed
+
+- Eliminate a CI broken-pipe race in the enforcement test helper when the guard
+  rejects policy before reading stdin; retain exit-status and output assertions.
+
 ### Added
 
 - Initial Rust project structure and engineering controls.

@@ -34,7 +34,11 @@ fn run(args: &[&str], stdin: &[u8]) -> Output {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child.stdin.take().unwrap().write_all(stdin).unwrap();
+    if let Err(error) = child.stdin.take().unwrap().write_all(stdin) {
+        // CLI/configuration errors can exit before reading stdin. Collect the
+        // output so callers still assert the expected exit code and response.
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+    }
     child.wait_with_output().unwrap()
 }
 
@@ -197,6 +201,21 @@ fn invalid_mandatory_policy_never_emits_allow() {
         &["check", "--policy", &policy],
         &request("file_read", "README.md"),
     );
+    assert_eq!(output.status.code(), Some(3));
+    assert_eq!(output.stdout, Vec::<u8>::new());
+    assert_ne!(output.stderr, Vec::<u8>::new());
+}
+
+#[test]
+fn invalid_policy_exit_is_collected_when_stdin_exceeds_pipe_capacity() {
+    let policy = format!(
+        "{}/tests/fixtures/invalid-policy.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    // Exceed Linux pipe capacity so the write cannot finish before the guard
+    // rejects policy without reading stdin, regardless of process scheduling.
+    let input = vec![b' '; 2 * 1024 * 1024];
+    let output = run(&["check", "--policy", &policy], &input);
     assert_eq!(output.status.code(), Some(3));
     assert_eq!(output.stdout, Vec::<u8>::new());
     assert_ne!(output.stderr, Vec::<u8>::new());

@@ -704,6 +704,13 @@ require real team pilot evidence. Synthetic tests do not constitute a developer
 pilot; no real group deployment or pilot performance/compatibility measurement
 was performed by this change.
 
+CI regression follow-up (2026-10-03): The enforcement test helper now tolerates
+only `BrokenPipe` when policy rejection closes stdin before the parent writes.
+A large-input regression reproduced the original panic before the fix and now
+verifies configuration exit code 3 with no stdout. Formatting, strict Clippy,
+and the full locked Rust suite passed (137 tests). Enforcement behavior is
+unchanged; Section 10.1 checkboxes retain their commit/evidence gates.
+
 ## 10.2 Pilot deployment
 
 - [ ] Select a small representative developer group.
