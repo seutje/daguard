@@ -8,6 +8,8 @@ once releases begin.
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-10-03
+
 ### Added
 
 - Phase 13 preview support for native x86_64 Windows, including host-independent
