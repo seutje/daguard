@@ -750,7 +750,8 @@ adapter contracts, or dependencies changed.
 
 - [ ] Review every false positive by rule ID.
 - [ ] Add narrowly scoped exceptions only where justified.
-- [ ] Add missing Drupal-specific sensitive tables/paths identified by the team.
+- [x] Add missing Drupal-specific sensitive SQL tables identified by the team,
+  including bounded `*` glob support for Drupal field-table families.
 - [ ] Document accepted risk for operations left allowed.
 - [ ] Update tests before changing enforcement semantics.
 

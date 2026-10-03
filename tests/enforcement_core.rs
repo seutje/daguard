@@ -737,6 +737,87 @@ fn dangerous_drush_and_sql_are_denied_directly_and_through_ddev() {
 }
 
 #[test]
+fn default_policy_protects_configured_sensitive_sql_tables_and_globs() {
+    let policy: Value =
+        serde_json::from_slice(include_bytes!("../policy/default-policy.json")).unwrap();
+    let configured = policy["sql"]["sensitive_tables"].as_array().unwrap();
+    let expected = [
+        "users",
+        "users_field_data",
+        "users_data",
+        "user__*",
+        "sessions",
+        "key_value",
+        "key_value_expire",
+        "flood",
+        "comment",
+        "comment_field_data",
+        "comment__*",
+        "webform_submission",
+        "webform_submission_data",
+        "webform_submission_log",
+        "commerce_order",
+        "commerce_order__*",
+        "commerce_order_item",
+        "commerce_order_item__*",
+        "commerce_payment",
+        "commerce_payment__*",
+        "commerce_payment_method",
+        "commerce_payment_method__*",
+        "profile",
+        "profile_field_data",
+        "profile_revision",
+        "profile_field_revision",
+        "profile__*",
+        "profile_revision__*",
+        "commerce_shipment",
+        "commerce_shipment__*",
+    ];
+    assert_eq!(
+        configured,
+        &expected.map(Value::from),
+        "the shipped sensitive-table policy must remain explicit and reviewable"
+    );
+
+    let policy_path = format!("{}/policy/default-policy.json", env!("CARGO_MANIFEST_DIR"));
+    for table in [
+        "users_data",
+        "user__roles",
+        "flood",
+        "comment__body",
+        "webform_submission_log",
+        "commerce_order__billing_profile",
+        "commerce_order_item__field_data",
+        "commerce_payment__remote_id",
+        "commerce_payment_method__card",
+        "profile_field_revision",
+        "profile__address",
+        "profile_revision__address",
+        "commerce_shipment__items",
+        "site_commerce_shipment__items",
+    ] {
+        let command = format!("drush sql:query 'SELECT * FROM {table}'");
+        let output = run(
+            &["check", "--policy", &policy_path],
+            &shell_request(&command),
+        );
+        let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(decision["decision"], "deny", "{table}");
+        assert_eq!(decision["rule_id"], "sql.read.sensitive_table", "{table}");
+    }
+
+    for table in ["user_account", "commentary", "commerce_order_archive"] {
+        let command = format!("drush sql:query 'SELECT * FROM {table}'");
+        let output = run(
+            &["check", "--policy", &policy_path],
+            &shell_request(&command),
+        );
+        let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(decision["decision"], "allow", "{table}");
+    }
+}
+
+#[test]
 fn chaining_nested_shells_force_push_and_shell_escapes_are_denied() {
     let cases = [
         "git status && drush ev 'print 1'",

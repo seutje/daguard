@@ -134,8 +134,12 @@ configuration error and never emits an allow decision.
 
 Documented optional policy fields default safely when absent. Unknown fields are
 rejected so a misspelled mandatory setting cannot silently weaken enforcement.
-Organization and project policies may extend `sql.sensitive_tables` with bare
-table names; built-in Drupal-sensitive tables remain protected regardless.
+Organization and project policies may extend `sql.sensitive_tables` with table
+name patterns. `*` is the only glob metacharacter and matches zero or more table
+name characters; for example, `user__*` covers Drupal user field tables. Exact
+names continue to work, and Drupal database prefixes are recognized for both
+forms. A pattern must contain at least one alphanumeric character. Built-in
+Drupal-sensitive tables remain protected regardless.
 
 Shell inspection recognizes common quoting, chaining, pipelines, redirects,
 `sh -c`/`bash -c`, and DDEV wrappers without executing commands. It denies

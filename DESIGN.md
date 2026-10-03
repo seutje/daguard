@@ -898,9 +898,34 @@ Example organization policy:
     "sensitive_tables": [
       "users",
       "users_field_data",
+      "users_data",
+      "user__*",
       "sessions",
       "key_value",
-      "key_value_expire"
+      "key_value_expire",
+      "flood",
+      "comment",
+      "comment_field_data",
+      "comment__*",
+      "webform_submission",
+      "webform_submission_data",
+      "webform_submission_log",
+      "commerce_order",
+      "commerce_order__*",
+      "commerce_order_item",
+      "commerce_order_item__*",
+      "commerce_payment",
+      "commerce_payment__*",
+      "commerce_payment_method",
+      "commerce_payment_method__*",
+      "profile",
+      "profile_field_data",
+      "profile_revision",
+      "profile_field_revision",
+      "profile__*",
+      "profile_revision__*",
+      "commerce_shipment",
+      "commerce_shipment__*"
     ]
   },
   "network": {
@@ -1187,12 +1212,42 @@ Initial conservative list:
 ```text
 users
 users_field_data
+users_data
+user__*
 sessions
 key_value
 key_value_expire
+flood
+comment
+comment_field_data
+comment__*
+webform_submission
+webform_submission_data
+webform_submission_log
+commerce_order
+commerce_order__*
+commerce_order_item
+commerce_order_item__*
+commerce_payment
+commerce_payment__*
+commerce_payment_method
+commerce_payment_method__*
+profile
+profile_field_data
+profile_revision
+profile_field_revision
+profile__*
+profile_revision__*
+commerce_shipment
+commerce_shipment__*
 ```
 
-Projects can extend the list for tables containing personal information, tokens, payment data, submissions, or customer data.
+Projects can extend the list for tables containing personal information, tokens,
+payment data, submissions, or customer data. Entries support exact table names
+or a bounded glob form where `*` is the only metacharacter and matches zero or
+more table-name characters. Matching also recognizes Drupal database prefixes.
+Patterns must contain at least one alphanumeric character, preventing a bare
+`*` from accidentally classifying every table as sensitive.
 
 Do not assume Drupal table prefixes are absent. Matching should support optional configured prefixes.
 

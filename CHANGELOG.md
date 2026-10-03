@@ -8,6 +8,12 @@ once releases begin.
 
 ## [Unreleased]
 
+### Added
+
+- Support `*` globs in `sql.sensitive_tables`, including Drupal-prefixed table
+  names, and expand the shipped policy's sensitive Drupal, Webform, Commerce,
+  Profile, session, flood, and comment table coverage.
+
 ### Fixed
 
 - Apply organization and project path deny lists to recognized shell file

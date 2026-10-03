@@ -75,7 +75,55 @@ fn sensitive_table(word: &str, configured: &[&str]) -> bool {
     .iter()
     .copied()
     .chain(configured.iter().copied())
-    .any(|name| table == *name || table.ends_with(&format!("_{name}")))
+    .any(|pattern| {
+        table_name_matches(&table, pattern, false) || table_name_matches(&table, pattern, true)
+    })
+}
+
+/// Match the policy's deliberately small table glob syntax: `*` is the only
+/// metacharacter and matches zero or more table-name characters. In prefixed
+/// mode the virtual pattern `*_<pattern>` recognizes Drupal database prefixes
+/// without repeatedly scanning every suffix of an untrusted table token.
+fn table_name_matches(table: &str, pattern: &str, prefixed: bool) -> bool {
+    let table = table.as_bytes();
+    let pattern = pattern.as_bytes();
+    let pattern_len = pattern.len() + usize::from(prefixed) * 2;
+    let pattern_byte = |index: usize| {
+        if prefixed && index == 0 {
+            b'*'
+        } else if prefixed && index == 1 {
+            b'_'
+        } else {
+            pattern[index - usize::from(prefixed) * 2]
+        }
+    };
+    let (mut table_index, mut pattern_index) = (0, 0);
+    let (mut star_index, mut star_table_index) = (None, 0);
+
+    while table_index < table.len() {
+        if pattern_index < pattern_len
+            && pattern_byte(pattern_index) != b'*'
+            && pattern_byte(pattern_index).eq_ignore_ascii_case(&table[table_index])
+        {
+            table_index += 1;
+            pattern_index += 1;
+        } else if pattern_index < pattern_len && pattern_byte(pattern_index) == b'*' {
+            star_index = Some(pattern_index);
+            pattern_index += 1;
+            star_table_index = table_index;
+        } else if let Some(star) = star_index {
+            star_table_index += 1;
+            table_index = star_table_index;
+            pattern_index = star + 1;
+        } else {
+            return false;
+        }
+    }
+
+    while pattern_index < pattern_len && pattern_byte(pattern_index) == b'*' {
+        pattern_index += 1;
+    }
+    pattern_index == pattern_len
 }
 
 fn lexical_words(sql: &str) -> Option<Vec<String>> {
@@ -181,5 +229,22 @@ mod tests {
                 .rule_id,
             "sql.read.sensitive_table"
         );
+        for table in [
+            "user__roles",
+            "site_user__roles",
+            "commerce_order__field_data",
+        ] {
+            assert_eq!(
+                analyze(
+                    &format!("SELECT * FROM {table}"),
+                    &["user__*", "commerce_order__*"]
+                )
+                .unwrap()
+                .rule_id,
+                "sql.read.sensitive_table",
+                "{table}"
+            );
+        }
+        assert_eq!(analyze("SELECT * FROM user_profile", &["user__*"]), None);
     }
 }

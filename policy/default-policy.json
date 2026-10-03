@@ -17,6 +17,7 @@
     ],
     "deny_write": [
       "**/web/core/**",
+      "**/www/core/**",
       "**/core/**",
       "**/vendor/**",
       "**/web/modules/contrib/**",
@@ -35,7 +36,38 @@
     ]
   },
   "sql": {
-    "sensitive_tables": []
+    "sensitive_tables": [
+      "users",
+      "users_field_data",
+      "users_data",
+      "user__*",
+      "sessions",
+      "key_value",
+      "key_value_expire",
+      "flood",
+      "comment",
+      "comment_field_data",
+      "comment__*",
+      "webform_submission",
+      "webform_submission_data",
+      "webform_submission_log",
+      "commerce_order",
+      "commerce_order__*",
+      "commerce_order_item",
+      "commerce_order_item__*",
+      "commerce_payment",
+      "commerce_payment__*",
+      "commerce_payment_method",
+      "commerce_payment_method__*",
+      "profile",
+      "profile_field_data",
+      "profile_revision",
+      "profile_field_revision",
+      "profile__*",
+      "profile_revision__*",
+      "commerce_shipment",
+      "commerce_shipment__*"
+    ]
   },
   "rules": []
 }

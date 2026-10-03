@@ -262,9 +262,10 @@ impl Policy {
             || self.sql.sensitive_tables.iter().any(|table| {
                 table.is_empty()
                     || table.len() > 128
+                    || !table.bytes().any(|byte| byte.is_ascii_alphanumeric())
                     || !table
                         .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'*')
             })
         {
             return Err(PolicyError::Invalid(
@@ -1600,17 +1601,41 @@ mod tests {
     }
 
     #[test]
-    fn organization_and_project_can_add_sensitive_sql_tables() {
+    fn organization_and_project_can_add_sensitive_sql_table_patterns() {
         let organization = policy(
-            &json!({"schema":1,"sql":{"sensitive_tables":["customer_payments"]}}),
+            &json!({"schema":1,"sql":{"sensitive_tables":["customer_payments", "customer__*"]}}),
             PolicyKind::Organization,
         );
+        for command in [
+            "drush sql:query 'SELECT * FROM customer_payments'",
+            "drush sql:query 'SELECT * FROM customer__billing_address'",
+            "drush sql:query 'SELECT * FROM site_customer__billing_address'",
+        ] {
+            let decision = evaluate(&shell_request(command), Some(&organization), None).unwrap();
+            assert_eq!(decision.rule_id, "sql.read.sensitive_table", "{command}");
+        }
+
         let decision = evaluate(
-            &shell_request("drush sql:query 'SELECT * FROM customer_payments'"),
+            &shell_request("drush sql:query 'SELECT * FROM customer_profile'"),
             Some(&organization),
             None,
         )
         .unwrap();
-        assert_eq!(decision.rule_id, "sql.read.sensitive_table");
+        assert_eq!(decision.effect, DecisionEffect::Allow);
+    }
+
+    #[test]
+    fn sensitive_sql_table_patterns_reject_unsupported_globs() {
+        for pattern in ["*", "customer?", "customer-[0-9]"] {
+            let value = json!({"schema":1,"sql":{"sensitive_tables":[pattern]}});
+            assert!(
+                Policy::from_slice(
+                    &serde_json::to_vec(&value).unwrap(),
+                    PolicyKind::Organization
+                )
+                .is_err(),
+                "{pattern} must be rejected"
+            );
+        }
     }
 }
