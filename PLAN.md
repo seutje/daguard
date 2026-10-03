@@ -691,6 +691,19 @@ the existing design targets. No optimization or new dependency was needed.
 - [ ] Prevent project-local policy from enabling audit-only mode when organization enforcement is mandatory.
 - [ ] Log would-deny decisions without recording sensitive payload content.
 
+Implementation note (2026-10-03): Section 10.1 support is implemented in this
+change as organization-designated **candidate-rule** audit-only evaluation;
+mandatory organization rules, built-ins and project rules remain enforced.
+See `docs/pilot/README.md` and `docs/pilot/report-template.md` for deployment and
+evidence collection. Local validation passed: `cargo fmt --check`,
+`cargo clippy --all-targets --all-features -- -D warnings`, and
+`cargo test --locked` (136 tests, including eight new pilot integration tests).
+The implementation checkboxes remain open until the change is committed,
+following this plan's checklist rule. Deployment, tuning and exit criteria
+require real team pilot evidence. Synthetic tests do not constitute a developer
+pilot; no real group deployment or pilot performance/compatibility measurement
+was performed by this change.
+
 ## 10.2 Pilot deployment
 
 - [ ] Select a small representative developer group.

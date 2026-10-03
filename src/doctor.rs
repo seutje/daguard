@@ -169,7 +169,14 @@ fn inspect_policy(lines: &mut Vec<String>, path: &Path) {
         Ok(bytes) => {
             lines.push(format!("[OK] policy SHA-256: {}", audit::sha256(&bytes)));
             match Policy::from_slice(&bytes, PolicyKind::Organization) {
-                Ok(_) => lines.push("[OK] organization policy schema is valid".to_owned()),
+                Ok(policy) => {
+                    lines.push("[OK] organization policy schema is valid".to_owned());
+                    lines.push(if policy.audit_only() {
+                        "[WARN] mode: audit-only candidate rules; mandatory protections remain enforced"
+                    } else {
+                        "[INFO] mode: enforcement"
+                    }.to_owned());
+                }
                 Err(error) => {
                     lines.push(format!("[ERROR] organization policy is invalid: {error}"));
                 }

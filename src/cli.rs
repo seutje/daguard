@@ -143,13 +143,7 @@ fn evaluate_opencode_hook(args: &[String]) -> Result<opencode::Response, CliErro
     let bytes = read_bounded(None).map_err(|error| CliError::evaluation(error.to_string()))?;
     let request = opencode::normalize(&bytes)
         .map_err(|error| CliError::evaluation(format!("OpenCode adapter error: {error}")))?;
-    let decision = policy::evaluate(
-        &request,
-        options.organization.as_ref(),
-        options.project.as_ref(),
-    )
-    .map_err(|error| CliError::evaluation(error.to_string()))?;
-    write_audit(options.audit_log.as_deref(), &request, &decision, Some(1))?;
+    let decision = evaluate_and_audit(&options, &request, Some(1))?;
     Ok(opencode::render(&decision))
 }
 
@@ -158,13 +152,7 @@ fn evaluate_cursor_hook(args: &[String]) -> Result<cursor::Response, CliError> {
     let bytes = read_bounded(None).map_err(|error| CliError::evaluation(error.to_string()))?;
     let request = cursor::normalize(&bytes)
         .map_err(|error| CliError::evaluation(format!("Cursor adapter error: {error}")))?;
-    let decision = policy::evaluate(
-        &request,
-        options.organization.as_ref(),
-        options.project.as_ref(),
-    )
-    .map_err(|error| CliError::evaluation(error.to_string()))?;
-    write_audit(options.audit_log.as_deref(), &request, &decision, Some(1))?;
+    let decision = evaluate_and_audit(&options, &request, Some(1))?;
     Ok(cursor::render(&decision))
 }
 
@@ -173,13 +161,7 @@ fn evaluate_codex_hook(args: &[String]) -> Result<codex::Response, CliError> {
     let bytes = read_bounded(None).map_err(|error| CliError::evaluation(error.to_string()))?;
     let request = codex::normalize(&bytes)
         .map_err(|error| CliError::evaluation(format!("Codex adapter error: {error}")))?;
-    let decision = policy::evaluate(
-        &request,
-        options.organization.as_ref(),
-        options.project.as_ref(),
-    )
-    .map_err(|error| CliError::evaluation(error.to_string()))?;
-    write_audit(options.audit_log.as_deref(), &request, &decision, Some(1))?;
+    let decision = evaluate_and_audit(&options, &request, Some(1))?;
     Ok(codex::render(&decision))
 }
 
@@ -301,9 +283,12 @@ fn check(args: &[String]) -> Result<(), CliError> {
         read_bounded(input.as_deref()).map_err(|error| CliError::evaluation(error.to_string()))?;
     let request = CanonicalRequest::from_slice(&bytes)
         .map_err(|error| CliError::evaluation(error.to_string()))?;
-    let decision = policy::evaluate(&request, organization.as_ref(), project.as_ref())
-        .map_err(|error| CliError::evaluation(error.to_string()))?;
-    write_audit(audit_log.as_deref(), &request, &decision, None)?;
+    let options = EvaluationOptions {
+        organization,
+        project,
+        audit_log,
+    };
+    let decision = evaluate_and_audit(&options, &request, None)?;
     write_json(&decision)
 }
 
@@ -320,18 +305,52 @@ fn validate_managed(managed: bool, policy_path: Option<&Path>) -> Result<(), Cli
     Ok(())
 }
 
-fn write_audit(
-    path: Option<&Path>,
+fn evaluate_and_audit(
+    options: &EvaluationOptions,
     request: &CanonicalRequest,
-    decision: &crate::model::Decision,
     adapter_schema: Option<u16>,
-) -> Result<(), CliError> {
-    if let Some(path) = path {
-        audit::append(path, request, decision, None, adapter_schema).map_err(|error| {
-            CliError::evaluation(format!("could not append audit log: {error}"))
-        })?;
+) -> Result<crate::model::Decision, CliError> {
+    let audit_only = options
+        .organization
+        .as_ref()
+        .is_some_and(Policy::audit_only);
+    if audit_only && options.audit_log.is_none() {
+        return Err(CliError::config(
+            "audit-only evaluation requires --audit-log PATH",
+        ));
     }
-    Ok(())
+    let evaluated = policy::evaluate(
+        request,
+        options.organization.as_ref(),
+        options.project.as_ref(),
+    )
+    .map_err(|error| CliError::evaluation(error.to_string()))?;
+    let enforced = if audit_only {
+        eprintln!(
+            "daguard: audit-only candidate evaluation; mandatory protections remain enforced"
+        );
+        policy::enforce(
+            request,
+            options.organization.as_ref(),
+            options.project.as_ref(),
+        )
+        .map_err(|error| CliError::evaluation(error.to_string()))?
+    } else {
+        evaluated.clone()
+    };
+    if let Some(path) = options.audit_log.as_deref() {
+        audit::append(
+            path,
+            request,
+            &evaluated,
+            &enforced,
+            audit_only,
+            None,
+            adapter_schema,
+        )
+        .map_err(|error| CliError::evaluation(format!("could not append audit log: {error}")))?;
+    }
+    Ok(enforced)
 }
 
 fn required_path(args: &[String], index: usize, flag: &str) -> Result<PathBuf, CliError> {

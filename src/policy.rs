@@ -15,7 +15,7 @@ use crate::model::{
 use crate::paths::{self, PathPattern};
 use crate::{analyzers, shell};
 
-pub(crate) const POLICY_SCHEMA_VERSION: u16 = 1;
+pub(crate) const POLICY_SCHEMA_VERSION: u16 = 2;
 const MAX_POLICY_BYTES: u64 = 1024 * 1024;
 const MAX_RULES: usize = 1_024;
 const MAX_PATTERNS_PER_RULE: usize = 256;
@@ -97,6 +97,10 @@ pub(crate) enum PolicyKind {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Policy {
     schema: u16,
+    /// Only the organization can designate its own candidate rules as telemetry.
+    /// Path protections, analyzer rules, defaults and project rules stay enforced.
+    #[serde(default, deserialize_with = "deserialize_audit_only_rules")]
+    audit_only_rules: Option<Vec<String>>,
     #[serde(default)]
     defaults: Defaults,
     #[serde(default)]
@@ -105,6 +109,14 @@ pub(crate) struct Policy {
     sql: SqlPolicy,
     #[serde(default)]
     rules: Vec<Rule>,
+}
+
+// Absence means enforcement; a present null/type error is invalid configuration.
+fn deserialize_audit_only_rules<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Vec::<String>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -193,11 +205,38 @@ impl Policy {
     }
 
     fn validate(&self, kind: PolicyKind) -> Result<(), PolicyError> {
-        if self.schema != POLICY_SCHEMA_VERSION {
+        if !matches!(self.schema, 1 | POLICY_SCHEMA_VERSION) {
             return Err(PolicyError::Invalid("unsupported policy schema version"));
         }
         if self.rules.len() > MAX_RULES {
             return Err(PolicyError::Invalid("policy contains too many rules"));
+        }
+        if let Some(observed) = &self.audit_only_rules {
+            if self.schema == 1 {
+                return Err(PolicyError::Invalid(
+                    "audit-only rules require policy schema 2",
+                ));
+            }
+            if matches!(kind, PolicyKind::Project) {
+                return Err(PolicyError::Weakening(
+                    "project policy cannot enable audit-only evaluation",
+                ));
+            }
+            let mut unique = HashSet::new();
+            if observed.len() > MAX_RULES
+                || observed.iter().any(|id| {
+                    !unique.insert(id)
+                        || explain(id).is_some()
+                        || !self
+                            .rules
+                            .iter()
+                            .any(|rule| rule.id == *id && rule.effect != DecisionEffect::Allow)
+                })
+            {
+                return Err(PolicyError::Invalid(
+                    "audit-only IDs must name unique organization candidate deny/ask rules",
+                ));
+            }
         }
         if matches!(kind, PolicyKind::Project) {
             if self.defaults.unknown_tool.is_some() {
@@ -253,6 +292,12 @@ impl Policy {
         }
         Ok(())
     }
+
+    pub(crate) fn audit_only(&self) -> bool {
+        self.audit_only_rules
+            .as_ref()
+            .is_some_and(|rules| !rules.is_empty())
+    }
 }
 
 fn validate_patterns(patterns: &[String]) -> Result<(), PolicyError> {
@@ -282,6 +327,25 @@ pub(crate) fn evaluate(
     organization: Option<&Policy>,
     project: Option<&Policy>,
 ) -> Result<Decision, PolicyError> {
+    evaluate_inner(request, organization, project, false)
+}
+
+/// Re-evaluate while omitting only organization-designated candidate rules.
+/// Never convert a winning deny directly to allow: other mandatory rules may match.
+pub(crate) fn enforce(
+    request: &CanonicalRequest,
+    organization: Option<&Policy>,
+    project: Option<&Policy>,
+) -> Result<Decision, PolicyError> {
+    evaluate_inner(request, organization, project, true)
+}
+
+fn evaluate_inner(
+    request: &CanonicalRequest,
+    organization: Option<&Policy>,
+    project: Option<&Policy>,
+    omit_candidates: bool,
+) -> Result<Decision, PolicyError> {
     request
         .validate()
         .map_err(|_| PolicyError::Invalid("invalid canonical request"))?;
@@ -290,34 +354,12 @@ pub(crate) fn evaluate(
         .chain(project)
         .flat_map(|policy| policy.sql.sensitive_tables.iter().map(String::as_str))
         .collect::<Vec<_>>();
-    let mut command_decision = None;
-    if matches!(
-        request.tool.capability,
-        Capability::ShellExecute | Capability::Unknown | Capability::McpCall
-    ) {
-        let commands = request.candidate_commands();
-        if request.tool.capability == Capability::ShellExecute && commands.is_empty() {
-            return Err(PolicyError::Invalid(
-                "shell request is missing its command fact",
-            ));
-        }
-        let mut decisions = Vec::new();
-        for command in commands {
-            if let Some(decision) = evaluate_shell(command, &request.cwd, &sensitive_tables, 0)? {
-                decisions.push(decision);
-            }
-        }
-        if let Some(decision) = decisions
-            .into_iter()
-            .max_by_key(|decision| effect_rank(decision.effect))
-        {
-            // An approval-class command must still go through file policy below;
-            // a secret path may never be weakened by an earlier ask decision.
-            if decision.effect == DecisionEffect::Deny {
-                return Ok(decision);
-            }
-            command_decision = Some(decision);
-        }
+    let command_decision = request_command_decision(request, &sensitive_tables)?;
+    // A candidate file rule must never replace a mandatory command denial.
+    if let Some(decision) = &command_decision
+        && decision.effect == DecisionEffect::Deny
+    {
+        return Ok(decision.clone());
     }
     let normalized_paths = request
         .candidate_paths()
@@ -334,12 +376,21 @@ pub(crate) fn evaluate(
                 &normalized_paths,
                 policy,
                 PolicyLayer::Organization,
+                omit_candidates,
             )
         })
         .transpose()?
         .flatten();
     let project_decision = project
-        .map(|policy| evaluate_policy(request, &normalized_paths, policy, PolicyLayer::Project))
+        .map(|policy| {
+            evaluate_policy(
+                request,
+                &normalized_paths,
+                policy,
+                PolicyLayer::Project,
+                false,
+            )
+        })
         .transpose()?
         .flatten();
     let organization_decision = match (organization_decision, command_decision.as_ref()) {
@@ -382,6 +433,33 @@ pub(crate) fn evaluate(
         policy_layer: PolicyLayer::Default,
         details: Evidence { matched_path: None },
     })
+}
+
+fn request_command_decision(
+    request: &CanonicalRequest,
+    sensitive_tables: &[&str],
+) -> Result<Option<Decision>, PolicyError> {
+    if !matches!(
+        request.tool.capability,
+        Capability::ShellExecute | Capability::Unknown | Capability::McpCall
+    ) {
+        return Ok(None);
+    }
+    let commands = request.candidate_commands();
+    if request.tool.capability == Capability::ShellExecute && commands.is_empty() {
+        return Err(PolicyError::Invalid(
+            "shell request is missing its command fact",
+        ));
+    }
+    let mut decisions = Vec::new();
+    for command in commands {
+        if let Some(decision) = evaluate_shell(command, &request.cwd, sensitive_tables, 0)? {
+            decisions.push(decision);
+        }
+    }
+    Ok(decisions
+        .into_iter()
+        .max_by_key(|decision| effect_rank(decision.effect)))
 }
 
 fn evaluate_shell(
@@ -669,6 +747,7 @@ fn evaluate_policy(
     paths: &[String],
     policy: &Policy,
     layer: PolicyLayer,
+    omit_candidates: bool,
 ) -> Result<Option<Decision>, PolicyError> {
     if (request.tool.capability.is_read()
         || matches!(
@@ -701,6 +780,14 @@ fn evaluate_policy(
     let mut strongest: Option<&Rule> = None;
     let mut matched_path = None;
     for rule in &policy.rules {
+        if omit_candidates
+            && policy
+                .audit_only_rules
+                .as_ref()
+                .is_some_and(|ids| ids.contains(&rule.id))
+        {
+            continue;
+        }
         if !rule.matcher.capabilities.is_empty()
             && !rule.matcher.capabilities.contains(&request.tool.capability)
         {

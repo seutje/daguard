@@ -317,3 +317,21 @@ lockfile and does not add dependencies to the shipped guard. A bounded local run
 cargo fetch --manifest-path fuzz/Cargo.toml --locked
 scripts/fuzz.sh 30
 ```
+
+## Audit-only candidate pilot (Phase 10)
+
+[The pilot runbook](docs/pilot/README.md) covers selecting developers, configuring
+hooks/logging, measuring workflows, reviewing false positives and restoring full
+enforcement. Policy schema 2 lets the organization owner name its own new
+candidate deny/ask rules in `audit_only_rules`. All other protections, including
+project policy and built-in security rules, remain enforced. There is no CLI
+switch to disable mandatory enforcement. Pilot mode requires `--audit-log PATH`;
+`doctor` and invocation diagnostics identify the mode. Schema-1 policies continue
+to enforce every rule.
+
+Audit events now use schema 2: `decision`/`rule_id` describe evaluated policy,
+while `enforcement_decision`/`enforcement_rule_id` describe the actual canonical
+response decision. `mode` distinguishes enforcing and candidate audit-only
+runs. Native adapter response schemas are unchanged. The
+[report template](docs/pilot/report-template.md) requires real pilot evidence;
+automated synthetic replay does not establish team acceptance.

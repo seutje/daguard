@@ -918,6 +918,32 @@ new schema version when they change the accepted policy contract.
 
 ---
 
+### 14.1 Candidate-rule audit-only pilot (schema 2)
+
+Policy schema 1 remains supported with its existing enforcing semantics. Schema 2
+adds an optional organization-only `audit_only_rules` array of unique IDs naming
+that organization's explicitly configured deny/ask candidate rules. Unknown IDs,
+built-in/registered rule IDs, allow-rule IDs, and oversized lists are rejected.
+Project policies cannot supply this setting. Absent or empty arrays enforce all
+rules. The shipped organization policy remains schema 1 and fully enforcing.
+
+Evaluation first produces the ordinary policy decision. In pilot mode, the core
+also evaluates with only the named organization candidate rules omitted. This
+second evaluation supplies the actual response and still honors every other
+organization rule, project rule, path deny list, configured SQL sensitive table,
+unknown-tool default and built-in analyzer/file protection. A candidate winning
+the first evaluation cannot hide another mandatory denial in the second.
+Candidate designation is an explicit organization-owner decision; it is not an
+exception mechanism for mandatory controls. There is no runtime mode override.
+
+Pilot invocations require a working `--audit-log` destination before an allow
+response can be emitted. Errors and malformed requests remain fail closed.
+Diagnostics and `doctor` identify pilot mode; native adapter/canonical decision
+protocols retain their existing schemas. The pilot observes only designated
+candidate rules, rather than suppressing mandatory enforcement. See
+[the pilot runbook](docs/pilot/README.md) for real developer evidence gates.
+
+
 ## 15. Path handling
 
 Path handling is security-sensitive and must be centralized.
@@ -1596,7 +1622,10 @@ Example event:
 
 ```json
 {
-  "schema": 1,
+  "schema": 2,
+  "mode": "enforce",
+  "enforcement_decision": "deny",
+  "enforcement_rule_id": "drupal.secret.settings_php",
   "timestamp_unix_ms": 1791016872000,
   "guard_version": "0.1.0",
   "agent": "cursor",
@@ -1611,7 +1640,17 @@ Example event:
 }
 ```
 
-Audit logging is opt-in per invocation through `--audit-log PATH`. The event
+Audit schema 2 adds `mode` (`enforce` or `audit_only`),
+`enforcement_decision`, and `enforcement_rule_id`. Existing `decision` and rule
+metadata describe the full evaluated policy; the new fields describe the
+canonical decision used to render the actual response. In enforcement mode the
+two decisions agree. A candidate would-deny that is permitted records evaluated
+`deny` with enforcement `allow`. Current adapters render canonical `ask` as deny.
+Only the winning evaluated/enforced rules are recorded; logs do not enumerate
+all matching rules. Consumers must distinguish schema 1 from schema 2 explicitly.
+
+Audit logging is opt-in per invocation through `--audit-log PATH`, and is
+required when organization candidate audit-only evaluation is enabled. The event
 schema uses a Unix-epoch millisecond timestamp so recording needs no locale,
 timezone database, or additional runtime service. Agent versions are recorded
 only when a trusted native payload supplies one; absent versions are omitted

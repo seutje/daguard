@@ -12,7 +12,7 @@ use std::os::unix::fs::OpenOptionsExt;
 
 use crate::model::{CanonicalRequest, Capability, Decision, DecisionEffect, PolicyLayer, Severity};
 
-pub(crate) const AUDIT_SCHEMA_VERSION: u16 = 1;
+pub(crate) const AUDIT_SCHEMA_VERSION: u16 = 2;
 
 /// A deliberately small event that cannot contain raw tool input, commands,
 /// paths, file contents, SQL data, HTTP bodies, or decision evidence.
@@ -37,12 +37,17 @@ pub(crate) struct AuditEvent<'a> {
     category: &'a str,
     severity: Severity,
     policy_layer: PolicyLayer,
+    mode: &'static str,
+    enforcement_decision: DecisionEffect,
+    enforcement_rule_id: &'a str,
 }
 
 impl<'a> AuditEvent<'a> {
     pub(crate) fn new(
         request: &'a CanonicalRequest,
         decision: &'a Decision,
+        enforcement: &'a Decision,
+        audit_only: bool,
         agent_version: Option<&'a str>,
         adapter_schema: Option<u16>,
     ) -> io::Result<Self> {
@@ -66,6 +71,9 @@ impl<'a> AuditEvent<'a> {
             category: &decision.category,
             severity: decision.severity,
             policy_layer: decision.policy_layer,
+            mode: if audit_only { "audit_only" } else { "enforce" },
+            enforcement_decision: enforcement.effect,
+            enforcement_rule_id: &enforcement.rule_id,
         })
     }
 }
@@ -74,10 +82,19 @@ pub(crate) fn append(
     path: &Path,
     request: &CanonicalRequest,
     decision: &Decision,
+    enforcement: &Decision,
+    audit_only: bool,
     agent_version: Option<&str>,
     adapter_schema: Option<u16>,
 ) -> io::Result<()> {
-    let event = AuditEvent::new(request, decision, agent_version, adapter_schema)?;
+    let event = AuditEvent::new(
+        request,
+        decision,
+        enforcement,
+        audit_only,
+        agent_version,
+        adapter_schema,
+    )?;
     let mut line = serde_json::to_vec(&event).map_err(io::Error::other)?;
     line.push(b'\n');
 
@@ -163,7 +180,7 @@ mod tests {
         });
         let request = CanonicalRequest::from_slice(&serde_json::to_vec(&input).unwrap()).unwrap();
         let decision = policy::evaluate(&request, None, None).unwrap();
-        let event = AuditEvent::new(&request, &decision, None, Some(1)).unwrap();
+        let event = AuditEvent::new(&request, &decision, &decision, false, None, Some(1)).unwrap();
         let encoded = serde_json::to_string(&event).unwrap();
         let value: Value = serde_json::from_str(&encoded).unwrap();
 

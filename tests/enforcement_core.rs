@@ -251,7 +251,7 @@ fn configured_audit_log_appends_redacted_versioned_events() {
     let lines = contents.lines().collect::<Vec<_>>();
     assert_eq!(lines.len(), 2);
     let event: Value = serde_json::from_str(lines[0]).unwrap();
-    assert_eq!(event["schema"], 1);
+    assert_eq!(event["schema"], 2);
     assert_eq!(event["decision"], "deny");
     assert_eq!(event["rule_id"], "drupal.secret.settings_php");
     assert!(event["timestamp_unix_ms"].as_u64().is_some());
@@ -438,20 +438,36 @@ fn opencode_adapter_errors_emit_a_native_deny_response() {
 
 #[test]
 fn all_adapters_enforce_the_shared_scenario_matrix() {
+    assert_adapter_matrix(&[]);
+}
+
+#[test]
+fn pilot_keeps_the_shared_three_adapter_security_matrix() {
+    let audit = temporary_path("pilot-adapter-matrix.jsonl");
+    assert_adapter_matrix(&[
+        "--policy",
+        PILOT_POLICY,
+        "--audit-log",
+        audit.to_str().unwrap(),
+    ]);
+    fs::remove_file(audit).unwrap();
+}
+
+fn assert_adapter_matrix(extra_args: &[&str]) {
     let fixtures: Vec<AdapterParityFixture> =
         serde_json::from_str(include_str!("fixtures/adapter_parity.json")).unwrap();
     for fixture in fixtures {
         let codex = run_codex(
             &codex_request(&fixture.codex_tool, &fixture.codex_input),
-            &[],
+            extra_args,
         );
         let cursor = run_cursor(
             &cursor_request(&fixture.cursor_tool, &fixture.cursor_input),
-            &[],
+            extra_args,
         );
         let opencode = run_opencode(
             &opencode_request(&fixture.opencode_tool, &fixture.opencode_input),
-            &[],
+            extra_args,
         );
         for (adapter, output) in [("codex", codex), ("cursor", cursor), ("opencode", opencode)] {
             assert!(
@@ -705,5 +721,364 @@ fn state_changing_development_commands_require_approval() {
         "git push origin main",
     ] {
         assert_eq!(shell_decision(command)["decision"], "ask", "{command}");
+    }
+}
+
+const PILOT_POLICY: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/pilot/organization.json"
+);
+
+#[test]
+fn pilot_candidates_are_observed_while_overlapping_mandatory_rules_still_deny() {
+    let audit = temporary_path("pilot-overlap.jsonl");
+    let args = [
+        "check",
+        "--policy",
+        PILOT_POLICY,
+        "--audit-log",
+        audit.to_str().unwrap(),
+    ];
+    for path in [
+        "web/modules/custom/pilot/example.module",
+        "web/modules/custom/other/../pilot/example.module",
+    ] {
+        let output = run(&args, &request("file_write", path));
+        assert!(output.status.success());
+        let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(decision["decision"], "allow");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("audit-only"));
+    }
+    let output = run(
+        &args,
+        &request(
+            "file_write",
+            "web/modules/custom/pilot/private/example.module",
+        ),
+    );
+    let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(decision["decision"], "deny");
+    assert_eq!(decision["rule_id"], "organization.mandatory.private_write");
+    let output = run(
+        &args,
+        &request("file_write", "web/modules/custom/other/example.module"),
+    );
+    let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(decision["decision"], "allow");
+    let contents = fs::read_to_string(&audit).unwrap();
+    let events: Vec<Value> = contents
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(events.len(), 4);
+    for event in &events[..3] {
+        assert_eq!(event["schema"], 2);
+        assert_eq!(event["mode"], "audit_only");
+        assert_eq!(event["decision"], "deny");
+        assert_eq!(event["rule_id"], "pilot.candidate.custom_write");
+    }
+    assert_eq!(events[0]["enforcement_decision"], "allow");
+    assert_eq!(events[2]["enforcement_decision"], "deny");
+    assert_eq!(
+        events[2]["enforcement_rule_id"],
+        "organization.mandatory.private_write"
+    );
+    assert_eq!(events[3]["decision"], "allow");
+    for forbidden in [
+        "example.module",
+        "Synthetic candidate",
+        "/workspace/project",
+        "tool_input",
+    ] {
+        assert!(!contents.contains(forbidden));
+    }
+    fs::remove_file(audit).unwrap();
+}
+
+#[test]
+fn pilot_native_responses_match_all_adapter_goldens() {
+    for (adapter, tool, payload, golden) in [
+        (
+            "codex",
+            "write_file",
+            codex_request(
+                "write_file",
+                &json!({"path":"web/modules/custom/pilot/example.module", "content":"synthetic-secret-content"}),
+            ),
+            include_bytes!("fixtures/codex/responses/allow.json").as_slice(),
+        ),
+        (
+            "cursor",
+            "Write",
+            cursor_request(
+                "Write",
+                &json!({"file_path":"web/modules/custom/pilot/example.module", "contents":"synthetic-secret-content"}),
+            ),
+            include_bytes!("fixtures/cursor/responses/allow.json").as_slice(),
+        ),
+        (
+            "opencode",
+            "write",
+            opencode_request(
+                "write",
+                &json!({"filePath":"web/modules/custom/pilot/example.module", "content":"synthetic-secret-content"}),
+            ),
+            include_bytes!("fixtures/opencode/responses/allow.json").as_slice(),
+        ),
+    ] {
+        let audit = temporary_path(adapter);
+        let args = [
+            "--adapter",
+            adapter,
+            "--event",
+            "pre-tool",
+            "--policy",
+            PILOT_POLICY,
+            "--audit-log",
+            audit.to_str().unwrap(),
+        ];
+        let output = run(&args, &payload);
+        assert!(output.status.success(), "{adapter}/{tool}");
+        assert_eq!(
+            serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+            serde_json::from_slice::<Value>(golden).unwrap(),
+            "{adapter}/{tool}"
+        );
+        let contents = fs::read_to_string(&audit).unwrap();
+        let event: Value = serde_json::from_str(contents.trim()).unwrap();
+        assert_eq!(
+            event["rule_id"], "pilot.candidate.custom_write",
+            "{adapter}/{tool}"
+        );
+        assert_eq!(event["enforcement_decision"], "allow");
+        assert!(!contents.contains("synthetic-secret-content"));
+        fs::remove_file(audit).unwrap();
+    }
+}
+
+#[test]
+fn pilot_preserves_protected_path_matrix_and_command_security() {
+    let audit = temporary_path("pilot-protections.jsonl");
+    let args = [
+        "check",
+        "--policy",
+        PILOT_POLICY,
+        "--audit-log",
+        audit.to_str().unwrap(),
+    ];
+    let fixtures: Vec<Fixture> =
+        serde_json::from_str(include_str!("fixtures/protected_paths.json")).unwrap();
+    for fixture in fixtures {
+        let output = run(&args, &request(&fixture.capability, &fixture.path));
+        assert!(output.status.success());
+        let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(decision["decision"], fixture.decision);
+        assert_eq!(decision["rule_id"], fixture.rule_id);
+    }
+    for command in [
+        "sudo id",
+        "drush ev 'synthetic'",
+        "ddev drush php:eval 'synthetic'",
+        "git push -f",
+        "ddev exec git push --force",
+        "drush sql:query 'DELETE FROM synthetic_table'",
+        "ddev drush sql:query 'SELECT * FROM synthetic_private_records'",
+        "bash -c 'git status; git push --force'",
+        "echo $(synthetic)",
+    ] {
+        let output = run(&args, &shell_request(command));
+        assert!(output.status.success());
+        let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(decision["decision"], "deny", "{command}");
+    }
+    for command in [
+        "ddev start",
+        "ddev describe",
+        "ddev drush cr",
+        "ddev drush status",
+        "ddev composer validate",
+        "ddev composer audit",
+        "git status",
+        "git diff",
+    ] {
+        let output = run(&args, &shell_request(command));
+        let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(decision["decision"], "allow", "{command}");
+    }
+    let output = run(&args, &request("unknown", "README.md"));
+    let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(decision["decision"], "deny");
+    fs::remove_file(audit).unwrap();
+}
+
+#[test]
+fn pilot_cannot_be_enabled_by_project_or_misspelled_policy() {
+    let invalid = temporary_path("invalid-pilot-policy.json");
+    for value in [
+        json!({"schema":1,"audit_only_rules":[]}),
+        json!({"schema":1,"audit_only_rules":null}),
+        json!({"schema":2,"audit_only_rules":null}),
+        json!({"schema":2,"audit_only_rules":"all"}),
+        json!({"schema":2,"audit_only_rules":["missing.rule"]}),
+        json!({"schema":2,"audit_only_rules":["drupal.secret.env"]}),
+        json!({"schema":2,"audit_only_rule":[]}),
+        json!({"schema":3}),
+    ] {
+        fs::write(&invalid, serde_json::to_vec(&value).unwrap()).unwrap();
+        let output = run(
+            &["check", "--policy", invalid.to_str().unwrap()],
+            &request("file_read", "README.md"),
+        );
+        assert_eq!(output.status.code(), Some(3));
+        assert_eq!(output.stdout, Vec::<u8>::new());
+    }
+    for value in [
+        json!({"schema":2,"audit_only_rules":[]}),
+        serde_json::from_slice(include_bytes!("fixtures/pilot/organization.json")).unwrap(),
+    ] {
+        fs::write(&invalid, serde_json::to_vec(&value).unwrap()).unwrap();
+        let output = run(
+            &[
+                "check",
+                "--policy",
+                "policy/default-policy.json",
+                "--project-policy",
+                invalid.to_str().unwrap(),
+            ],
+            &request("file_read", "README.md"),
+        );
+        assert_eq!(output.status.code(), Some(3));
+        assert_eq!(output.stdout, Vec::<u8>::new());
+    }
+    fs::remove_file(invalid).unwrap();
+}
+
+#[test]
+fn pilot_telemetry_errors_and_malformed_input_fail_closed_for_all_adapters() {
+    for (adapter, payload, decision_key) in [
+        (
+            "codex",
+            codex_request("read_file", &json!({"path":"README.md"})),
+            "/hookSpecificOutput/permissionDecision",
+        ),
+        (
+            "cursor",
+            cursor_request("read_file", &json!({"path":"README.md"})),
+            "/permission",
+        ),
+        (
+            "opencode",
+            opencode_request("read", &json!({"filePath":"README.md"})),
+            "/decision",
+        ),
+    ] {
+        let base = [
+            "--adapter",
+            adapter,
+            "--event",
+            "pre-tool",
+            "--policy",
+            PILOT_POLICY,
+        ];
+        let output = run(&base, &payload);
+        let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(response.pointer(decision_key).unwrap(), "deny");
+        let mut args = base.to_vec();
+        args.extend(["--audit-log", env!("CARGO_MANIFEST_DIR")]);
+        for input in [payload.as_slice(), b"{".as_slice()] {
+            let output = run(&args, input);
+            let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(response.pointer(decision_key).unwrap(), "deny");
+        }
+    }
+    let output = run(
+        &["check", "--policy", PILOT_POLICY],
+        &request("file_read", "README.md"),
+    );
+    assert_eq!(output.status.code(), Some(3));
+    assert_eq!(output.stdout, Vec::<u8>::new());
+}
+
+#[test]
+fn ending_pilot_restores_candidate_enforcement_and_reports_mode() {
+    let policy = temporary_path("pilot-ended.json");
+    let mut value: Value =
+        serde_json::from_slice(include_bytes!("fixtures/pilot/organization.json")).unwrap();
+    value.as_object_mut().unwrap().remove("audit_only_rules");
+    fs::write(&policy, serde_json::to_vec(&value).unwrap()).unwrap();
+    let output = run(
+        &["check", "--policy", policy.to_str().unwrap()],
+        &request("file_write", "web/modules/custom/pilot/example.module"),
+    );
+    let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(decision["decision"], "deny");
+    assert_eq!(decision["rule_id"], "pilot.candidate.custom_write");
+    let output = run(&["doctor", "--policy", policy.to_str().unwrap()], b"");
+    assert!(String::from_utf8_lossy(&output.stdout).contains("mode: enforcement"));
+    let output = run(&["doctor", "--policy", PILOT_POLICY], b"");
+    assert!(String::from_utf8_lossy(&output.stdout).contains("mode: audit-only"));
+    fs::remove_file(policy).unwrap();
+}
+
+#[test]
+fn pilot_candidate_ask_does_not_weaken_project_or_path_protection() {
+    let organization = temporary_path("pilot-ask.json");
+    let project = temporary_path("pilot-project.json");
+    let audit = temporary_path("pilot-ask-audit.jsonl");
+    let mut value: Value =
+        serde_json::from_slice(include_bytes!("fixtures/pilot/organization.json")).unwrap();
+    value["rules"][0]["effect"] = json!("ask");
+    fs::write(&organization, serde_json::to_vec(&value).unwrap()).unwrap();
+    fs::write(
+        &project,
+        br#"{"schema":1,"paths":{"deny_write":["**/web/modules/custom/pilot/**"]}}"#,
+    )
+    .unwrap();
+    let path_request = request("file_write", "web/modules/custom/pilot/example.module");
+    let base = [
+        "check",
+        "--policy",
+        organization.to_str().unwrap(),
+        "--audit-log",
+        audit.to_str().unwrap(),
+    ];
+    let output = run(&base, &path_request);
+    let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(decision["decision"], "allow");
+    let event: Value = serde_json::from_str(fs::read_to_string(&audit).unwrap().trim()).unwrap();
+    assert_eq!(event["decision"], "ask");
+    assert_eq!(event["enforcement_decision"], "allow");
+    let mut args = base.to_vec();
+    args.extend(["--project-policy", project.to_str().unwrap()]);
+    let output = run(&args, &path_request);
+    let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(decision["decision"], "deny");
+    assert_eq!(decision["rule_id"], "project.path.deny_write");
+    value["paths"] = json!({"deny_write":["**/web/modules/custom/pilot/**"]});
+    fs::write(&organization, serde_json::to_vec(&value).unwrap()).unwrap();
+    let output = run(&base, &path_request);
+    let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(decision["decision"], "deny");
+    assert_eq!(decision["rule_id"], "organization.path.deny_write");
+    for observed in [
+        json!([
+            "pilot.candidate.custom_write",
+            "pilot.candidate.custom_write"
+        ]),
+        json!(["drupal.secret.env"]),
+    ] {
+        value["audit_only_rules"] = observed;
+        fs::write(&organization, serde_json::to_vec(&value).unwrap()).unwrap();
+        let output = run(&base, &path_request);
+        assert_eq!(output.status.code(), Some(3));
+        assert_eq!(output.stdout, Vec::<u8>::new());
+    }
+    value["audit_only_rules"] = json!(["pilot.candidate.custom_write"]);
+    value["rules"][0]["effect"] = json!("allow");
+    fs::write(&organization, serde_json::to_vec(&value).unwrap()).unwrap();
+    let output = run(&base, &path_request);
+    assert_eq!(output.status.code(), Some(3));
+    for path in [organization, project, audit] {
+        fs::remove_file(path).unwrap();
     }
 }

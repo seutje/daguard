@@ -40,3 +40,8 @@ once releases begin.
   command fields, shell newlines/continuations and combined shell flags,
   DDEV argv nesting, in-place sed writes, explicit protected-file transfers,
   and malformed/executable-comment/wrapped SQL. New deny rule: `sql.ambiguous`.
+- Phase 10 organization-controlled audit-only candidate rules in policy schema 2,
+  required fail-closed telemetry, audit schema 2 evaluated/enforced decisions,
+  explicit mode diagnostics, three-adapter regressions, and a developer pilot
+  runbook/evidence template. Mandatory and project protections remain enforced;
+  real developer deployment and tuning require team evidence.

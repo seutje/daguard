@@ -1,0 +1,28 @@
+{
+  "schema": 2,
+  "audit_only_rules": ["pilot.candidate.custom_write"],
+  "defaults": {"unknown_tool": "deny"},
+  "sql": {"sensitive_tables": ["synthetic_private_records"]},
+  "rules": [
+    {
+      "id": "pilot.candidate.custom_write",
+      "description": "Synthetic candidate custom-code write restriction.",
+      "effect": "deny",
+      "severity": "medium",
+      "match": {
+        "capabilities": ["file_write"],
+        "paths": ["**/web/modules/custom/pilot/**"]
+      }
+    },
+    {
+      "id": "organization.mandatory.private_write",
+      "description": "Synthetic mandatory private-code write restriction.",
+      "effect": "deny",
+      "severity": "high",
+      "match": {
+        "capabilities": ["file_write"],
+        "paths": ["**/web/modules/custom/pilot/private/**"]
+      }
+    }
+  ]
+}
