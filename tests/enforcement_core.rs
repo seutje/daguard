@@ -361,7 +361,7 @@ fn doctor_reports_installation_policy_hash_and_integrations() {
     );
     assert!(output.status.success());
     let report = String::from_utf8_lossy(&output.stdout);
-    assert!(report.contains("daguard 0.0.0"));
+    assert!(report.contains(&format!("daguard {}", env!("CARGO_PKG_VERSION"))));
     assert!(report.contains("policy SHA-256:"));
     assert!(report.contains("organization policy schema is valid"));
     assert!(report.contains("Codex hook valid"));

@@ -8,8 +8,13 @@ once releases begin.
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-10-03
+
 ### Fixed
 
+- Keep the root package version in `Cargo.lock` synchronized with `Cargo.toml`
+  so locked CI and release builds do not attempt to update the lockfile.
+- Make the installation diagnostics test follow the Cargo package version.
 - Codex permitted calls emit `{}` instead of unsupported bare `permissionDecision:
   allow` responses. Native deny/ask-to-deny responses are unchanged.
 - Explicit `rg` file reads now receive built-in path checks. The existing
