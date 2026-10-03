@@ -1,0 +1,1 @@
+ddev drush ev 'print(1)'

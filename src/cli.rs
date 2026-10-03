@@ -17,15 +17,59 @@ const EXIT_OK: i32 = 0;
 const EXIT_USAGE: i32 = 2;
 const EXIT_CONFIG: i32 = 3;
 const EXIT_EVALUATION: i32 = 4;
-const MAX_REQUEST_BYTES: u64 = 64 * 1024;
+const MAX_REQUEST_BYTES: u64 = crate::json::MAX_REQUEST_BYTES as u64;
 
 pub(crate) fn run() -> i32 {
-    match dispatch(env::args_os().skip(1).collect()) {
-        Ok(()) => EXIT_OK,
-        Err(error) => {
+    // The default panic hook can expose tool content via a panic payload.
+    std::panic::set_hook(Box::new(|_| {
+        let _ = writeln!(io::stderr(), "daguard: internal panic; operation blocked");
+    }));
+    let args = env::args_os().skip(1).collect::<Vec<_>>();
+    handle_result(&args, std::panic::catch_unwind(|| dispatch(args.clone())))
+}
+
+fn handle_result(
+    args: &[std::ffi::OsString],
+    result: std::thread::Result<Result<(), CliError>>,
+) -> i32 {
+    match result {
+        Ok(Ok(())) => EXIT_OK,
+        Ok(Err(error)) => {
             eprintln!("daguard: {}", error.message);
             error.exit_code
         }
+        Err(_) => {
+            // Evaluation completes before any response is written. Never reuse a
+            // partial decision or include the untrusted panic payload.
+            let Some(response) = panic_response(args) else {
+                return EXIT_EVALUATION;
+            };
+            if write_json(&response).is_ok() {
+                EXIT_OK
+            } else {
+                EXIT_EVALUATION
+            }
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum PanicResponse {
+    Codex(codex::Response),
+    Cursor(cursor::Response),
+    OpenCode(opencode::Response),
+}
+
+fn panic_response(args: &[std::ffi::OsString]) -> Option<PanicResponse> {
+    if args.first().is_none_or(|arg| arg != "--adapter") {
+        return None;
+    }
+    match args.get(1).and_then(|arg| arg.to_str()) {
+        Some("codex") => Some(PanicResponse::Codex(codex::error_response())),
+        Some("cursor") => Some(PanicResponse::Cursor(cursor::error_response())),
+        Some("opencode") => Some(PanicResponse::OpenCode(opencode::error_response())),
+        _ => None,
     }
 }
 
@@ -62,7 +106,7 @@ fn dispatch(args: Vec<std::ffi::OsString>) -> Result<(), CliError> {
 fn adapter_command(mut args: Vec<String>) -> Result<(), CliError> {
     let Some(adapter) = args.first().cloned() else {
         return Err(CliError::usage(
-            "usage: daguard --adapter <codex|cursor|opencode> --event pre-tool [--policy PATH] [--project-policy PATH] [--audit-log PATH]",
+            "usage: daguard --adapter <codex|cursor|opencode> --event pre-tool [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH]",
         ));
     };
     args.remove(0);
@@ -89,7 +133,7 @@ fn adapter_command(mut args: Vec<String>) -> Result<(), CliError> {
             }
         },
         _ => Err(CliError::usage(
-            "usage: daguard --adapter <codex|cursor|opencode> --event pre-tool [--policy PATH] [--project-policy PATH] [--audit-log PATH]",
+            "usage: daguard --adapter <codex|cursor|opencode> --event pre-tool [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH]",
         )),
     }
 }
@@ -147,12 +191,14 @@ struct EvaluationOptions {
 
 fn adapter_options(args: &[String], adapter_name: &str) -> Result<EvaluationOptions, CliError> {
     let mut event = None;
+    let mut managed = false;
     let mut organization = None;
     let mut project = None;
     let mut audit_log = None;
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
+            "--managed" => managed = true,
             "--event" => {
                 index += 1;
                 event = args.get(index).map(String::as_str);
@@ -182,6 +228,7 @@ fn adapter_options(args: &[String], adapter_name: &str) -> Result<EvaluationOpti
         )));
     }
 
+    validate_managed(managed, organization.as_deref())?;
     let organization = organization
         .as_deref()
         .map(|path| Policy::load(path, PolicyKind::Organization))
@@ -209,6 +256,7 @@ fn write_json(value: &impl Serialize) -> Result<(), CliError> {
 }
 
 fn check(args: &[String]) -> Result<(), CliError> {
+    let mut managed = false;
     let mut organization = None;
     let mut project = None;
     let mut input = None;
@@ -216,6 +264,7 @@ fn check(args: &[String]) -> Result<(), CliError> {
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
+            "--managed" => managed = true,
             "--policy" => {
                 index += 1;
                 organization = Some(required_path(args, index, "--policy")?);
@@ -237,6 +286,7 @@ fn check(args: &[String]) -> Result<(), CliError> {
         index += 1;
     }
 
+    validate_managed(managed, organization.as_deref())?;
     let organization = organization
         .as_deref()
         .map(|path| Policy::load(path, PolicyKind::Organization))
@@ -255,6 +305,19 @@ fn check(args: &[String]) -> Result<(), CliError> {
         .map_err(|error| CliError::evaluation(error.to_string()))?;
     write_audit(audit_log.as_deref(), &request, &decision, None)?;
     write_json(&decision)
+}
+
+fn validate_managed(managed: bool, policy_path: Option<&Path>) -> Result<(), CliError> {
+    if managed {
+        let path =
+            policy_path.ok_or_else(|| CliError::config("--managed requires --policy PATH"))?;
+        crate::integrity::managed_path(path)
+            .map_err(|error| CliError::config(error.to_string()))?;
+        let binary = env::current_exe().map_err(|error| CliError::config(error.to_string()))?;
+        crate::integrity::managed_path(&binary)
+            .map_err(|error| CliError::config(error.to_string()))?;
+    }
+    Ok(())
 }
 
 fn write_audit(
@@ -363,7 +426,7 @@ fn doctor(args: &[String]) -> Result<(), CliError> {
                 .map_err(|error| CliError::config(error.to_string()))?,
             "opencode" => opencode::validate_config(&bytes)
                 .map_err(|error| CliError::config(error.to_string()))?,
-            _ => unreachable!(),
+            _ => return Err(CliError::usage("unsupported doctor adapter")),
         }
         println!("{} hook configuration is valid for daguard", args[0]);
         return Ok(());
@@ -372,8 +435,14 @@ fn doctor(args: &[String]) -> Result<(), CliError> {
     let mut options = DoctorOptions::default();
     let mut index = 0;
     while index < args.len() {
+        if args[index] == "--managed" {
+            options.managed = true;
+            index += 1;
+            continue;
+        }
         let destination = match args[index].as_str() {
             "--policy" => &mut options.policy,
+            "--integrity-manifest" => &mut options.integrity_manifest,
             "--audit-log" => &mut options.audit_log,
             "--codex-hooks" => &mut options.codex_hooks,
             "--cursor-hooks" => &mut options.cursor_hooks,
@@ -395,7 +464,7 @@ fn doctor(args: &[String]) -> Result<(), CliError> {
 }
 
 fn help() -> &'static str {
-    "Usage:\n  daguard version\n  daguard check [--policy PATH] [--project-policy PATH] [--audit-log PATH] [FILE|-]\n  daguard explain <rule-id>\n  daguard policy lint [--layer organization|project] <path>\n  daguard doctor [--policy PATH] [--audit-log PATH] [--codex-hooks PATH] [--cursor-hooks PATH] [--opencode-config PATH]\n  daguard doctor <codex|cursor|opencode> <config.json>\n  daguard --adapter <codex|cursor|opencode> --event pre-tool [--policy PATH] [--project-policy PATH] [--audit-log PATH]\n\nPolicy precedence: built-in invariants, organization policy, project tightening, default.\nA lower layer can never override a higher-layer deny."
+    "Usage:\n  daguard version\n  daguard check [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [FILE|-]\n  daguard explain <rule-id>\n  daguard policy lint [--layer organization|project] <path>\n  daguard doctor [--managed] [--integrity-manifest PATH] [--policy PATH] [--audit-log PATH] [--codex-hooks PATH] [--cursor-hooks PATH] [--opencode-config PATH]\n  daguard doctor <codex|cursor|opencode> <config.json>\n  daguard --adapter <codex|cursor|opencode> --event pre-tool [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH]\n\nPolicy precedence: built-in invariants, organization policy, project tightening, default.\nA lower layer can never override a higher-layer deny."
 }
 
 struct CliError {
@@ -423,5 +492,38 @@ impl CliError {
             exit_code: EXIT_EVALUATION,
             message: message.into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn panic_boundary_returns_failure_or_a_native_deny() {
+        let result = std::panic::catch_unwind(|| panic!("synthetic-sensitive-panic-payload"));
+        assert!(result.is_err());
+        for adapter in ["codex", "cursor", "opencode"] {
+            let args = ["--adapter".into(), adapter.into()];
+            let response = super::panic_response(&args).unwrap();
+            let value = serde_json::to_value(response).unwrap();
+            let effect = match adapter {
+                "codex" => &value["hookSpecificOutput"]["permissionDecision"],
+                "cursor" => &value["permission"],
+                _ => &value["decision"],
+            };
+            assert_eq!(effect, "deny");
+            assert!(
+                !value
+                    .to_string()
+                    .contains("synthetic-sensitive-panic-payload")
+            );
+            assert_eq!(
+                super::handle_result(&args, Err(Box::new("synthetic-sensitive-panic-payload"))),
+                super::EXIT_OK
+            );
+        }
+        assert_eq!(
+            super::handle_result(&["check".into()], result),
+            super::EXIT_EVALUATION
+        );
     }
 }

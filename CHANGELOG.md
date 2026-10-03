@@ -30,3 +30,10 @@ once releases begin.
   SHA-256 manifests, SBOM/dependency/license inventories, GitHub provenance
   attestations, transactional user/managed installers, safe uninstall and
   rollback paths, and release-bundle integration tests.
+- Phase 8 bounded JSON preflight and duplicate-key rejection, native panic
+  denials, managed binary/policy trust checks, installation checksum drift
+  diagnostics, adversarial regression coverage, and eight libFuzzer targets.
+- Security fixes for truncated unknown-tool path inspection, unknown-tool
+  command fields, shell newlines/continuations and combined shell flags,
+  DDEV argv nesting, in-place sed writes, explicit protected-file transfers,
+  and malformed/executable-comment/wrapped SQL. New deny rule: `sql.ambiguous`.

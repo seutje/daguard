@@ -1,0 +1,2 @@
+echo ok
+git push --force origin main

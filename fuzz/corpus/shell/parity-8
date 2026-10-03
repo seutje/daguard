@@ -1,0 +1,1 @@
+bash -lc 'git push -f origin main'

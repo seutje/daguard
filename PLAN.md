@@ -569,60 +569,71 @@ Goal: enforce Drupal-development semantics rather than only filesystem patterns.
 
 ## 8.1 Malformed and adversarial input
 
-- [ ] Define maximum accepted stdin payload size.
-- [ ] Reject oversized payloads safely.
-- [ ] Bound recursion/depth where parser/library options permit.
-- [ ] Test invalid UTF-8 handling where applicable.
-- [ ] Test truncated JSON.
-- [ ] Test duplicate/unexpected fields.
-- [ ] Test huge strings and argument arrays.
-- [ ] Test unknown agent/tool values.
-- [ ] Ensure panic does not result in an allow decision.
+- [x] Define maximum accepted stdin payload size.
+- [x] Reject oversized payloads safely.
+- [x] Bound recursion/depth where parser/library options permit.
+- [x] Test invalid UTF-8 handling where applicable.
+- [x] Test truncated JSON.
+- [x] Test duplicate/unexpected fields.
+- [x] Test huge strings and argument arrays.
+- [x] Test unknown agent/tool values.
+- [x] Ensure panic does not result in an allow decision.
 
 ## 8.2 Fuzzing
 
-- [ ] Add fuzz target for canonical request decoding.
-- [ ] Add fuzz target for each native adapter decoder.
-- [ ] Add fuzz target for path normalization.
-- [ ] Add fuzz target for shell tokenization/analyzer.
-- [ ] Add fuzz target for SQL classification.
-- [ ] Seed fuzz corpus with real sanitized fixtures.
-- [ ] Add scheduled CI fuzzing or a documented manual fuzz workflow.
+- [x] Add fuzz target for canonical request decoding.
+- [x] Add fuzz target for each native adapter decoder.
+- [x] Add fuzz target for path normalization.
+- [x] Add fuzz target for shell tokenization/analyzer.
+- [x] Add fuzz target for SQL classification.
+- [x] Seed fuzz corpus with real sanitized fixtures.
+- [x] Add scheduled CI fuzzing or a documented manual fuzz workflow.
 
 ## 8.3 Panic/error policy
 
-- [ ] Audit `unwrap()`/`expect()` use in request-processing paths.
-- [ ] Remove avoidable panics from security-critical input handling.
-- [ ] Define top-level panic behavior.
-- [ ] Ensure adapter response on internal error is deny/fail-closed where the host permits.
-- [ ] Ensure diagnostics go to stderr, not machine-output stdout.
+- [x] Audit `unwrap()`/`expect()` use in request-processing paths.
+- [x] Remove avoidable panics from security-critical input handling.
+- [x] Define top-level panic behavior.
+- [x] Ensure adapter response on internal error is deny/fail-closed where the host permits.
+- [x] Ensure diagnostics go to stderr, not machine-output stdout.
 
 ## 8.4 Filesystem and configuration integrity
 
-- [ ] Refuse writable-by-project mandatory policy paths in managed mode.
-- [ ] Detect suspicious binary location where practical.
-- [ ] Add `doctor` integrity checks for binary and policy hashes.
-- [ ] Document limits of local-user tamper protection.
-- [ ] Ensure project policy cannot point to arbitrary executable extensions/plugins.
+- [x] Refuse writable-by-project mandatory policy paths in managed mode.
+- [x] Detect suspicious binary location where practical.
+- [x] Add `doctor` integrity checks for binary and policy hashes.
+- [x] Document limits of local-user tamper protection.
+- [x] Ensure project policy cannot point to arbitrary executable extensions/plugins.
 
 ## 8.5 Security regression suite
 
-- [ ] Add direct secret-read cases.
-- [ ] Add indirect path cases.
-- [ ] Add protected write cases.
-- [ ] Add DDEV wrapping cases.
-- [ ] Add destructive SQL cases.
-- [ ] Add exfiltration-related command cases.
-- [ ] Add command chaining cases.
-- [ ] Add shell escape cases.
-- [ ] Add false-positive regression cases for normal Drupal workflows.
+- [x] Add direct secret-read cases.
+- [x] Add indirect path cases.
+- [x] Add protected write cases.
+- [x] Add DDEV wrapping cases.
+- [x] Add destructive SQL cases.
+- [x] Add exfiltration-related command cases.
+- [x] Add command chaining cases.
+- [x] Add shell escape cases.
+- [x] Add false-positive regression cases for normal Drupal workflows.
 
 ### Phase 8 exit criteria
 
-- [ ] No known malformed-input path results in implicit allow.
-- [ ] Security-critical parsers have fuzz coverage.
-- [ ] Critical path contains no unjustified panics.
-- [ ] Regression suite includes both bypass attempts and normal-workflow false-positive tests.
+- [x] No known malformed-input path results in implicit allow.
+- [x] Security-critical parsers have fuzz coverage.
+- [x] Critical path contains no unjustified panics.
+- [x] Regression suite includes both bypass attempts and normal-workflow false-positive tests.
+
+Validation: `cargo fmt --check`, fuzz-package formatting, strict all-target/all-feature
+Clippy, `cargo test --locked` (82 Rust tests), the same suite against the optimized
+WSL musl target, OpenCode bridge tests, and production/fuzz dependency advisory,
+license, source, and ban checks passed. All eight libFuzzer targets completed a
+20-second campaign and a final regression-adjusted smoke run with AddressSanitizer
+and leak checks enabled. The optimized musl binary was inspected with `file`,
+`readelf`, and `ldd`: static linking, no interpreter or shared-library requirements.
+Manual fuzzing and residual host/symlink/tamper limitations are documented in
+`fuzz/README.md`, `README.md`, `SECURITY.md`, and `DESIGN.md`. Live agent/DDEV and
+root-installed deployment acceptance were not rerun in this phase.
 
 ---
 

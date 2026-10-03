@@ -4,7 +4,7 @@ pub(crate) mod composer;
 pub(crate) mod ddev;
 pub(crate) mod drush;
 pub(crate) mod git;
-mod network;
+pub(crate) mod network;
 pub(crate) mod sql;
 
 use crate::model::{Decision, DecisionEffect, Evidence, PROTOCOL_VERSION, PolicyLayer, Severity};

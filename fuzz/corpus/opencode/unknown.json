@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "session_id": "ses_fixture_unknown",
+  "call_id": "call_fixture_unknown",
+  "cwd": "/workspace/example",
+  "tool_name": "custom_lookup",
+  "tool_input": {"path": "README.md"}
+}

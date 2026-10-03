@@ -13,6 +13,8 @@ use crate::project;
 #[derive(Default)]
 pub(crate) struct DoctorOptions {
     pub(crate) policy: Option<PathBuf>,
+    pub(crate) integrity_manifest: Option<PathBuf>,
+    pub(crate) managed: bool,
     pub(crate) audit_log: Option<PathBuf>,
     pub(crate) codex_hooks: Option<PathBuf>,
     pub(crate) cursor_hooks: Option<PathBuf>,
@@ -40,12 +42,22 @@ pub(crate) fn diagnose(options: &DoctorOptions) -> DoctorReport {
     }
 
     let policy = options.policy.clone().or_else(default_policy_path);
-    match policy {
-        Some(path) => inspect_policy(&mut lines, &path),
+    match &policy {
+        Some(path) => inspect_policy(&mut lines, path),
         None => lines.push(
             "[WARN] organization policy not found in a standard location; pass --policy PATH"
                 .to_owned(),
         ),
+    }
+
+    if options.managed && policy.is_none() {
+        lines.push("[ERROR] managed organization policy is missing".to_owned());
+    }
+    if options.managed && executable.is_err() {
+        lines.push("[ERROR] managed binary path is unavailable".to_owned());
+    }
+    if let (Ok(binary), Some(policy)) = (&executable, &policy) {
+        inspect_integrity(&mut lines, options, binary, policy);
     }
 
     let audit_log = options.audit_log.clone().or_else(default_audit_path);
@@ -95,12 +107,65 @@ pub(crate) fn diagnose(options: &DoctorOptions) -> DoctorReport {
     DoctorReport { lines, has_errors }
 }
 
+fn inspect_integrity(
+    lines: &mut Vec<String>,
+    options: &DoctorOptions,
+    binary: &Path,
+    policy: &Path,
+) {
+    if options.managed {
+        for (label, path) in [("binary", binary), ("mandatory policy", policy)] {
+            if let Err(error) = crate::integrity::managed_path(path) {
+                lines.push(format!("[ERROR] {label} trust check failed: {error}"));
+            }
+        }
+    }
+    let binary_hash = crate::integrity::hash_file(binary);
+    let policy_hash = crate::integrity::hash_file(policy);
+    if let Ok(hash) = &binary_hash {
+        lines.push(format!("[OK] binary SHA-256: {hash}"));
+    }
+    let manifest = options
+        .integrity_manifest
+        .clone()
+        .unwrap_or_else(|| policy.with_file_name("SHA256SUMS"));
+    if !manifest.exists() && options.integrity_manifest.is_none() {
+        lines.push("[WARN] installation checksum manifest not found; fingerprints do not authenticate files".to_owned());
+        return;
+    }
+    if options.managed
+        && let Err(error) = crate::integrity::managed_path(&manifest)
+    {
+        lines.push(format!(
+            "[ERROR] checksum manifest trust check failed: {error}"
+        ));
+    }
+    let result = binary_hash.and_then(|binary_hash| {
+        policy_hash.and_then(|policy_hash| {
+            crate::integrity::compare_manifest(&manifest, &binary_hash, &policy_hash)
+        })
+    });
+    match result {
+        Ok(()) => {
+            lines.push("[OK] binary and policy checksums match installation metadata".to_owned());
+        }
+        Err(error) => lines.push(format!(
+            "[ERROR] installation integrity check failed: {error}"
+        )),
+    }
+}
+
 fn inspect_policy(lines: &mut Vec<String>, path: &Path) {
     lines.push(format!(
         "[INFO] organization policy path: {}",
         path.display()
     ));
-    match fs::read(path) {
+    match fs::File::open(path).and_then(|file| {
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        file.take(1024 * 1024 + 1).read_to_end(&mut bytes)?;
+        Ok(bytes)
+    }) {
         Ok(bytes) => {
             lines.push(format!("[OK] policy SHA-256: {}", audit::sha256(&bytes)));
             match Policy::from_slice(&bytes, PolicyKind::Organization) {

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub(crate) const PROTOCOL_VERSION: u16 = 1;
-const MAX_INPUT_BYTES: usize = 64 * 1024;
+const MAX_INPUT_BYTES: usize = crate::json::MAX_REQUEST_BYTES;
 const MAX_INPUT_DEPTH: usize = 16;
 const MAX_INPUT_NODES: usize = 1_024;
 const MAX_STRING_BYTES: usize = 16 * 1024;
@@ -87,6 +87,7 @@ impl CanonicalRequest {
         if input.len() > MAX_INPUT_BYTES {
             return Err(ModelError::Limit("request exceeds 64 KiB"));
         }
+        crate::json::preflight(input, MAX_INPUT_BYTES).map_err(ModelError::Json)?;
         let request: Self = serde_json::from_slice(input).map_err(ModelError::Json)?;
         request.validate()?;
         Ok(request)
@@ -101,7 +102,10 @@ impl CanonicalRequest {
         validate_identifier("tool.native_name", &self.tool.native_name)?;
         validate_optional_identifier("session_id", self.session_id.as_deref())?;
         validate_optional_identifier("call_id", self.call_id.as_deref())?;
-        if self.cwd.is_empty() || self.cwd.len() > MAX_PATH_BYTES || self.cwd.contains('\0') {
+        if !std::path::Path::new(&self.cwd).is_absolute()
+            || self.cwd.len() > MAX_PATH_BYTES
+            || self.cwd.contains('\0')
+        {
             return Err(ModelError::Invalid("cwd is invalid"));
         }
         if self.facts.paths.len() > MAX_PATHS {
@@ -125,6 +129,23 @@ impl CanonicalRequest {
         let mut nodes = 0;
         validate_value(&self.input, 0, &mut nodes)?;
         Ok(())
+    }
+
+    /// Returns bounded command facts plus recognized command fields for unknown tools.
+    pub(crate) fn candidate_commands(&self) -> Vec<&str> {
+        let mut commands = self
+            .facts
+            .command
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        if matches!(
+            self.tool.capability,
+            Capability::Unknown | Capability::McpCall
+        ) {
+            collect_command_values(&self.input, None, &mut commands);
+        }
+        commands
     }
 
     /// Returns normalized facts plus path-like strings found in unknown tool input.
@@ -157,10 +178,35 @@ fn validate_string_collection(message: &'static str, values: &[String]) -> Resul
     Ok(())
 }
 
-fn collect_path_values<'a>(value: &'a Value, key: Option<&str>, paths: &mut Vec<&'a str>) {
-    if paths.len() >= MAX_PATHS {
-        return;
+fn collect_command_values<'a>(value: &'a Value, key: Option<&str>, commands: &mut Vec<&'a str>) {
+    match value {
+        Value::String(value)
+            if key.is_some_and(|key| {
+                matches!(
+                    key.to_ascii_lowercase().as_str(),
+                    "command" | "cmd" | "shell_command"
+                )
+            }) =>
+        {
+            commands.push(value);
+        }
+        Value::Array(values) => {
+            for value in values {
+                collect_command_values(value, key, commands);
+            }
+        }
+        Value::Object(values) => {
+            for (key, value) in values {
+                collect_command_values(value, Some(key), commands);
+            }
+        }
+        _ => {}
     }
+}
+
+fn collect_path_values<'a>(value: &'a Value, key: Option<&str>, paths: &mut Vec<&'a str>) {
+    // validate() bounds all input to 1,024 nodes; never truncate candidates,
+    // because a protected path may be the last one in an unknown tool.
     match value {
         Value::String(value) if key.is_some_and(is_path_key) => paths.push(value),
         Value::Array(values) => {

@@ -5,12 +5,14 @@ intercept coding-agent tool calls and apply shared, deterministic policy before 
 operation runs. Its primary deployment target is WSL2 with DDEV; Codex, Cursor,
 and OpenCode are the first planned integrations.
 
-The repository includes the first seven phases defined in [PLAN.md](PLAN.md):
+The repository includes phases 0–8 defined in [PLAN.md](PLAN.md):
 the canonical enforcement core, Codex and Cursor adapters, and bounded command
 analysis for shell, DDEV, Drush, SQL, Composer, and Git operations, plus safe
 local auditing, operator diagnostics, the fail-closed OpenCode v2 bridge, and a
 checksummed, provenance-attested WSL release and installation flow. The architecture
-and security model are specified in [DESIGN.md](DESIGN.md).
+and security model are specified in [DESIGN.md](DESIGN.md). Phase 8 adds bounded
+JSON preflight, duplicate-key rejection, native panic denial, managed trust and
+checksum checks, adversarial regression tests, and eight parser fuzz targets.
 
 ## WSL installation and upgrades
 
@@ -71,7 +73,8 @@ templates use absolute root-controlled executable, policy, and plugin paths.
 Where the agent supports central requirements, prevent repository-local hooks
 from replacing or disabling the managed hook. Validate each deployed file with
 `daguard doctor <agent> <path>` and then run `daguard doctor`. User-managed pilots
-must adjust the absolute paths to their user installation and accept the weaker
+must adjust the absolute paths to their user installation, remove `--managed`
+from Codex/Cursor commands, set OpenCode `managed: false`, and accept the weaker
 tamper boundary.
 
 Release CI builds the pinned `x86_64-unknown-linux-musl` target in the optimized
@@ -261,3 +264,53 @@ for the reporting process.
 ## License
 
 Licensed under the [MIT License](LICENSE).
+
+## Security hardening and integrity
+
+Hook stdin and canonical request files accept at most **64 KiB**, including
+whitespace. All decoders validate JSON before normalization: duplicate keys,
+invalid UTF-8, truncated JSON, more than 32 levels of envelope nesting, strings
+over 16 KiB, keys over 256 bytes, and excessive value counts fail closed. Tool
+input additionally allows at most 16 levels and 1,024 values; fact collections
+allow 128 entries. Unknown agent names and safe unknown tools remain supported.
+Recognized path and command fields of unknown tools still receive shared policy
+checks. Codex/Cursor retain bounded optional native metadata; the versioned
+OpenCode bridge rejects unknown envelope fields.
+
+Recoverable Rust panics produce `guard.evaluation_error` native denials, or exit
+4 without a decision for canonical `check`. Panic diagnostics contain no panic
+payload. Process kills, allocation failure, stack overflow, and host hook bypass
+remain limitations: deploy host-level fail-closed configuration where available.
+
+Managed hooks now pass `--managed`. This requires an explicit organization policy
+and refuses binary/policy files inside projects, symlink components, non-root
+ownership, or group/other-writable files or ancestor directories. Use it for the
+root-owned WSL deployment, not a user pilot:
+
+```bash
+daguard doctor --managed --policy /etc/daguard/policy.json
+```
+
+`doctor` prints binary and policy SHA-256 fingerprints and compares both against
+the installer's adjacent `SHA256SUMS`. Use `--integrity-manifest PATH` for a
+non-standard manifest. Missing automatic manifests produce a warning; malformed
+manifests, unreadable explicit manifests, and mismatches produce exit 3. Files
+are hashed only by diagnostics, not every hook. An intentionally changed policy
+requires an administrator to update the trusted installation manifest.
+
+Checksums detect drift only when their baseline is trusted. User-owned binaries,
+policies, and manifests can all be replaced by the same user. Managed checks do
+not protect against root, a malicious local developer, filesystem replacement
+races, or host configurations that bypass hooks. Request target symlinks retain
+the lexical-only v1 behavior described in DESIGN.md.
+
+## Parser fuzzing (guard developers only)
+
+See [fuzz/README.md](fuzz/README.md) for libFuzzer targets, reviewed seed corpora,
+and reproduction instructions. The fuzz-only package has a separate pinned
+lockfile and does not add dependencies to the shipped guard. A bounded local run:
+
+```bash
+cargo fetch --manifest-path fuzz/Cargo.toml --locked
+scripts/fuzz.sh 30
+```

@@ -21,6 +21,7 @@ struct PreToolUseInput {
 }
 
 pub(crate) fn normalize(input: &[u8]) -> Result<CanonicalRequest, CursorError> {
+    crate::json::preflight(input, crate::json::MAX_REQUEST_BYTES).map_err(CursorError::Json)?;
     let input: PreToolUseInput = serde_json::from_slice(input).map_err(CursorError::Json)?;
     let (capability, facts) = normalize_tool(&input.tool_name, &input.tool_input)?;
     let request = CanonicalRequest {

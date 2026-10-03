@@ -353,7 +353,19 @@ The executable entry point is:
 daguard --adapter <codex|cursor|opencode> --event pre-tool
 ```
 
-Native hook payload is read from standard input.
+Native hook payload is read from standard input, bounded to 64 KiB (including
+whitespace); canonical request files have the same limit. Policy files are
+bounded to 1 MiB using bounded reads even if a file grows after metadata checks.
+
+Before typed deserialization and native normalization, a serde-based JSON
+preflight rejects duplicate keys at every level, invalid UTF-8, trailing or
+truncated JSON, nesting beyond 32 levels, strings over 16 KiB, keys over 256
+bytes, and more than 4,096 request-envelope values (65,536 for policies).
+Canonical validation further limits tool input to 16 levels and 1,024 values,
+fact collections to 128 entries, identifiers to 256 bytes, and paths to 4,096
+bytes. Unknown native metadata is retained only within these bounds where the
+adapter contract allows it. This hardens the existing v1 validity contract;
+request/response fields and adapter schemas remain unchanged.
 
 The executable writes exactly one JSON response to standard output.
 
@@ -439,6 +451,12 @@ Instead:
 3. apply universal high-risk string rules;
 4. mark the request as `unknown` for audit;
 5. use configurable default behavior.
+
+Recognized `command`, `cmd`, and `shell_command` fields on unknown/MCP tools are
+recursively inspected by the shared shell engine. Unknown-tool path candidates
+are bounded by the validated input node limit and are never silently truncated
+before inspection. An approval-class command cannot weaken a protected path
+or an organization unknown-tool default deny.
 
 For team deployment, the recommended default is:
 
@@ -972,10 +990,20 @@ Shell analysis is necessarily imperfect. The design therefore uses layered detec
 6. inspect every segment, not only the first command;
 7. identify wrappers such as `ddev`, `env`, `command`, and common shell invocations;
 8. extract redirections and target paths;
-9. detect network-capable commands;
+9. inspect explicit protected-file references on curl, wget, scp, sftp, and
+   rsync transfers using the shared network analyzer;
 10. pass specialized commands to Git/Composer/Drush/SQL analyzers.
 
-If parsing fails on a command that contains high-risk markers, deny rather than assume safety.
+Unsupported syntax is denied with `shell.ambiguous`. Newlines are command
+separators; escaped newlines are removed as continuations. Double-quoted
+expansions are rejected. `sh`/`bash` combined command flags (such as `-lc`) are
+inspected recursively; shell invocations without inspectable command text are
+conservatively denied. Both text and argv wrapper recursion are limited to four
+levels. `sed -i`/`--in-place` targets receive write protections.
+
+This remains a bounded analyzer, not a complete shell or transfer-client
+interpreter. Opaque scripts, unusual option grammars, expansion, symlink aliases,
+and network sinks without explicit file references require OS/host controls.
 
 ### 16.2 Dangerous shell patterns
 
@@ -1104,7 +1132,12 @@ REVOKE
 
 SQL parsing in v1 can be lexical rather than a full SQL AST. The implementation should remove comments and leading whitespace and inspect statement boundaries conservatively.
 
-Multiple statements should be evaluated individually.
+Multiple statements should be evaluated individually. Mutation keywords outside
+quoted values are denied anywhere in a statement, including WITH/EXPLAIN
+wrappers. Malformed quotes/comments, executable MySQL/MariaDB comments,
+unrecognized statement classes, embedded NUL, or SQL exceeding 16 KiB produce
+`sql.ambiguous`. Ordinary SELECT/SHOW/EXPLAIN/DESCRIBE statements retain their
+read-only behavior; unsupported CTE forms require a simpler inspectable query.
 
 ### 18.3 Sensitive Drupal tables
 
@@ -1327,6 +1360,20 @@ project/.daguard/
 because an agent able to edit the repository could otherwise modify its own enforcement mechanism.
 
 Repository files may add restrictions but must not be authoritative for organization policy.
+
+Managed adapter templates explicitly pass `--managed` (OpenCode bridge option
+`managed: true`). `check` accepts the same flag. It requires an explicit policy
+path and verifies the executable and mandatory policy before loading policy.
+Both paths must be absolute, outside detected projects, have no symlink
+components, and be root-owned with no group/other write bits. Every ancestor
+directory receives the ownership/mode and symlink checks so files cannot be
+replaced through a writable parent. Unsupported platforms fail this check
+closed until a dedicated platform trust implementation exists.
+
+These checks defend the managed WSL deployment against ordinary repository
+edits; they do not promise race-free filesystem access or protection against
+root or a malicious user controlling host hook configuration. User-managed
+pilots omit the flag and retain the documented weaker tamper boundary.
 
 ---
 
@@ -1636,7 +1683,17 @@ Use Cursor's `failClosed: true` for the guard hook.
 
 Where the agent does not offer equivalent host-level fail-closed semantics, the adapter should return an explicit deny whenever the guard itself can still respond.
 
-Any host behavior that executes a tool after the hook process crashes must be treated as a known residual risk.
+The release profile uses panic unwinding. The top-level CLI catches recoverable
+panics before a response is emitted and returns the adapter's static
+`guard.evaluation_error` denial; canonical `check` exits 4 without a decision.
+The panic hook writes a fixed diagnostic to stderr and never exposes the panic
+payload. Untrusted processing uses Result-based errors. The only production
+`expect` is the locally proven infallible write to a String in SHA-256 hex
+formatting; test assertions may panic.
+
+Allocation failure, stack overflow, signals, or a host terminating the guard
+cannot be recovered this way. Any host behavior that executes a tool after the
+hook process crashes must be treated as a known residual risk.
 
 ---
 
@@ -1769,6 +1826,16 @@ Because the executable consumes untrusted agent-generated JSON and shell-like co
 
 Malformed inputs must never panic into an implicit allow. The security-safe outcome is denial or explicit adapter failure according to the integration contract.
 
+The separate `fuzz/` Cargo package reuses production modules for eight libFuzzer
+targets: canonical, Codex, Cursor, OpenCode, path normalization/glob matching,
+shell tokenization/full evaluation (including DDEV), SQL classification, and
+organization/project policy decoding. It includes reviewed sanitized golden
+fixtures and adversarial seeds. Its exact libfuzzer-sys pin and separate lockfile
+are audited independently; it is never part of the release binary. A documented
+manual workflow in `fuzz/README.md` and `scripts/fuzz.sh` provides bounded runs,
+retains failure artifacts, and avoids saving generated payloads to tracked seed
+corpora.
+
 ## 30. Security test cases
 
 The following cases must be covered before team rollout.
@@ -1789,10 +1856,10 @@ Expected: deny.
 ```text
 cat web/modules/custom/../../sites/default/settings.php
 cat ./web/sites/default/../default/settings.php
-cat symlink-to-settings
+# Symlink aliases remain a documented v1 residual risk, not a guaranteed denial.
 ```
 
-Expected: deny after canonicalization.
+Expected: deny after lexical normalization of traversal paths.
 
 ### 30.3 Core/contrib modification
 
@@ -2315,7 +2382,17 @@ For managed installations, record SHA-256 hashes for:
 
 `daguard doctor` may report drift.
 
-Do not make every hook invocation hash the entire executable unless benchmarks show negligible cost. Startup integrity checks can be sufficient for normal team use.
+`doctor` streams hashes of the binary and policy and compares them to the
+installer's two-entry `SHA256SUMS` adjacent to policy, or an explicit
+`--integrity-manifest PATH`. It rejects duplicate, unknown, missing, oversized,
+or malformed manifest entries and detects binary/policy drift. A missing
+automatically discovered manifest is a warning, not proof of integrity.
+`doctor --managed` also verifies root control over files, ancestor directories,
+and the baseline manifest. Administrators update the baseline after intentional
+policy changes; a user-owned manifest cannot authenticate user-owned files.
+
+No hook invocation hashes the executable. Integrity hashing is operator-only
+and does not add startup work to every request.
 
 ---
 

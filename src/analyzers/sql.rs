@@ -4,13 +4,18 @@ use crate::analyzers::decision;
 use crate::model::{Decision, DecisionEffect, Severity};
 
 pub(crate) fn analyze(sql: &str, configured_sensitive_tables: &[&str]) -> Option<Decision> {
-    let words = lexical_words(sql)?;
+    if sql.len() > 16 * 1024 || sql.contains('\0') {
+        return Some(ambiguous());
+    }
+    let Some(words) = lexical_words(sql) else {
+        return Some(ambiguous());
+    };
     for statement in words.split(|word| word == ";") {
         for keyword in [
             "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "TRUNCATE", "REPLACE", "CREATE",
             "GRANT", "REVOKE",
         ] {
-            if statement.first().is_some_and(|word| word == keyword) {
+            if statement.iter().any(|word| word == keyword) {
                 return Some(decision(
                     DecisionEffect::Deny,
                     &format!("sql.mutation.{}", keyword.to_ascii_lowercase()),
@@ -19,6 +24,13 @@ pub(crate) fn analyze(sql: &str, configured_sensitive_tables: &[&str]) -> Option
                     Severity::Critical,
                 ));
             }
+        }
+        if !statement.is_empty()
+            && !statement.first().is_some_and(|word| {
+                matches!(word.as_str(), "SELECT" | "SHOW" | "EXPLAIN" | "DESCRIBE")
+            })
+        {
+            return Some(ambiguous());
         }
         if statement
             .first()
@@ -37,6 +49,16 @@ pub(crate) fn analyze(sql: &str, configured_sensitive_tables: &[&str]) -> Option
         }
     }
     None
+}
+
+fn ambiguous() -> Decision {
+    decision(
+        DecisionEffect::Deny,
+        "sql.ambiguous",
+        "sql",
+        "SQL syntax cannot be classified safely.",
+        Severity::High,
+    )
 }
 
 fn sensitive_table(word: &str, configured: &[&str]) -> bool {
@@ -86,6 +108,11 @@ fn lexical_words(sql: &str) -> Option<Vec<String>> {
                 index += 1;
             }
         } else if character == '/' && chars.get(index + 1) == Some(&'*') {
+            if chars.get(index + 2) == Some(&'!')
+                || (chars.get(index + 2) == Some(&'M') && chars.get(index + 3) == Some(&'!'))
+            {
+                return None; // MySQL/MariaDB executable comments cannot be skipped.
+            }
             push(&mut result, &mut word);
             index += 2;
             while index + 1 < chars.len() && !(chars[index] == '*' && chars[index + 1] == '/') {

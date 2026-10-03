@@ -3,7 +3,7 @@
   "hooks": {
     "preToolUse": [
       {
-        "command": "/usr/local/bin/daguard --adapter cursor --event pre-tool --policy /etc/daguard/policy.json",
+        "command": "/usr/local/bin/daguard --adapter cursor --event pre-tool --managed --policy /etc/daguard/policy.json",
         "matcher": "*",
         "timeout": 5,
         "failClosed": true

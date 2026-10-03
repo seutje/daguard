@@ -6,7 +6,8 @@
       "options": {
         "guard": "/usr/local/bin/daguard",
         "policy": "/etc/daguard/policy.json",
-        "timeoutMs": 5000
+        "timeoutMs": 5000,
+        "managed": true
       }
     }
   ]

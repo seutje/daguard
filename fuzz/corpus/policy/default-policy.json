@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "defaults": {
+    "unknown_tool": "deny_if_sensitive_otherwise_allow"
+  },
+  "paths": {
+    "deny_read": [
+      "**/.env",
+      "**/.env.*",
+      "**/env/**",
+      "**/auth.json",
+      "**/composer-auth.json",
+      "**/sites/*/settings.php",
+      "**/sites/*/settings.local.php",
+      "**/*.pem",
+      "**/*.key"
+    ],
+    "deny_write": [
+      "**/web/core/**",
+      "**/core/**",
+      "**/vendor/**",
+      "**/web/modules/contrib/**",
+      "**/web/themes/contrib/**",
+      "**/www/modules/contrib/**",
+      "**/www/themes/contrib/**"
+    ],
+    "writable": [
+      "**/web/modules/custom/**",
+      "**/web/themes/custom/**",
+      "**/www/modules/custom/**",
+      "**/www/themes/custom/**",
+      "**/modules/custom/**",
+      "**/themes/custom/**",
+      "**/tests/**"
+    ]
+  },
+  "sql": {
+    "sensitive_tables": []
+  },
+  "rules": []
+}

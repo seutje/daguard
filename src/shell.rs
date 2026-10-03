@@ -67,7 +67,11 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, ShellError> {
                 let Some(next) = chars.get(index) else {
                     return Err(ShellError::UnterminatedQuote);
                 };
-                word.push(*next);
+                if *next != '\n' {
+                    word.push(*next);
+                }
+            } else if active == '"' && (character == '$' || character == '`') {
+                return Err(ShellError::Unsupported("quoted shell expansion"));
             } else {
                 word.push(character);
             }
@@ -81,7 +85,9 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, ShellError> {
                 let Some(next) = chars.get(index) else {
                     return Err(ShellError::Unsupported("trailing escape"));
                 };
-                word.push(*next);
+                if *next != '\n' {
+                    word.push(*next);
+                }
             }
             '`' => return Err(ShellError::Unsupported("command substitution")),
             '$' if chars.get(index + 1) == Some(&'(') => {
@@ -90,8 +96,8 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, ShellError> {
             '<' if chars.get(index + 1) == Some(&'<') => {
                 return Err(ShellError::Unsupported("here document"));
             }
-            ' ' | '\t' | '\r' | '\n' => push_word(&mut tokens, &mut word),
-            ';' => {
+            ' ' | '\t' | '\r' => push_word(&mut tokens, &mut word),
+            '\n' | ';' => {
                 push_word(&mut tokens, &mut word);
                 tokens.push(Token::Operator(Operator::Sequence));
             }

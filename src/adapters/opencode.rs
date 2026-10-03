@@ -24,6 +24,7 @@ struct ToolExecuteBeforeInput {
 }
 
 pub(crate) fn normalize(input: &[u8]) -> Result<CanonicalRequest, OpenCodeError> {
+    crate::json::preflight(input, crate::json::MAX_REQUEST_BYTES).map_err(OpenCodeError::Json)?;
     let input: ToolExecuteBeforeInput =
         serde_json::from_slice(input).map_err(OpenCodeError::Json)?;
     if input.schema != ADAPTER_SCHEMA_VERSION {

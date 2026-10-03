@@ -29,7 +29,11 @@ function bridgeConfig(options) {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) {
     throw new GuardBlockedError()
   }
+  if (options?.managed !== undefined && typeof options.managed !== "boolean") {
+    throw new GuardBlockedError()
+  }
   return {
+    managed: options?.managed ?? false,
     guard: requiredAbsolutePath(options?.guard),
     policy: requiredAbsolutePath(options?.policy),
     projectPolicy: optionalAbsolutePath(options?.projectPolicy),
@@ -47,6 +51,7 @@ function invokeGuard(config, payload) {
     "--policy",
     config.policy,
   ]
+  if (config.managed) args.push("--managed")
   if (config.projectPolicy) args.push("--project-policy", config.projectPolicy)
   if (config.auditLog) args.push("--audit-log", config.auditLog)
 

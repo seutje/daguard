@@ -1,0 +1,1 @@
+ddev mysql -e 'DELETE FROM node'

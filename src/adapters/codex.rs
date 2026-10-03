@@ -23,6 +23,7 @@ struct PreToolUseInput {
 }
 
 pub(crate) fn normalize(input: &[u8]) -> Result<CanonicalRequest, CodexError> {
+    crate::json::preflight(input, crate::json::MAX_REQUEST_BYTES).map_err(CodexError::Json)?;
     let input: PreToolUseInput = serde_json::from_slice(input).map_err(CodexError::Json)?;
     if input.hook_event_name != PRE_TOOL_USE {
         return Err(CodexError::Invalid("expected a PreToolUse event"));

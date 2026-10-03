@@ -1,0 +1,18 @@
+{
+  "protocol": 1,
+  "agent": "synthetic-test-agent",
+  "event": "pre_tool_use",
+  "cwd": "/workspace/project",
+  "tool": {
+    "native_name": "synthetic_write",
+    "capability": "file_write"
+  },
+  "input": {
+    "synthetic": true
+  },
+  "facts": {
+    "paths": [
+      "web/modules/custom/example/example.module"
+    ]
+  }
+}

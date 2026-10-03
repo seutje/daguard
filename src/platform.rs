@@ -35,3 +35,35 @@ fn is_executable_file(path: &Path) -> bool {
         true
     }
 }
+
+/// Root ownership and mode checks for the primary Linux/WSL managed deployment.
+/// Other platforms need an explicit ACL implementation before managed support.
+pub(crate) fn managed_metadata_is_trusted(metadata: &fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        trusted_mode(metadata.uid(), metadata.mode())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = metadata;
+        false
+    }
+}
+
+#[cfg(unix)]
+fn trusted_mode(uid: u32, mode: u32) -> bool {
+    uid == 0 && mode & 0o022 == 0
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    #[test]
+    fn managed_modes_require_root_and_no_group_or_other_write() {
+        assert!(super::trusted_mode(0, 0o100_644));
+        assert!(super::trusted_mode(0, 0o40755));
+        for (uid, mode) in [(1000, 0o100_644), (0, 0o100_664), (0, 0o40777)] {
+            assert!(!super::trusted_mode(uid, mode));
+        }
+    }
+}

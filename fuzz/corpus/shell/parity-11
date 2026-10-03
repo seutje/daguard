@@ -1,0 +1,1 @@
+ddev drush sql:query '/*!50000 DELETE FROM node */'

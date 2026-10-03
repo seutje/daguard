@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::fmt;
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 
 use serde::Deserialize;
@@ -172,7 +173,12 @@ impl Policy {
         if metadata.len() > MAX_POLICY_BYTES {
             return Err(PolicyError::Invalid("policy exceeds 1 MiB"));
         }
-        let bytes = fs::read(path).map_err(PolicyError::Read)?;
+        let mut bytes = Vec::new();
+        fs::File::open(path)
+            .map_err(PolicyError::Read)?
+            .take(MAX_POLICY_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .map_err(PolicyError::Read)?;
         Self::from_slice(&bytes, kind)
     }
 
@@ -180,6 +186,7 @@ impl Policy {
         if input.len() as u64 > MAX_POLICY_BYTES {
             return Err(PolicyError::Invalid("policy exceeds 1 MiB"));
         }
+        crate::json::preflight(input, 1024 * 1024).map_err(PolicyError::Json)?;
         let policy: Self = serde_json::from_slice(input).map_err(PolicyError::Json)?;
         policy.validate(kind)?;
         Ok(policy)
@@ -275,21 +282,41 @@ pub(crate) fn evaluate(
     organization: Option<&Policy>,
     project: Option<&Policy>,
 ) -> Result<Decision, PolicyError> {
+    request
+        .validate()
+        .map_err(|_| PolicyError::Invalid("invalid canonical request"))?;
     let sensitive_tables = organization
         .into_iter()
         .chain(project)
         .flat_map(|policy| policy.sql.sensitive_tables.iter().map(String::as_str))
         .collect::<Vec<_>>();
-    if matches!(request.tool.capability, Capability::ShellExecute) {
-        let command = request
-            .facts
-            .command
-            .as_deref()
-            .ok_or(PolicyError::Invalid(
+    let mut command_decision = None;
+    if matches!(
+        request.tool.capability,
+        Capability::ShellExecute | Capability::Unknown | Capability::McpCall
+    ) {
+        let commands = request.candidate_commands();
+        if request.tool.capability == Capability::ShellExecute && commands.is_empty() {
+            return Err(PolicyError::Invalid(
                 "shell request is missing its command fact",
-            ))?;
-        if let Some(decision) = evaluate_shell(command, &request.cwd, &sensitive_tables, 0)? {
-            return Ok(decision);
+            ));
+        }
+        let mut decisions = Vec::new();
+        for command in commands {
+            if let Some(decision) = evaluate_shell(command, &request.cwd, &sensitive_tables, 0)? {
+                decisions.push(decision);
+            }
+        }
+        if let Some(decision) = decisions
+            .into_iter()
+            .max_by_key(|decision| effect_rank(decision.effect))
+        {
+            // An approval-class command must still go through file policy below;
+            // a secret path may never be weakened by an earlier ask decision.
+            if decision.effect == DecisionEffect::Deny {
+                return Ok(decision);
+            }
+            command_decision = Some(decision);
         }
     }
     let normalized_paths = request
@@ -315,6 +342,14 @@ pub(crate) fn evaluate(
         .map(|policy| evaluate_policy(request, &normalized_paths, policy, PolicyLayer::Project))
         .transpose()?
         .flatten();
+    let organization_decision = match (organization_decision, command_decision.as_ref()) {
+        (Some(policy), Some(command))
+            if effect_rank(policy.effect) < effect_rank(command.effect) =>
+        {
+            Some(command.clone())
+        }
+        (policy, _) => policy,
+    };
     match (organization_decision, project_decision) {
         (Some(organization), Some(project)) => {
             if effect_rank(project.effect) > effect_rank(organization.effect) {
@@ -332,6 +367,11 @@ pub(crate) fn evaluate(
     } else {
         DecisionEffect::Allow
     };
+    if let Some(command) = command_decision
+        && effect_rank(command.effect) >= effect_rank(effect)
+    {
+        return Ok(command);
+    }
     Ok(Decision {
         protocol: PROTOCOL_VERSION,
         effect,
@@ -391,6 +431,14 @@ fn analyze_argv(
     sensitive_tables: &[&str],
     depth: usize,
 ) -> Result<Option<Decision>, PolicyError> {
+    if depth > 4 {
+        return Ok(Some(command_decision(
+            DecisionEffect::Deny,
+            "shell.nesting_limit",
+            "Shell wrapper nesting exceeds safe analysis limits.",
+            Severity::High,
+        )));
+    }
     let mut words = words;
     while let Some((first, rest)) = words.split_first() {
         let name = command_name(first);
@@ -414,8 +462,20 @@ fn analyze_argv(
             Severity::Critical,
         )));
     }
-    if matches!(program, "sh" | "bash") && args.first().is_some_and(|arg| *arg == "-c") {
-        return match args.get(1) {
+    if matches!(program, "sh" | "bash") {
+        let command_flag = args
+            .iter()
+            .take_while(|arg| arg.starts_with('-'))
+            .position(|arg| arg.starts_with('-') && !arg.starts_with("--") && arg.contains('c'));
+        let Some(position) = command_flag else {
+            return Ok(Some(command_decision(
+                DecisionEffect::Deny,
+                "shell.ambiguous",
+                "A shell invocation without inspectable command text is prohibited.",
+                Severity::High,
+            )));
+        };
+        return match args.get(position + 1) {
             Some(inner) => evaluate_shell(inner, cwd, sensitive_tables, depth + 1),
             None => Ok(Some(command_decision(
                 DecisionEffect::Deny,
@@ -475,7 +535,23 @@ fn analyze_path_argv(
     args: &[&str],
     cwd: &str,
 ) -> Result<Option<Decision>, PolicyError> {
+    if let Some(candidates) = analyzers::network::protected_file_candidates(program, args) {
+        for candidate in candidates {
+            if let Some(decision) = evaluate_shell_path(cwd, candidate, RuleOperation::Read)? {
+                return Ok(Some(decision));
+            }
+        }
+    }
     let path_operation = match program {
+        "sed"
+            if args.iter().any(|arg| {
+                *arg == "--in-place"
+                    || arg.starts_with("--in-place=")
+                    || (arg.starts_with('-') && !arg.starts_with("--") && arg.contains('i'))
+            }) =>
+        {
+            Some((RuleOperation::Write, args))
+        }
         "cat" | "head" | "tail" | "less" | "more" | "grep" | "sed" | "awk" | "wc" => {
             Some((RuleOperation::Read, args))
         }
@@ -496,15 +572,19 @@ fn analyze_path_argv(
             }
         }
     }
-    if matches!(program, "cp" | "mv") {
-        for path in args[..args.len().saturating_sub(1)]
-            .iter()
-            .copied()
-            .filter(|argument| !argument.starts_with('-'))
-        {
-            if let Some(decision) = evaluate_shell_path(cwd, path, RuleOperation::Read)? {
-                return Ok(Some(decision));
-            }
+    let read_candidates = match program {
+        "cp" | "mv" => &args[..args.len().saturating_sub(1)],
+        // In-place sed also reads its inputs and can print their contents.
+        "sed" => args,
+        _ => &[],
+    };
+    for path in read_candidates
+        .iter()
+        .copied()
+        .filter(|argument| !argument.starts_with('-'))
+    {
+        if let Some(decision) = evaluate_shell_path(cwd, path, RuleOperation::Read)? {
+            return Ok(Some(decision));
         }
     }
     Ok(None)
@@ -968,6 +1048,14 @@ const RULE_DOCUMENTATION: &[RuleDocumentation] = &[
         "sql",
         "Interactive SQL cannot be inspected before execution.",
         "Use one explicit read-only SQL statement."
+    ),
+    rule_doc!(
+        "sql.ambiguous",
+        Deny,
+        High,
+        "sql",
+        "SQL is malformed, unsupported, or exceeds analysis limits.",
+        "Use a single explicit read-only SELECT, SHOW, EXPLAIN, or DESCRIBE statement."
     ),
     rule_doc!(
         "sql.read.sensitive_table",

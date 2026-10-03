@@ -21,7 +21,9 @@ jobs:
       - name: Verify lockfile is current
         run: cargo check --locked
       - name: Check formatting
-        run: cargo fmt --check
+        run: |
+          cargo fmt --check
+          cargo fmt --manifest-path fuzz/Cargo.toml --check
       - name: Lint
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Test
@@ -44,6 +46,8 @@ jobs:
         run: cargo install cargo-deny --locked
       - name: Check dependency licenses and sources
         run: cargo deny check licenses sources bans
+      - name: Check fuzz-only dependency vulnerabilities and licenses
+        run: cargo deny --manifest-path fuzz/Cargo.toml --config fuzz/deny.toml --locked check advisories licenses sources bans
       - name: Write dependency license inventory
         run: cargo metadata --locked --format-version 1 > dependency-inventory.json
       - name: Upload dependency license inventory

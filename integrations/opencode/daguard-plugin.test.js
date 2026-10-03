@@ -102,3 +102,19 @@ test("maps malformed deny rule IDs to the static evaluation error", async () => 
   })
   await assert.rejects(hook(event), /guard\.evaluation_error/)
 })
+
+test("passes managed mode to the bridge and rejects non-boolean values", async () => {
+  let managed
+  const hook = createToolHook({
+    options: { ...options, managed: true },
+    directory: "/workspace/project",
+    run(config) { managed = config.managed; return '{"schema":1,"decision":"allow"}' },
+  })
+  await hook(event)
+  assert.equal(managed, true)
+  const invalid = createToolHook({
+    options: { ...options, managed: "true" },
+    directory: "/workspace/project",
+  })
+  await assert.rejects(invalid(event), /guard\.evaluation_error/)
+})

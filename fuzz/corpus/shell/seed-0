@@ -1,0 +1,1 @@
+ddev exec sh -c 'drush cr'

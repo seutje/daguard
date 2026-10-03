@@ -1,0 +1,15 @@
+{
+  "session_id": "thr_fixture_mcp",
+  "transcript_path": null,
+  "cwd": "/workspace/example",
+  "hook_event_name": "PreToolUse",
+  "model": "fixture-model",
+  "turn_id": "turn_fixture_mcp",
+  "permission_mode": "default",
+  "tool_name": "mcp__example__lookup",
+  "tool_use_id": "call_fixture_mcp",
+  "tool_input": {
+    "path": "README.md",
+    "query": "synthetic documentation lookup"
+  }
+}
