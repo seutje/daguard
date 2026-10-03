@@ -23,3 +23,6 @@ once releases begin.
 - Phase 5 redacted, versioned append-only JSONL audit events; comprehensive
   installation diagnostics and policy fingerprints; and actionable core-rule
   explanations with stable fail-closed error identifiers.
+- Phase 6 OpenCode v2 adapter and dependency-free pre-execution bridge, with
+  fail-closed process/output handling, golden fixtures, diagnostics, and a
+  shared three-agent policy-parity matrix.

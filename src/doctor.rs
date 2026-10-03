@@ -4,7 +4,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::adapters::{codex, cursor};
+use crate::adapters::{codex, cursor, opencode};
 use crate::audit;
 use crate::platform;
 use crate::policy::{Policy, PolicyKind};
@@ -16,6 +16,7 @@ pub(crate) struct DoctorOptions {
     pub(crate) audit_log: Option<PathBuf>,
     pub(crate) codex_hooks: Option<PathBuf>,
     pub(crate) cursor_hooks: Option<PathBuf>,
+    pub(crate) opencode_config: Option<PathBuf>,
 }
 
 pub(crate) struct DoctorReport {
@@ -86,7 +87,15 @@ pub(crate) fn diagnose(options: &DoctorOptions) -> DoctorReport {
             .or_else(|| home_join(".cursor/hooks.json")),
         |bytes| cursor::validate_hooks_config(bytes).map_err(|error| error.to_string()),
     );
-    lines.push("[INFO] OpenCode integration is planned for Phase 6".to_owned());
+    inspect_integration(
+        &mut lines,
+        "OpenCode",
+        options
+            .opencode_config
+            .clone()
+            .or_else(|| home_join(".config/opencode/opencode.json")),
+        |bytes| opencode::validate_config(bytes).map_err(|error| error.to_string()),
+    );
     let has_errors = lines.iter().any(|line| line.starts_with("[ERROR]"));
     DoctorReport { lines, has_errors }
 }

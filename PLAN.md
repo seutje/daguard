@@ -459,38 +459,38 @@ Goal: enforce Drupal-development semantics rather than only filesystem patterns.
 
 ## 6.1 OpenCode plugin bridge
 
-- [ ] Implement minimal OpenCode plugin under `integrations/opencode/`.
-- [ ] Hook `tool.execute.before` or the currently supported equivalent.
-- [ ] Convert OpenCode input into canonical JSON.
-- [ ] Invoke the native `daguard` executable.
-- [ ] Block execution when `daguard` returns deny.
-- [ ] Block execution when the guard cannot be executed.
-- [ ] Block execution when guard output is malformed.
-- [ ] Avoid relying on argument mutation for security guarantees.
+- [x] Implement minimal OpenCode plugin under `integrations/opencode/`.
+- [x] Hook `tool.execute.before` or the currently supported equivalent.
+- [x] Convert OpenCode input into canonical JSON.
+- [x] Invoke the native `daguard` executable.
+- [x] Block execution when `daguard` returns deny.
+- [x] Block execution when the guard cannot be executed.
+- [x] Block execution when guard output is malformed.
+- [x] Avoid relying on argument mutation for security guarantees.
 
 ## 6.2 OpenCode fixtures and tests
 
-- [ ] Capture sanitized representative OpenCode hook payloads.
-- [ ] Add adapter golden tests.
-- [ ] Add plugin-level tests where practical.
-- [ ] Record tested OpenCode CLI versions.
-- [ ] Record tested OpenCode desktop behavior separately if applicable.
-- [ ] Document known version-specific limitations.
+- [x] Capture sanitized representative OpenCode hook payloads.
+- [x] Add adapter golden tests.
+- [x] Add plugin-level tests where practical.
+- [x] Record tested OpenCode CLI versions.
+- [x] Record tested OpenCode desktop behavior separately if applicable.
+- [x] Document known version-specific limitations.
 
 ## 6.3 Three-agent policy parity
 
-- [ ] Build a shared scenario matrix.
-- [ ] Verify protected files receive the same canonical decision across all three agents.
-- [ ] Verify Drush decisions are identical.
-- [ ] Verify destructive SQL decisions are identical.
-- [ ] Verify force-push decisions are identical.
-- [ ] Verify protected writes are identical.
+- [x] Build a shared scenario matrix.
+- [x] Verify protected files receive the same canonical decision across all three agents.
+- [x] Verify Drush decisions are identical.
+- [x] Verify destructive SQL decisions are identical.
+- [x] Verify force-push decisions are identical.
+- [x] Verify protected writes are identical.
 
 ### Phase 6 exit criteria
 
-- [ ] Codex, Cursor, and OpenCode all use the same policy engine.
-- [ ] The same scenario produces the same canonical decision across all adapters.
-- [ ] OpenCode integration fails closed when the guard cannot produce a valid decision.
+- [x] Codex, Cursor, and OpenCode all use the same policy engine.
+- [x] The same scenario produces the same canonical decision across all adapters.
+- [x] OpenCode integration fails closed when the guard cannot produce a valid decision.
 
 ---
 

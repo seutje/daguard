@@ -2,4 +2,4 @@
 
 pub(crate) mod codex;
 pub(crate) mod cursor;
-mod opencode;
+pub(crate) mod opencode;

@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "session_id": "ses_fixture_patch",
+  "call_id": "call_fixture_patch",
+  "cwd": "/workspace/example",
+  "tool_name": "apply_patch",
+  "tool_input": {"patchText": "*** Begin Patch\n*** Update File: web/core/lib/Drupal.php\n@@\n-old\n+new\n*** End Patch"}
+}

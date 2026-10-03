@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::adapters::{codex, cursor};
+use crate::adapters::{codex, cursor, opencode};
 use crate::audit;
 use crate::doctor::{self, DoctorOptions};
 use crate::model::CanonicalRequest;
@@ -62,7 +62,7 @@ fn dispatch(args: Vec<std::ffi::OsString>) -> Result<(), CliError> {
 fn adapter_command(mut args: Vec<String>) -> Result<(), CliError> {
     let Some(adapter) = args.first().cloned() else {
         return Err(CliError::usage(
-            "usage: daguard --adapter <codex|cursor> --event pre-tool [--policy PATH] [--project-policy PATH] [--audit-log PATH]",
+            "usage: daguard --adapter <codex|cursor|opencode> --event pre-tool [--policy PATH] [--project-policy PATH] [--audit-log PATH]",
         ));
     };
     args.remove(0);
@@ -81,10 +81,32 @@ fn adapter_command(mut args: Vec<String>) -> Result<(), CliError> {
                 write_json(&cursor::error_response())
             }
         },
+        "opencode" => match evaluate_opencode_hook(&args) {
+            Ok(response) => write_json(&response),
+            Err(error) => {
+                eprintln!("daguard: {}", error.message);
+                write_json(&opencode::error_response())
+            }
+        },
         _ => Err(CliError::usage(
-            "usage: daguard --adapter <codex|cursor> --event pre-tool [--policy PATH] [--project-policy PATH] [--audit-log PATH]",
+            "usage: daguard --adapter <codex|cursor|opencode> --event pre-tool [--policy PATH] [--project-policy PATH] [--audit-log PATH]",
         )),
     }
+}
+
+fn evaluate_opencode_hook(args: &[String]) -> Result<opencode::Response, CliError> {
+    let options = adapter_options(args, "OpenCode")?;
+    let bytes = read_bounded(None).map_err(|error| CliError::evaluation(error.to_string()))?;
+    let request = opencode::normalize(&bytes)
+        .map_err(|error| CliError::evaluation(format!("OpenCode adapter error: {error}")))?;
+    let decision = policy::evaluate(
+        &request,
+        options.organization.as_ref(),
+        options.project.as_ref(),
+    )
+    .map_err(|error| CliError::evaluation(error.to_string()))?;
+    write_audit(options.audit_log.as_deref(), &request, &decision, Some(1))?;
+    Ok(opencode::render(&decision))
 }
 
 fn evaluate_cursor_hook(args: &[String]) -> Result<cursor::Response, CliError> {
@@ -331,13 +353,15 @@ fn policy_command(mut args: Vec<String>) -> Result<(), CliError> {
 }
 
 fn doctor(args: &[String]) -> Result<(), CliError> {
-    if args.len() == 2 && matches!(args[0].as_str(), "codex" | "cursor") {
+    if args.len() == 2 && matches!(args[0].as_str(), "codex" | "cursor" | "opencode") {
         let bytes = read_bounded(Some(Path::new(&args[1])))
             .map_err(|error| CliError::config(error.to_string()))?;
         match args[0].as_str() {
             "codex" => codex::validate_hooks_config(&bytes)
                 .map_err(|error| CliError::config(error.to_string()))?,
             "cursor" => cursor::validate_hooks_config(&bytes)
+                .map_err(|error| CliError::config(error.to_string()))?,
+            "opencode" => opencode::validate_config(&bytes)
                 .map_err(|error| CliError::config(error.to_string()))?,
             _ => unreachable!(),
         }
@@ -353,6 +377,7 @@ fn doctor(args: &[String]) -> Result<(), CliError> {
             "--audit-log" => &mut options.audit_log,
             "--codex-hooks" => &mut options.codex_hooks,
             "--cursor-hooks" => &mut options.cursor_hooks,
+            "--opencode-config" => &mut options.opencode_config,
             value => return Err(CliError::usage(format!("unexpected argument: {value}"))),
         };
         index += 1;
@@ -370,7 +395,7 @@ fn doctor(args: &[String]) -> Result<(), CliError> {
 }
 
 fn help() -> &'static str {
-    "Usage:\n  daguard version\n  daguard check [--policy PATH] [--project-policy PATH] [--audit-log PATH] [FILE|-]\n  daguard explain <rule-id>\n  daguard policy lint [--layer organization|project] <path>\n  daguard doctor [--policy PATH] [--audit-log PATH] [--codex-hooks PATH] [--cursor-hooks PATH]\n  daguard doctor <codex|cursor> <hooks.json>\n  daguard --adapter <codex|cursor> --event pre-tool [--policy PATH] [--project-policy PATH] [--audit-log PATH]\n\nPolicy precedence: built-in invariants, organization policy, project tightening, default.\nA lower layer can never override a higher-layer deny."
+    "Usage:\n  daguard version\n  daguard check [--policy PATH] [--project-policy PATH] [--audit-log PATH] [FILE|-]\n  daguard explain <rule-id>\n  daguard policy lint [--layer organization|project] <path>\n  daguard doctor [--policy PATH] [--audit-log PATH] [--codex-hooks PATH] [--cursor-hooks PATH] [--opencode-config PATH]\n  daguard doctor <codex|cursor|opencode> <config.json>\n  daguard --adapter <codex|cursor|opencode> --event pre-tool [--policy PATH] [--project-policy PATH] [--audit-log PATH]\n\nPolicy precedence: built-in invariants, organization policy, project tightening, default.\nA lower layer can never override a higher-layer deny."
 }
 
 struct CliError {

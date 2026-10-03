@@ -620,23 +620,34 @@ Phase 4 development environment.
 
 ### 11.3 OpenCode
 
-OpenCode provides tool pre-execution hooks and, in its newer plugin API, permission evaluation hooks with `allow`, `ask`, and `deny` effects.
+OpenCode CLI v2.0.22 provides the `ctx.tool.hook("execute.before", callback)`
+pre-execution hook. Its event supplies the tool name, unmodified input,
+session ID, and call ID. The v2 tool event does not expose a per-call working
+directory, so the bridge uses the plugin instance's `ctx.location.directory`.
+This location behavior is a version-specific limitation that must be retested
+on OpenCode upgrades. OpenCode Desktop was not available for Phase 6 and is not
+claimed as tested.
 
 The preferred OpenCode integration is a very small JavaScript/TypeScript plugin whose only job is to:
 
-1. receive the OpenCode hook event;
-2. serialize relevant information to JSON;
+1. receive the OpenCode v2 hook event;
+2. serialize it into the versioned OpenCode adapter schema;
 3. execute `daguard --adapter opencode --event pre-tool`;
 4. parse the result;
-5. block the operation when the guard denies it.
+5. allow only a valid `allow` result and block deny, ask, execution failure,
+   timeout, non-zero exit, oversized output, or malformed output.
 
-The plugin MUST NOT duplicate security rules.
+The plugin MUST NOT duplicate security rules, invoke the guard through a shell,
+or mutate proposed tool arguments. Deployment configuration must use absolute
+trusted paths for the plugin, guard executable, and mandatory policy. The
+bridge is dependency-free and runs inside OpenCode's existing JavaScript
+runtime; it does not add a workstation runtime prerequisite.
 
 Conceptually:
 
 ```javascript
 const result = spawnGuard(event)
-if (result.decision === "deny") {
+if (result.decision !== "allow") {
   throw new Error(result.reason)
 }
 ```
@@ -1437,7 +1448,8 @@ Provide a diagnostic command:
 daguard doctor
 ```
 
-Optional `--policy`, `--audit-log`, `--codex-hooks`, and `--cursor-hooks`
+Optional `--policy`, `--audit-log`, `--codex-hooks`, `--cursor-hooks`, and
+`--opencode-config`
 arguments select non-standard installation paths. Without them, diagnostics
 inspect the managed/user policy locations, the per-user audit directory, and
 the standard per-user hook paths. Diagnostics are read-only: they do not create
@@ -1457,7 +1469,7 @@ Expected WSL output:
 [OK] ddev available
 [OK] Codex hook detected
 [OK] Cursor hook detected
-[WARN] OpenCode adapter not installed
+[OK] OpenCode hook valid
 ```
 
 The doctor command never prints secrets, raw policy secrets, environment-variable values, or captured tool payloads.

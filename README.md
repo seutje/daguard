@@ -5,10 +5,10 @@ intercept coding-agent tool calls and apply shared, deterministic policy before 
 operation runs. Its primary deployment target is WSL2 with DDEV; Codex, Cursor,
 and OpenCode are the first planned integrations.
 
-The repository includes the first five phases defined in [PLAN.md](PLAN.md):
+The repository includes the first six phases defined in [PLAN.md](PLAN.md):
 the canonical enforcement core, Codex and Cursor adapters, and bounded command
 analysis for shell, DDEV, Drush, SQL, Composer, and Git operations, plus safe
-local auditing and operator diagnostics. The
+local auditing, operator diagnostics, and the fail-closed OpenCode v2 bridge. The
 architecture and security model are specified in [DESIGN.md](DESIGN.md).
 
 ## CLI
@@ -33,6 +33,7 @@ daguard doctor --policy /etc/daguard/policy.json \
   --audit-log ~/.local/state/daguard/audit.jsonl
 daguard doctor codex config/codex/hooks.json
 daguard doctor cursor config/cursor/hooks.json
+daguard doctor opencode config/opencode/opencode.json
 ```
 
 Add `--audit-log PATH` to `check` or an adapter invocation to append a
@@ -45,10 +46,9 @@ five retained files); rename-and-create rotation works well because each guard
 invocation reopens the configured path.
 
 `daguard doctor` reports the executable path and target, organization-policy
-validity and SHA-256, audit-directory status, WSL/DDEV detection, and Codex and
-Cursor hook status without executing DDEV or an agent. It warns when the binary
-or mandatory policy is inside a project repository. OpenCode diagnostics remain
-explicitly deferred until the Phase 6 integration exists.
+validity and SHA-256, audit-directory status, WSL/DDEV detection, and Codex,
+Cursor, and OpenCode integration status without executing DDEV or an agent. It
+warns when the binary or mandatory policy is inside a project repository.
 
 Policy precedence is `built-in deny > organization > project > default`, and
 decision strength is `deny > ask > allow`. Project policy may add only denial
@@ -126,6 +126,33 @@ installed in the Phase 4 development environment, so a live-tested application
 version is not claimed; centrally deployed Cursor versions must run the adapter
 compatibility suite before release or upgrade.
 
+## OpenCode integration
+
+The dependency-free bridge in
+[`integrations/opencode/`](integrations/opencode/) targets OpenCode CLI v2 and
+registers the supported `ctx.tool.hook("execute.before", ...)` hook. Configure
+it using the object form shown in
+[`config/opencode/opencode.json`](config/opencode/opencode.json), replacing the
+example package, guard, and organization-policy paths with absolute trusted
+installation paths. OpenCode supplies the JavaScript runtime; the bridge adds no
+Node.js, npm, Bun, or other separately installed runtime requirement.
+
+The bridge passes the unmodified tool name and arguments to
+`daguard --adapter opencode --event pre-tool` without invoking a shell. It
+allows execution only after a valid schema-1 `allow` response. A denial,
+canonical `ask`, timeout, missing executable, non-zero exit, oversized output,
+or malformed response throws from the pre-execution hook and blocks the tool.
+The bridge never rewrites tool arguments and contains no Drupal policy.
+
+The fixtures and bridge contract were checked against OpenCode CLI v2.0.22 and
+the [official OpenCode v2 plugin documentation](https://opencode.ai/v2/docs/build/plugins)
+on 2026-10-03. OpenCode v2's tool event does not expose a per-call working
+directory, so the bridge uses the plugin instance's `ctx.location.directory`;
+multi-location behavior must be retested if OpenCode changes that contract.
+OpenCode Desktop was unavailable, and no desktop-version compatibility is
+claimed. Run the Rust golden/parity suite, the JavaScript bridge tests, and a
+live denied-tool smoke test before upgrading a managed OpenCode deployment.
+
 ## Development
 
 Install [`rustup`](https://rustup.rs/) and clone the repository. The checked-in
@@ -136,6 +163,7 @@ cargo build --locked
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --locked
+node --test integrations/opencode/daguard-plugin.test.js
 ```
 
 Normal end-user installation will use a packaged native executable and will not

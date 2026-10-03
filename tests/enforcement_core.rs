@@ -13,6 +13,19 @@ struct Fixture {
     rule_id: String,
 }
 
+#[derive(Deserialize)]
+struct AdapterParityFixture {
+    name: String,
+    codex_tool: String,
+    cursor_tool: String,
+    opencode_tool: String,
+    codex_input: Value,
+    cursor_input: Value,
+    opencode_input: Value,
+    decision: String,
+    rule_id: Option<String>,
+}
+
 fn run(args: &[&str], stdin: &[u8]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_daguard"))
         .args(args)
@@ -107,6 +120,24 @@ fn cursor_request(tool_name: &str, tool_input: &Value) -> Vec<u8> {
 
 fn run_cursor(input: &[u8], extra_args: &[&str]) -> Output {
     let mut args = vec!["--adapter", "cursor", "--event", "pre-tool"];
+    args.extend_from_slice(extra_args);
+    run(&args, input)
+}
+
+fn opencode_request(tool_name: &str, tool_input: &Value) -> Vec<u8> {
+    serde_json::to_vec(&json!({
+        "schema": 1,
+        "session_id": "ses_synthetic",
+        "call_id": "call_synthetic",
+        "cwd": "/workspace/project",
+        "tool_name": tool_name,
+        "tool_input": tool_input
+    }))
+    .unwrap()
+}
+
+fn run_opencode(input: &[u8], extra_args: &[&str]) -> Output {
+    let mut args = vec!["--adapter", "opencode", "--event", "pre-tool"];
     args.extend_from_slice(extra_args);
     run(&args, input)
 }
@@ -249,6 +280,7 @@ fn doctor_reports_installation_policy_hash_and_integrations() {
     let policy = format!("{manifest}/policy/default-policy.json");
     let codex = format!("{manifest}/config/codex/hooks.json");
     let cursor = format!("{manifest}/config/cursor/hooks.json");
+    let opencode = format!("{manifest}/config/opencode/opencode.json");
     let output = run(
         &[
             "doctor",
@@ -258,6 +290,8 @@ fn doctor_reports_installation_policy_hash_and_integrations() {
             &codex,
             "--cursor-hooks",
             &cursor,
+            "--opencode-config",
+            &opencode,
         ],
         b"",
     );
@@ -268,7 +302,7 @@ fn doctor_reports_installation_policy_hash_and_integrations() {
     assert!(report.contains("organization policy schema is valid"));
     assert!(report.contains("Codex hook valid"));
     assert!(report.contains("Cursor hook valid"));
-    assert!(report.contains("OpenCode integration is planned for Phase 6"));
+    assert!(report.contains("OpenCode hook valid"));
 
     let invalid = format!("{manifest}/tests/fixtures/invalid-policy.json");
     let failed = run(&["doctor", "--policy", &invalid], b"");
@@ -388,6 +422,75 @@ fn cursor_adapter_errors_emit_a_native_deny_response() {
 }
 
 #[test]
+fn opencode_adapter_errors_emit_a_native_deny_response() {
+    let malformed = run_opencode(br#"{"tool_name":"read""#, &[]);
+    assert!(malformed.status.success());
+    let response: Value = serde_json::from_slice(&malformed.stdout).unwrap();
+    assert_eq!(response["decision"], "deny");
+    assert_eq!(response["rule_id"], "guard.evaluation_error");
+}
+
+#[test]
+fn all_adapters_enforce_the_shared_scenario_matrix() {
+    let fixtures: Vec<AdapterParityFixture> =
+        serde_json::from_str(include_str!("fixtures/adapter_parity.json")).unwrap();
+    for fixture in fixtures {
+        let codex = run_codex(
+            &codex_request(&fixture.codex_tool, &fixture.codex_input),
+            &[],
+        );
+        let cursor = run_cursor(
+            &cursor_request(&fixture.cursor_tool, &fixture.cursor_input),
+            &[],
+        );
+        let opencode = run_opencode(
+            &opencode_request(&fixture.opencode_tool, &fixture.opencode_input),
+            &[],
+        );
+        for (adapter, output) in [("codex", codex), ("cursor", cursor), ("opencode", opencode)] {
+            assert!(
+                output.status.success(),
+                "{} failed for {}: {}",
+                adapter,
+                fixture.name,
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let (decision, rule_id) = match adapter {
+                "codex" => (
+                    response["hookSpecificOutput"]["permissionDecision"].as_str(),
+                    response["hookSpecificOutput"]["permissionDecisionReason"]
+                        .as_str()
+                        .and_then(|value| value.rsplit_once(' ').map(|(_, rule)| rule)),
+                ),
+                "cursor" => (
+                    response["permission"].as_str(),
+                    response["user_message"]
+                        .as_str()
+                        .and_then(|value| value.rsplit_once(' ').map(|(_, rule)| rule)),
+                ),
+                "opencode" => (response["decision"].as_str(), response["rule_id"].as_str()),
+                _ => unreachable!(),
+            };
+            assert_eq!(
+                decision,
+                Some(fixture.decision.as_str()),
+                "{} / {}",
+                fixture.name,
+                adapter
+            );
+            assert_eq!(
+                rule_id,
+                fixture.rule_id.as_deref(),
+                "{} / {}",
+                fixture.name,
+                adapter
+            );
+        }
+    }
+}
+
+#[test]
 fn codex_adapter_applies_the_shipped_organization_policy() {
     let policy = format!("{}/policy/default-policy.json", env!("CARGO_MANIFEST_DIR"));
     let output = run_codex(
@@ -433,6 +536,20 @@ fn codex_adapter_errors_emit_only_a_supported_deny_response() {
 fn codex_doctor_accepts_the_shipped_hook_template() {
     let hooks = format!("{}/config/codex/hooks.json", env!("CARGO_MANIFEST_DIR"));
     let output = run(&["doctor", "codex", &hooks], b"");
+    assert!(
+        output.status.success(),
+        "doctor failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn opencode_doctor_accepts_the_shipped_configuration() {
+    let config = format!(
+        "{}/config/opencode/opencode.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let output = run(&["doctor", "opencode", &config], b"");
     assert!(
         output.status.success(),
         "doctor failed: {}",

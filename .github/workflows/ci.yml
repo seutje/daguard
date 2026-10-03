@@ -26,6 +26,8 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Test
         run: cargo test --locked
+      - name: Test OpenCode bridge
+        run: node --test integrations/opencode/daguard-plugin.test.js
 
   supply-chain:
     name: Dependency security and licenses

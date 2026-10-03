@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      "package": "/usr/local/share/daguard/opencode",
+      "options": {
+        "guard": "/usr/local/bin/daguard",
+        "policy": "/etc/daguard/policy.json",
+        "timeoutMs": 5000
+      }
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+[
+  {
+    "name": "protected settings read",
+    "codex_tool": "read_file",
+    "cursor_tool": "Read",
+    "opencode_tool": "read",
+    "codex_input": {"path": "web/sites/default/settings.php"},
+    "cursor_input": {"file_path": "web/sites/default/settings.php"},
+    "opencode_input": {"filePath": "web/sites/default/settings.php"},
+    "decision": "deny",
+    "rule_id": "drupal.secret.settings_php"
+  },
+  {
+    "name": "dangerous Drush eval",
+    "codex_tool": "Bash",
+    "cursor_tool": "Shell",
+    "opencode_tool": "bash",
+    "codex_input": {"command": "ddev drush ev 'print(1)'"},
+    "cursor_input": {"command": "ddev drush ev 'print(1)'"},
+    "opencode_input": {"command": "ddev drush ev 'print(1)'"},
+    "decision": "deny",
+    "rule_id": "shell.drush.eval"
+  },
+  {
+    "name": "destructive SQL",
+    "codex_tool": "Bash",
+    "cursor_tool": "Shell",
+    "opencode_tool": "bash",
+    "codex_input": {"command": "ddev mysql -e 'DELETE FROM node'"},
+    "cursor_input": {"command": "ddev mysql -e 'DELETE FROM node'"},
+    "opencode_input": {"command": "ddev mysql -e 'DELETE FROM node'"},
+    "decision": "deny",
+    "rule_id": "sql.mutation.delete"
+  },
+  {
+    "name": "force push",
+    "codex_tool": "Bash",
+    "cursor_tool": "Shell",
+    "opencode_tool": "bash",
+    "codex_input": {"command": "git push --force origin main"},
+    "cursor_input": {"command": "git push --force origin main"},
+    "opencode_input": {"command": "git push --force origin main"},
+    "decision": "deny",
+    "rule_id": "git.force_push"
+  },
+  {
+    "name": "protected core write",
+    "codex_tool": "write_file",
+    "cursor_tool": "Write",
+    "opencode_tool": "write",
+    "codex_input": {"path": "web/core/lib/Drupal.php", "content": "synthetic"},
+    "cursor_input": {"file_path": "web/core/lib/Drupal.php", "contents": "synthetic"},
+    "opencode_input": {"filePath": "web/core/lib/Drupal.php", "content": "synthetic"},
+    "decision": "deny",
+    "rule_id": "filesystem.write.core"
+  },
+  {
+    "name": "safe custom write",
+    "codex_tool": "write_file",
+    "cursor_tool": "Write",
+    "opencode_tool": "write",
+    "codex_input": {"path": "web/modules/custom/example/example.module", "content": "synthetic"},
+    "cursor_input": {"file_path": "web/modules/custom/example/example.module", "contents": "synthetic"},
+    "opencode_input": {"filePath": "web/modules/custom/example/example.module", "content": "synthetic"},
+    "decision": "allow",
+    "rule_id": null
+  }
+]

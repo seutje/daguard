@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "session_id": "ses_fixture_read",
+  "call_id": "call_fixture_read",
+  "cwd": "/workspace/example",
+  "tool_name": "read",
+  "tool_input": {"filePath": "web/modules/custom/example/example.module"}
+}
