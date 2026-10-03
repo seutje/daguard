@@ -175,9 +175,82 @@ jobs:
           name: release-${{ matrix.target }}
           path: dist/*.tar.gz
 
+  package-windows:
+    name: Build and verify native Windows release
+    runs-on: windows-latest
+    env:
+      TARGET: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust target
+        shell: pwsh
+        run: |
+          rustup show active-toolchain
+          rustup target add $env:TARGET
+      - name: Select release version
+        id: version
+        shell: pwsh
+        run: |
+          $metadata = cargo metadata --locked --format-version 1 --no-deps | ConvertFrom-Json
+          $packageVersion = ($metadata.packages | Where-Object name -eq 'daguard').version
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$packageVersion") {
+            throw "tag $env:GITHUB_REF_NAME does not match Cargo package version $packageVersion"
+          }
+          "value=$packageVersion" >> $env:GITHUB_OUTPUT
+      - name: Test and build static-CRT native binary
+        shell: pwsh
+        env:
+          DAGUARD_GIT_SHA: ${{ github.sha }}
+          DAGUARD_PROVENANCE: github-actions
+        run: |
+          cargo test --locked --target $env:TARGET
+          $env:DAGUARD_RUSTC_VERSION = rustc --version
+          $env:DAGUARD_CARGO_LOCK_SHA256 = (Get-FileHash Cargo.lock -Algorithm SHA256).Hash.ToLowerInvariant()
+          cargo build --locked --release --target $env:TARGET
+          $binary = "target\$env:TARGET\release\daguard.exe"
+          $version = & $binary version
+          if ($version -notmatch "\($env:TARGET\)" -or $version -notmatch "git: $env:GITHUB_SHA" -or $version -notmatch "Cargo.lock SHA-256: $env:DAGUARD_CARGO_LOCK_SHA256") {
+            throw 'Native Windows build metadata verification failed.'
+          }
+      - name: Inspect PE runtime imports
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installation = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $dumpbin = Get-ChildItem "$installation\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          $imports = & $dumpbin.FullName /dependents "target\$env:TARGET\release\daguard.exe"
+          $imports | Set-Content binary-dependencies.txt
+          if ($imports -match '(?i)(vcruntime|msvcp|ucrtbase)\d*\.dll') {
+            throw 'Native Windows binary unexpectedly imports a dynamic C/C++ runtime.'
+          }
+      - name: Install pinned release inventory tools
+        shell: pwsh
+        run: |
+          cargo install cargo-cyclonedx --version 0.5.9 --locked
+          cargo install cargo-deny --version 0.20.2 --locked
+      - name: Generate inventories and assemble bundle
+        shell: pwsh
+        run: |
+          cargo cyclonedx --format json --spec-version 1.5 --target $env:TARGET --all-features --override-filename daguard.cdx
+          cargo metadata --locked --format-version 1 | Set-Content dependency-inventory.json -Encoding utf8NoBOM
+          cargo deny list --format json | Set-Content license-inventory.json -Encoding utf8NoBOM
+          scripts/package-windows.ps1 `
+            -Binary "target\$env:TARGET\release\daguard.exe" `
+            -Output dist `
+            -Version "${{ steps.version.outputs.value }}" `
+            -Sbom daguard.cdx.json `
+            -Dependencies dependency-inventory.json `
+            -Licenses license-inventory.json
+          tests/windows_release.ps1 -Bundle "dist\daguard-${{ steps.version.outputs.value }}-$env:TARGET"
+      - name: Upload verified release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ env.TARGET }}
+          path: dist/*.zip
+
   publish:
     name: Attest and publish release artifacts
-    needs: [package-linux, package-macos]
+    needs: [package-linux, package-macos, package-windows]
     runs-on: ubuntu-latest
     permissions:
       attestations: write
@@ -191,11 +264,13 @@ jobs:
           path: dist
           merge-multiple: true
       - name: Create combined release checksums
-        run: cd dist && sha256sum *.tar.gz > SHA256SUMS
+        run: cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS
       - name: Attest release archives
         uses: actions/attest-build-provenance@v3
         with:
-          subject-path: "dist/*.tar.gz"
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
       - name: Attest checksum manifest
         uses: actions/attest-build-provenance@v3
         with:
@@ -206,9 +281,10 @@ jobs:
           name: daguard-release-${{ github.sha }}
           path: |
             dist/*.tar.gz
+            dist/*.zip
             dist/SHA256SUMS
       - name: Publish tagged release
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --verify-tag --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.zip dist/SHA256SUMS --verify-tag --generate-notes

@@ -10,6 +10,11 @@ once releases begin.
 
 ### Added
 
+- Phase 13 preview support for native x86_64 Windows, including host-independent
+  drive/UNC normalization, Windows case semantics, explicit WSL UNC behavior,
+  static-CRT native CI and PE inspection, ZIP packaging, PowerShell install and
+  uninstall flows, and native packaged adapter smoke coverage. Live agent
+  compatibility and independent managed-ACL diagnostics remain release gates.
 - Phase 12 preview packaging for native Apple Silicon and Intel macOS, including
   native CI tests, portable checksums/install smoke tests, architecture checks,
   root-owned macOS installation support, and install/uninstall guidance. Live

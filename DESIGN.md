@@ -228,6 +228,14 @@ daguard-<version>-x86_64-pc-windows-msvc.exe
 
 The Windows release SHOULD statically link the MSVC CRT when practical and MUST require no separately installed Rust toolchain or third-party runtime. Windows path normalization, drive-letter semantics, UNC paths, and WSL path interop require platform-specific tests before native Windows is declared supported.
 
+The implemented native path contract recognizes drive-rooted and UNC paths,
+normalizes both separator forms lexically, rejects drive-relative paths, and
+matches path policy case-insensitively. `\\wsl.localhost\<distribution>\...`
+and `\\wsl$\<distribution>\...` are supported as ordinary UNC paths. No
+translation occurs between those paths, `C:\...`, and WSL `/mnt/<drive>/...`
+paths. Native Windows remains a preview until native CI passes and supported
+agent versions complete live allow/deny hook tests.
+
 ### 5.3 DDEV relationship
 
 DDEV is an execution target that the guard understands; it is not a runtime dependency of the guard. `daguard doctor` may detect DDEV and report integration status, but policy evaluation itself must function when DDEV is absent or stopped.
@@ -1621,6 +1629,13 @@ C:\ProgramData\Daguard\policy.json
 ```
 
 Machine-managed ACLs should prevent ordinary agent sessions from modifying mandatory policy or the executable.
+
+The PowerShell installer verifies the bundle manifest and policy before copying
+files, preserves an existing organization policy unless replacement is
+explicit, and applies Administrator/SYSTEM full-control plus Users read/execute
+ACLs for a machine installation. The uninstaller preserves policy by default.
+Independent ACL inspection by `doctor --managed` is not implemented on native
+Windows, so endpoint-management ACL verification remains an operator gate.
 
 ### 24.7 `daguard doctor`
 

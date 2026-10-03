@@ -65,6 +65,35 @@ jobs:
           file "$binary" | grep -F 'Mach-O 64-bit executable'
           "$binary" version | grep -F '(${{ matrix.target }})'
 
+  windows:
+    name: Native Windows smoke
+    runs-on: windows-latest
+    env:
+      TARGET: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust target
+        shell: pwsh
+        run: |
+          rustup show active-toolchain
+          rustup target add $env:TARGET
+      - name: Run native Rust suite
+        shell: pwsh
+        run: cargo test --locked --target $env:TARGET
+      - name: Build native optimized binary
+        shell: pwsh
+        env:
+          DAGUARD_GIT_SHA: ${{ github.sha }}
+          DAGUARD_PROVENANCE: github-actions-windows-smoke
+        run: |
+          $env:DAGUARD_RUSTC_VERSION = rustc --version
+          $env:DAGUARD_CARGO_LOCK_SHA256 = (Get-FileHash Cargo.lock -Algorithm SHA256).Hash.ToLowerInvariant()
+          cargo build --locked --release --target $env:TARGET
+          $binary = "target\$env:TARGET\release\daguard.exe"
+          if ((& $binary version) -notmatch "\($env:TARGET\)") {
+            throw 'Native Windows target metadata verification failed.'
+          }
+
   supply-chain:
     name: Dependency security and licenses
     runs-on: ubuntu-latest

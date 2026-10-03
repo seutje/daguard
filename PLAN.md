@@ -853,15 +853,25 @@ Gatekeeper distribution decision.
 # Phase 13 — Optional native Windows support
 
 - [ ] Build `x86_64-pc-windows-msvc` artifact.
-- [ ] Configure static CRT where appropriate.
-- [ ] Implement/test drive-letter normalization.
-- [ ] Implement/test UNC path handling.
-- [ ] Test Windows path case semantics.
-- [ ] Test WSL/Windows path interop scenarios that are explicitly supported.
-- [ ] Add PowerShell installer.
-- [ ] Add PowerShell uninstaller.
+- [x] Configure static CRT where appropriate.
+- [x] Implement/test drive-letter normalization.
+- [x] Implement/test UNC path handling.
+- [x] Test Windows path case semantics.
+- [x] Test WSL/Windows path interop scenarios that are explicitly supported.
+- [x] Add PowerShell installer.
+- [x] Add PowerShell uninstaller.
 - [ ] Test agent hook invocation from native Windows processes.
-- [ ] Document differences between native Windows and WSL deployment.
+- [x] Document differences between native Windows and WSL deployment.
+
+Implementation note (2026-10-03): Native Windows build, static-CRT inspection,
+packaging, PowerShell installation, and synthetic native adapter smoke lanes are
+configured. Host-independent tests cover drive, UNC, case-insensitive, and WSL
+UNC semantics without translating path namespaces. This Linux environment
+cannot execute the Windows artifact or PowerShell release test, so the artifact
+build and native-process boxes remain open until CI passes. Live installed-agent
+allow/deny tests remain a separate support-declaration gate. Native
+`doctor --managed` does not yet inspect Windows ACL entries; machine rollout
+must retain endpoint-management ACL verification.
 
 ### Phase 13 exit criteria
 

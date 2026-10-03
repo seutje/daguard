@@ -102,7 +102,7 @@ impl CanonicalRequest {
         validate_identifier("tool.native_name", &self.tool.native_name)?;
         validate_optional_identifier("session_id", self.session_id.as_deref())?;
         validate_optional_identifier("call_id", self.call_id.as_deref())?;
-        if !std::path::Path::new(&self.cwd).is_absolute()
+        if !crate::paths::is_absolute(&self.cwd)
             || self.cwd.len() > MAX_PATH_BYTES
             || self.cwd.contains('\0')
         {
@@ -405,6 +405,19 @@ mod tests {
         let input = VALID.replace("file_read", "unknown");
         let request = CanonicalRequest::from_slice(input.as_bytes()).unwrap();
         assert_eq!(request.tool.capability, Capability::Unknown);
+    }
+
+    #[test]
+    fn accepts_native_windows_working_directories() {
+        for cwd in [
+            r"C:\Users\Developer\Sites\drupal",
+            r"\\server\share\drupal",
+            r"\\wsl.localhost\Ubuntu\home\developer\drupal",
+        ] {
+            let mut input: serde_json::Value = serde_json::from_str(VALID).unwrap();
+            input["cwd"] = serde_json::Value::String(cwd.to_owned());
+            CanonicalRequest::from_slice(&serde_json::to_vec(&input).unwrap()).unwrap();
+        }
     }
 
     #[test]

@@ -1,10 +1,8 @@
 //! Cursor `preToolUse` request normalization and response rendering.
 
-use std::fmt;
-use std::path::Path;
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fmt;
 
 use crate::model::{
     CanonicalRequest, Capability, Decision, DecisionEffect, Facts, PROTOCOL_VERSION, Tool,
@@ -187,17 +185,19 @@ pub(crate) fn validate_hooks_config(input: &[u8]) -> Result<(), CursorError> {
 }
 
 fn valid_guard_command(command: &str) -> bool {
-    let tokens = command.split_whitespace().collect::<Vec<_>>();
-    let executable_is_absolute = tokens.first().is_some_and(|executable| {
-        let path = Path::new(executable);
-        path.is_absolute() && path.file_name().is_some_and(|name| name == "daguard")
-    });
+    let Some(tokens) = super::command_tokens(command) else {
+        return false;
+    };
+    let tokens = tokens.iter().map(String::as_str).collect::<Vec<_>>();
+    let executable_is_absolute = tokens
+        .first()
+        .is_some_and(|executable| super::is_daguard_executable(executable));
     executable_is_absolute
         && has_pair(&tokens, "--adapter", "cursor")
         && has_pair(&tokens, "--event", "pre-tool")
         && tokens
             .windows(2)
-            .any(|pair| pair[0] == "--policy" && Path::new(pair[1]).is_absolute())
+            .any(|pair| pair[0] == "--policy" && crate::paths::is_absolute(pair[1]))
 }
 
 fn has_pair(tokens: &[&str], flag: &str, value: &str) -> bool {
@@ -341,6 +341,9 @@ mod tests {
         assert!(validate_hooks_config(fixture).is_ok());
         let fail_open = br#"{"version":1,"hooks":{"preToolUse":[{"command":"/usr/local/bin/daguard --adapter cursor --event pre-tool --policy /etc/daguard/policy.json","matcher":"*","failClosed":false}]}}"#;
         assert!(validate_hooks_config(fail_open).is_err());
+
+        let windows = br#"{"version":1,"hooks":{"preToolUse":[{"command":"\"C:\\Program Files\\Daguard\\daguard.exe\" --adapter cursor --event pre-tool --policy \"C:\\ProgramData\\Daguard\\policy.json\"","matcher":"*","failClosed":true}]}}"#;
+        assert!(validate_hooks_config(windows).is_ok());
     }
 
     fn synthetic_decision(effect: DecisionEffect, rule_id: &str) -> Decision {

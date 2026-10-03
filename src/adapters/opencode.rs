@@ -1,7 +1,7 @@
 //! `OpenCode` v2 tool-hook request normalization and response rendering.
 
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -244,18 +244,15 @@ fn configured_plugin_paths(input: &[u8]) -> Result<Vec<PathBuf>, OpenCodeError> 
             let plugin = plugin.as_object()?;
             let package = plugin.get("package").and_then(Value::as_str)?;
             let options = plugin.get("options").and_then(Value::as_object)?;
-            (Path::new(package).is_absolute()
+            (crate::paths::is_absolute(package)
                 && options
                     .get("guard")
                     .and_then(Value::as_str)
-                    .is_some_and(|path| {
-                        let path = Path::new(path);
-                        path.is_absolute() && path.file_name().is_some_and(|name| name == "daguard")
-                    })
+                    .is_some_and(super::is_daguard_executable)
                 && options
                     .get("policy")
                     .and_then(Value::as_str)
-                    .is_some_and(|path| Path::new(path).is_absolute()))
+                    .is_some_and(crate::paths::is_absolute))
             .then(|| PathBuf::from(package))
         })
         .collect::<Vec<_>>();

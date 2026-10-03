@@ -45,6 +45,84 @@ fn environment_settings_reads_are_denied_directly_and_through_shells() {
 }
 
 #[test]
+fn windows_paths_enforce_case_insensitive_protection_in_core_and_adapters() {
+    let cases = [
+        (
+            r"C:\Users\Developer\Sites\drupal",
+            r"WEB\SITES\DEFAULT\SETTINGS.PHP",
+        ),
+        (
+            r"\\server\share\projects\drupal",
+            r"web\sites\default\settings.php",
+        ),
+        (
+            r"\\wsl.localhost\Ubuntu\home\developer\drupal",
+            r"web\sites\default\settings.php",
+        ),
+    ];
+    for (cwd, path) in cases {
+        let input = serde_json::to_vec(&json!({
+            "protocol": 1,
+            "agent": "synthetic-test-agent",
+            "event": "pre_tool_use",
+            "cwd": cwd,
+            "tool": {"native_name": "synthetic", "capability": "file_read"},
+            "input": {"synthetic": true},
+            "facts": {"paths": [path]}
+        }))
+        .unwrap();
+        let output = run(&["check"], &input);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(decision["decision"], "deny", "{cwd}: {path}");
+        assert_eq!(decision["rule_id"], "drupal.secret.settings_php");
+
+        let adapter_inputs = [
+            (
+                "codex",
+                json!({
+                    "session_id": "windows-synthetic", "cwd": cwd,
+                    "hook_event_name": "PreToolUse", "tool_name": "Read",
+                    "tool_use_id": "windows-call", "tool_input": {"path": path}
+                }),
+            ),
+            (
+                "cursor",
+                json!({
+                    "tool_name": "Read", "tool_input": {"path": path},
+                    "tool_use_id": "windows-call", "cwd": cwd
+                }),
+            ),
+            (
+                "opencode",
+                json!({
+                    "schema": 1, "session_id": "windows-synthetic",
+                    "call_id": "windows-call", "cwd": cwd,
+                    "tool_name": "read", "tool_input": {"filePath": path}
+                }),
+            ),
+        ];
+        for (adapter, input) in adapter_inputs {
+            let output = run(
+                &["--adapter", adapter, "--event", "pre-tool"],
+                &serde_json::to_vec(&input).unwrap(),
+            );
+            let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let effect = match adapter {
+                "codex" => &response["hookSpecificOutput"]["permissionDecision"],
+                "cursor" => &response["permission"],
+                _ => &response["decision"],
+            };
+            assert_eq!(effect, "deny", "{adapter}: {cwd}: {path}");
+        }
+    }
+}
+
+#[test]
 fn organization_directory_read_policy_applies_to_recursive_shell_searches() {
     let policy = format!("{}/policy/default-policy.json", env!("CARGO_MANIFEST_DIR"));
     let output = run(

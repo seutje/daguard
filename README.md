@@ -26,6 +26,10 @@ CI runners as preview artifacts. No macOS agent/version is declared supported
 until live hook enforcement is recorded on that architecture; see the
 [macOS installation and validation guide](docs/operations/macos.md).
 
+Native x86_64 Windows packages are built and exercised on Windows CI as preview
+artifacts. Live agent compatibility remains a separate gate; see the
+[native Windows installation and validation guide](docs/operations/windows.md).
+
 ## WSL installation and upgrades
 
 The supported end-user input is the immutable
@@ -108,6 +112,13 @@ smoke tests on matching macOS hardware, and includes them in release checksums
 and provenance attestations. They are unsigned and unnotarized pending an
 organization Developer ID/distribution decision, and native CI does not claim
 live Codex, Cursor, or OpenCode hook compatibility.
+
+It also builds a static-CRT `x86_64-pc-windows-msvc` ZIP on a native Windows
+runner, inspects PE runtime imports, runs the shared suite and packaged
+PowerShell install/adapter smoke test, and publishes the archive with the same
+checksums and provenance. Native Windows drive and UNC paths are normalized
+lexically and matched case-insensitively; `/mnt/c` paths remain WSL/POSIX paths
+and are never translated implicitly.
 
 ## CLI
 
