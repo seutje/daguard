@@ -1,0 +1,18 @@
+{
+  "description": "Drupal Agent Guard pre-execution enforcement",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/daguard --adapter codex --event pre-tool --policy /etc/daguard/policy.json",
+            "timeout": 5,
+            "statusMessage": "Checking organization security policy"
+          }
+        ]
+      }
+    ]
+  }
+}

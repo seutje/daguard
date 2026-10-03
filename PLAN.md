@@ -205,57 +205,57 @@ Goal: get one agent working end-to-end before adding additional adapters.
 
 ## 2.1 Codex fixture collection
 
-- [ ] Capture sanitized representative `PreToolUse` payloads for shell execution.
-- [ ] Capture sanitized representative file-read payloads.
-- [ ] Capture sanitized representative file-write/patch payloads.
-- [ ] Capture sanitized MCP/function-tool payloads if exposed through the hook.
-- [ ] Record the Codex version used to collect each fixture.
-- [ ] Store fixtures without secrets or production paths.
+- [x] Capture sanitized representative `PreToolUse` payloads for shell execution.
+- [x] Capture sanitized representative file-read payloads.
+- [x] Capture sanitized representative file-write/patch payloads.
+- [x] Capture sanitized MCP/function-tool payloads if exposed through the hook.
+- [x] Record the Codex version used to collect each fixture.
+- [x] Store fixtures without secrets or production paths.
 
 ## 2.2 Codex normalization
 
-- [ ] Parse current Codex `PreToolUse` input.
-- [ ] Map `tool_name` and `tool_input` into canonical request fields.
-- [ ] Map session/tool identifiers where available.
-- [ ] Map `cwd`.
-- [ ] Map file-oriented tools to capabilities.
-- [ ] Map shell-oriented tools to `SHELL_EXECUTE`.
-- [ ] Map unknown tools explicitly to `UNKNOWN`.
-- [ ] Add golden tests for every captured fixture.
+- [x] Parse current Codex `PreToolUse` input.
+- [x] Map `tool_name` and `tool_input` into canonical request fields.
+- [x] Map session/tool identifiers where available.
+- [x] Map `cwd`.
+- [x] Map file-oriented tools to capabilities.
+- [x] Map shell-oriented tools to `SHELL_EXECUTE`.
+- [x] Map unknown tools explicitly to `UNKNOWN`.
+- [x] Add golden tests for every captured fixture.
 
 ## 2.3 Codex decision rendering
 
-- [ ] Render a valid allow response for supported Codex versions.
-- [ ] Render a valid deny response with a concise reason.
-- [ ] Confirm Codex actually prevents the denied tool call.
-- [ ] Define behavior if Codex rejects a response schema.
-- [ ] Treat unsupported `ask` behavior as non-security-critical until proven stable.
-- [ ] Add regression fixtures for Codex response parsing.
+- [x] Render a valid allow response for supported Codex versions.
+- [x] Render a valid deny response with a concise reason.
+- [x] Confirm Codex actually prevents the denied tool call.
+- [x] Define behavior if Codex rejects a response schema.
+- [x] Treat unsupported `ask` behavior as non-security-critical until proven stable.
+- [x] Add regression fixtures for Codex response parsing.
 
 ## 2.4 Codex hook configuration
 
-- [ ] Provide documented Codex hook configuration template.
-- [ ] Use an absolute trusted path to `daguard` in managed deployment examples.
-- [ ] Match all relevant tool calls rather than only shell commands.
-- [ ] Document known Codex fail-open/fail-closed limitations.
-- [ ] Add `daguard doctor` checks for Codex hook configuration where practical.
+- [x] Provide documented Codex hook configuration template.
+- [x] Use an absolute trusted path to `daguard` in managed deployment examples.
+- [x] Match all relevant tool calls rather than only shell commands.
+- [x] Document known Codex fail-open/fail-closed limitations.
+- [x] Add `daguard doctor` checks for Codex hook configuration where practical.
 
 ## 2.5 Codex end-to-end security tests
 
-- [ ] Verify `settings.php` read is denied.
-- [ ] Verify `.env` read is denied.
-- [ ] Verify custom module source read is allowed.
-- [ ] Verify custom module source write is allowed.
-- [ ] Verify Drupal core write is denied.
-- [ ] Verify malformed hook input is denied/fails safely.
-- [ ] Verify guard error cannot produce an explicit allow response.
+- [x] Verify `settings.php` read is denied.
+- [x] Verify `.env` read is denied.
+- [x] Verify custom module source read is allowed.
+- [x] Verify custom module source write is allowed.
+- [x] Verify Drupal core write is denied.
+- [x] Verify malformed hook input is denied/fails safely.
+- [x] Verify guard error cannot produce an explicit allow response.
 
 ### Phase 2 exit criteria
 
-- [ ] Codex invokes the packaged guard for representative tool calls.
-- [ ] Codex blocks protected file reads and writes based on shared core policy.
-- [ ] Adapter contains normalization/rendering only, not Drupal policy logic.
-- [ ] Golden fixture tests protect the adapter contract.
+- [x] Codex invokes the packaged guard for representative tool calls.
+- [x] Codex blocks protected file reads and writes based on shared core policy.
+- [x] Adapter contains normalization/rendering only, not Drupal policy logic.
+- [x] Golden fixture tests protect the adapter contract.
 
 ---
 

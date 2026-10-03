@@ -1,0 +1,15 @@
+# Merge this with the organization's managed requirements.toml. The executable
+# and policy must be installed at these root-controlled absolute paths.
+allow_managed_hooks_only = true
+
+[features]
+hooks = true
+
+[[hooks.PreToolUse]]
+matcher = "*"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "/usr/local/bin/daguard --adapter codex --event pre-tool --policy /etc/daguard/policy.json"
+timeout = 5
+statusMessage = "Checking organization security policy"

@@ -1,0 +1,14 @@
+{
+  "session_id": "thr_fixture_read",
+  "transcript_path": null,
+  "cwd": "/workspace/example",
+  "hook_event_name": "PreToolUse",
+  "model": "fixture-model",
+  "turn_id": "turn_fixture_read",
+  "permission_mode": "default",
+  "tool_name": "read_file",
+  "tool_use_id": "call_fixture_read",
+  "tool_input": {
+    "path": "web/modules/custom/example/example.module"
+  }
+}

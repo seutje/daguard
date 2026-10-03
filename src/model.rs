@@ -92,7 +92,7 @@ impl CanonicalRequest {
         Ok(request)
     }
 
-    fn validate(&self) -> Result<(), ModelError> {
+    pub(crate) fn validate(&self) -> Result<(), ModelError> {
         if self.protocol != PROTOCOL_VERSION {
             return Err(ModelError::Invalid("unsupported protocol version"));
         }

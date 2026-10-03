@@ -486,27 +486,40 @@ For the initial security boundary, mandatory organization rules should use only 
 
 ### 11.1 Codex
 
-Current Codex hook schemas expose `PreToolUse`, including fields such as `cwd`, `session_id`, `tool_name`, `tool_input`, `tool_use_id`, `permission_mode`, and `turn_id`. The current output schema supports a pre-tool permission decision.
+Codex CLI 0.160.0 and the official hook contract retrieved on 2026-10-03
+expose `PreToolUse`, including fields such as `cwd`, `session_id`, `tool_name`,
+`tool_input`, `tool_use_id`, `permission_mode`, and `turn_id`. The current output
+schema supports a pre-tool permission decision. Compatibility fixtures record
+this tested version; future Codex upgrades require rerunning the golden and live
+denial tests.
 
-Recommended Codex configuration:
+Recommended user-managed Codex configuration (`hooks.json`):
 
-```toml
-[features]
-hooks = true
-
-[hooks]
-
-[[hooks.PreToolUse]]
-matcher = ".*"
-
-[[hooks.PreToolUse.hooks]]
-type = "command"
-command = "/home/USER/.local/bin/daguard --adapter codex --event pre-tool"
-timeout_sec = 5
-statusMessage = "Checking team security policy"
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/daguard --adapter codex --event pre-tool --policy /etc/daguard/policy.json",
+            "timeout": 5,
+            "statusMessage": "Checking organization security policy"
+          }
+        ]
+      }
+    ]
+  }
+}
 ```
 
-The actual deployment script MUST generate the path rather than asking developers to edit `USER` manually.
+The actual deployment script MUST install or generate trusted absolute paths
+rather than relying on a relative repository path. Non-managed hooks require
+explicit trust in Codex. Managed deployments should pin hooks enabled and use
+`allow_managed_hooks_only = true` where organization policy requires preventing
+user/project hook substitution.
 
 For centrally managed Codex environments, the team should investigate the managed hook configuration path and `allow_managed_hooks_only` so user/project hook configuration cannot bypass organization hooks.
 
@@ -544,6 +557,18 @@ Deny:
   }
 }
 ```
+
+The internal `ask` decision MUST be mapped to `deny` for `PreToolUse` while
+Codex reports `permissionDecision: "ask"` as unsupported. Returning an
+unsupported response causes a hook failure and continuation of the tool call.
+
+Malformed native input, invalid mandatory configuration, and evaluation errors
+SHOULD be rendered as a static supported deny response when the adapter can still
+write stdout. Codex currently continues the tool call when a callback crashes,
+times out, cannot start, or emits malformed/unsupported output. Broken stdout,
+forced termination, host schema rejection, hosted tools, and specialized tools
+that bypass the local hook path therefore remain fail-open limitations. Hook
+enforcement is a guardrail and does not replace OS permissions or sandboxing.
 
 The adapter test suite MUST pin behavior to actual supported Codex versions because hook schemas may evolve.
 
@@ -2478,35 +2503,29 @@ This architecture gives the team one security implementation, one immutable exec
 
 The following upstream materials should be re-verified during implementation and before major agent upgrades because hook interfaces evolve.
 
-1. OpenAI Codex `PreToolUse` input schema:  
-   https://github.com/openai/codex/blob/main/codex-rs/hooks/schema/generated/pre-tool-use.command.input.schema.json
+1. OpenAI Codex hooks, event schemas, response behavior, and configuration:
+   https://learn.chatgpt.com/docs/hooks
 
-2. OpenAI Codex `PreToolUse` output schema:  
-   https://github.com/openai/codex/blob/main/codex-rs/hooks/schema/generated/pre-tool-use.command.output.schema.json
+2. OpenAI Codex generated hook schemas linked from the official hook docs:
+   https://github.com/openai/codex/tree/main/codex-rs/hooks/schema/generated
 
-3. OpenAI Codex hook configuration/tests:  
-   https://github.com/openai/codex/blob/main/codex-rs/core/tests/suite/hooks.rs
-
-4. OpenAI Codex configuration documentation:  
-   https://github.com/openai/codex/blob/main/docs/config.md
-
-5. Cursor Hooks documentation:  
+3. Cursor Hooks documentation:
    https://cursor.com/docs/hooks
 
-6. OpenCode plugin documentation:  
+4. OpenCode plugin documentation:
    https://opencode.ai/v2/docs/build/plugins
 
-7. OpenCode permissions documentation:  
+5. OpenCode permissions documentation:
    https://opencode.ai/v2/docs/permissions
 
-8. DDEV installation / WSL2 documentation:  
+6. DDEV installation / WSL2 documentation:
    https://docs.ddev.com/en/stable/users/install/ddev-installation/
 
-9. Rust platform support:  
+7. Rust platform support:
    https://doc.rust-lang.org/rustc/platform-support.html
 
-10. Rust target documentation and `musl` target support:  
+8. Rust target documentation and `musl` target support:
     https://doc.rust-lang.org/rustc/platform-support.html
 
-11. Cargo dependency locking (`Cargo.lock`):  
+9. Cargo dependency locking (`Cargo.lock`):
     https://doc.rust-lang.org/cargo/guide/cargo-toml-vs-cargo-lock.html

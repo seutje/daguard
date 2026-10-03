@@ -1,5 +1,5 @@
 //! Agent-specific protocol translation.
 
-mod codex;
+pub(crate) mod codex;
 mod cursor;
 mod opencode;

@@ -5,6 +5,9 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
+
+use crate::adapters::codex;
 use crate::model::CanonicalRequest;
 use crate::policy::{self, Policy, PolicyKind};
 
@@ -48,8 +51,83 @@ fn dispatch(args: Vec<std::ffi::OsString>) -> Result<(), CliError> {
         "check" => check(&args),
         "explain" => explain(&args),
         "policy" => policy_command(args),
+        "doctor" => doctor(&args),
+        "--adapter" => adapter_command(args),
         _ => Err(CliError::usage(help())),
     }
+}
+
+fn adapter_command(mut args: Vec<String>) -> Result<(), CliError> {
+    if args.first().map(String::as_str) != Some("codex") {
+        return Err(CliError::usage(
+            "usage: daguard --adapter codex --event pre-tool [--policy PATH] [--project-policy PATH]",
+        ));
+    }
+    args.remove(0);
+    match evaluate_codex_hook(&args) {
+        Ok(response) => write_json(&response),
+        Err(error) => {
+            eprintln!("daguard: {}", error.message);
+            write_json(&codex::error_response())
+        }
+    }
+}
+
+fn evaluate_codex_hook(args: &[String]) -> Result<codex::Response, CliError> {
+    let mut event = None;
+    let mut organization = None;
+    let mut project = None;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--event" => {
+                index += 1;
+                event = args.get(index).map(String::as_str);
+                if event.is_none() {
+                    return Err(CliError::usage("--event requires a value"));
+                }
+            }
+            "--policy" => {
+                index += 1;
+                organization = Some(required_path(args, index, "--policy")?);
+            }
+            "--project-policy" => {
+                index += 1;
+                project = Some(required_path(args, index, "--project-policy")?);
+            }
+            value => return Err(CliError::usage(format!("unexpected argument: {value}"))),
+        }
+        index += 1;
+    }
+    if event != Some("pre-tool") {
+        return Err(CliError::usage("Codex adapter requires --event pre-tool"));
+    }
+
+    let organization = organization
+        .as_deref()
+        .map(|path| Policy::load(path, PolicyKind::Organization))
+        .transpose()
+        .map_err(|error| CliError::config(error.to_string()))?;
+    let project = project
+        .as_deref()
+        .map(|path| Policy::load(path, PolicyKind::Project))
+        .transpose()
+        .map_err(|error| CliError::config(error.to_string()))?;
+    let bytes = read_bounded(None).map_err(|error| CliError::evaluation(error.to_string()))?;
+    let request = codex::normalize(&bytes)
+        .map_err(|error| CliError::evaluation(format!("Codex adapter error: {error}")))?;
+    let decision = policy::evaluate(&request, organization.as_ref(), project.as_ref())
+        .map_err(|error| CliError::evaluation(error.to_string()))?;
+    Ok(codex::render(&decision))
+}
+
+fn write_json(value: &impl Serialize) -> Result<(), CliError> {
+    let stdout = io::stdout();
+    let mut output = stdout.lock();
+    serde_json::to_writer(&mut output, value)
+        .map_err(|error| CliError::evaluation(error.to_string()))?;
+    writeln!(output).map_err(|error| CliError::evaluation(error.to_string()))?;
+    Ok(())
 }
 
 fn check(args: &[String]) -> Result<(), CliError> {
@@ -92,12 +170,7 @@ fn check(args: &[String]) -> Result<(), CliError> {
         .map_err(|error| CliError::evaluation(error.to_string()))?;
     let decision = policy::evaluate(&request, organization.as_ref(), project.as_ref())
         .map_err(|error| CliError::evaluation(error.to_string()))?;
-    let stdout = io::stdout();
-    let mut output = stdout.lock();
-    serde_json::to_writer(&mut output, &decision)
-        .map_err(|error| CliError::evaluation(error.to_string()))?;
-    writeln!(output).map_err(|error| CliError::evaluation(error.to_string()))?;
-    Ok(())
+    write_json(&decision)
 }
 
 fn required_path(args: &[String], index: usize, flag: &str) -> Result<PathBuf, CliError> {
@@ -181,8 +254,19 @@ fn policy_command(mut args: Vec<String>) -> Result<(), CliError> {
     Ok(())
 }
 
+fn doctor(args: &[String]) -> Result<(), CliError> {
+    if args.len() != 2 || args[0] != "codex" {
+        return Err(CliError::usage("usage: daguard doctor codex <hooks.json>"));
+    }
+    let bytes = read_bounded(Some(Path::new(&args[1])))
+        .map_err(|error| CliError::config(error.to_string()))?;
+    codex::validate_hooks_config(&bytes).map_err(|error| CliError::config(error.to_string()))?;
+    println!("Codex hook configuration is valid for daguard");
+    Ok(())
+}
+
 fn help() -> &'static str {
-    "Usage:\n  daguard version\n  daguard check [--policy PATH] [--project-policy PATH] [FILE|-]\n  daguard explain <rule-id>\n  daguard policy lint [--layer organization|project] <path>\n\nPolicy precedence: built-in invariants, organization policy, project tightening, default.\nA lower layer can never override a higher-layer deny."
+    "Usage:\n  daguard version\n  daguard check [--policy PATH] [--project-policy PATH] [FILE|-]\n  daguard explain <rule-id>\n  daguard policy lint [--layer organization|project] <path>\n  daguard doctor codex <hooks.json>\n  daguard --adapter codex --event pre-tool [--policy PATH] [--project-policy PATH]\n\nPolicy precedence: built-in invariants, organization policy, project tightening, default.\nA lower layer can never override a higher-layer deny."
 }
 
 struct CliError {

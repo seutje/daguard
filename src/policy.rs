@@ -334,7 +334,11 @@ fn evaluate_policy(
     policy: &Policy,
     layer: PolicyLayer,
 ) -> Result<Option<Decision>, PolicyError> {
-    if (request.tool.capability.is_read() || matches!(request.tool.capability, Capability::Unknown))
+    if (request.tool.capability.is_read()
+        || matches!(
+            request.tool.capability,
+            Capability::McpCall | Capability::Unknown
+        ))
         && let Some(path) = first_matching_owned_path(paths, &policy.paths.deny_read)?
     {
         return Ok(Some(policy_path_decision(
@@ -345,7 +349,10 @@ fn evaluate_policy(
         )));
     }
     if (request.tool.capability.is_write()
-        || matches!(request.tool.capability, Capability::Unknown))
+        || matches!(
+            request.tool.capability,
+            Capability::McpCall | Capability::Unknown
+        ))
         && let Some(path) = first_matching_owned_path(paths, &policy.paths.deny_write)?
     {
         return Ok(Some(policy_path_decision(
@@ -437,8 +444,14 @@ enum RuleOperation {
 impl RuleOperation {
     const fn applies(self, capability: Capability) -> bool {
         match self {
-            Self::Read => capability.is_read() || matches!(capability, Capability::Unknown),
-            Self::Write => capability.is_write() || matches!(capability, Capability::Unknown),
+            Self::Read => {
+                capability.is_read()
+                    || matches!(capability, Capability::McpCall | Capability::Unknown)
+            }
+            Self::Write => {
+                capability.is_write()
+                    || matches!(capability, Capability::McpCall | Capability::Unknown)
+            }
         }
     }
 }

@@ -37,6 +37,28 @@ fn request(capability: &str, path: &str) -> Vec<u8> {
     .unwrap()
 }
 
+fn codex_request(tool_name: &str, tool_input: &Value) -> Vec<u8> {
+    serde_json::to_vec(&json!({
+        "session_id": "thr_synthetic",
+        "transcript_path": null,
+        "cwd": "/workspace/project",
+        "hook_event_name": "PreToolUse",
+        "model": "fixture-model",
+        "turn_id": "turn_synthetic",
+        "permission_mode": "default",
+        "tool_name": tool_name,
+        "tool_use_id": "call_synthetic",
+        "tool_input": tool_input
+    }))
+    .unwrap()
+}
+
+fn run_codex(input: &[u8], extra_args: &[&str]) -> Output {
+    let mut args = vec!["--adapter", "codex", "--event", "pre-tool"];
+    args.extend_from_slice(extra_args);
+    run(&args, input)
+}
+
 #[test]
 fn protected_path_fixtures_produce_expected_decisions() {
     let fixtures: Vec<Fixture> =
@@ -135,4 +157,97 @@ fn check_reads_request_files_and_policy_lint_validates_defaults() {
     let lint = run(&["policy", "lint", &default_policy], b"");
     assert!(lint.status.success());
     assert_eq!(lint.stdout, b"policy is valid\n");
+}
+
+#[test]
+fn codex_adapter_enforces_protected_and_safe_file_operations() {
+    let cases = [
+        (
+            "read_file",
+            json!({"path": "web/sites/default/settings.php"}),
+            "deny",
+        ),
+        ("read_file", json!({"path": ".env"}), "deny"),
+        (
+            "read_file",
+            json!({"path": "web/modules/custom/example/example.module"}),
+            "allow",
+        ),
+        (
+            "write_file",
+            json!({"path": "web/modules/custom/example/example.module", "content": "synthetic"}),
+            "allow",
+        ),
+        (
+            "apply_patch",
+            json!({"command": "*** Begin Patch\n*** Update File: web/core/lib/Drupal.php\n@@\n-old\n+new\n*** End Patch"}),
+            "deny",
+        ),
+    ];
+    for (tool, input, expected) in cases {
+        let output = run_codex(&codex_request(tool, &input), &[]);
+        assert!(
+            output.status.success(),
+            "Codex adapter failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            response["hookSpecificOutput"]["permissionDecision"], expected,
+            "tool {tool}"
+        );
+    }
+}
+
+#[test]
+fn codex_adapter_applies_the_shipped_organization_policy() {
+    let policy = format!("{}/policy/default-policy.json", env!("CARGO_MANIFEST_DIR"));
+    let output = run_codex(
+        &codex_request("read_file", &json!({"path": "env/local/settings.json"})),
+        &["--policy", &policy],
+    );
+    assert!(output.status.success());
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["hookSpecificOutput"]["permissionDecision"], "deny");
+}
+
+#[test]
+fn codex_adapter_errors_emit_only_a_supported_deny_response() {
+    let malformed = run_codex(br#"{"tool_name":"read_file""#, &[]);
+    assert!(malformed.status.success());
+    let malformed_response: Value = serde_json::from_slice(&malformed.stdout).unwrap();
+    assert_eq!(
+        malformed_response["hookSpecificOutput"]["permissionDecision"],
+        "deny"
+    );
+
+    let invalid_policy = format!(
+        "{}/tests/fixtures/invalid-policy.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let failed = run_codex(
+        &codex_request("read_file", &json!({"path": "README.md"})),
+        &["--policy", &invalid_policy],
+    );
+    assert!(failed.status.success());
+    let failed_response: Value = serde_json::from_slice(&failed.stdout).unwrap();
+    assert_eq!(
+        failed_response["hookSpecificOutput"]["permissionDecision"],
+        "deny"
+    );
+    assert_ne!(
+        failed_response["hookSpecificOutput"]["permissionDecision"],
+        "allow"
+    );
+}
+
+#[test]
+fn codex_doctor_accepts_the_shipped_hook_template() {
+    let hooks = format!("{}/config/codex/hooks.json", env!("CARGO_MANIFEST_DIR"));
+    let output = run(&["doctor", "codex", &hooks], b"");
+    assert!(
+        output.status.success(),
+        "doctor failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
