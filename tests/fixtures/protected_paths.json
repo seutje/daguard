@@ -1,0 +1,20 @@
+[
+  {"capability":"file_read","path":".env","decision":"deny","rule_id":"drupal.secret.env"},
+  {"capability":"file_read","path":"config/.env.local","decision":"deny","rule_id":"drupal.secret.env"},
+  {"capability":"file_read","path":"auth.json","decision":"deny","rule_id":"composer.secret.auth_json"},
+  {"capability":"file_read","path":"config/composer-auth.json","decision":"deny","rule_id":"composer.secret.auth_json"},
+  {"capability":"file_read","path":"web/sites/default/settings.php","decision":"deny","rule_id":"drupal.secret.settings_php"},
+  {"capability":"file_read","path":"web/sites/default/settings.local.php","decision":"deny","rule_id":"drupal.secret.settings_php"},
+  {"capability":"file_read","path":"web/sites/example.test/settings.php","decision":"deny","rule_id":"drupal.secret.settings_php"},
+  {"capability":"file_read","path":"keys/development.pem","decision":"deny","rule_id":"filesystem.secret.private_key"},
+  {"capability":"file_read","path":"keys/development.key","decision":"deny","rule_id":"filesystem.secret.private_key"},
+  {"capability":"file_read","path":"web/modules/custom/../../sites/default/settings.php","decision":"deny","rule_id":"drupal.secret.settings_php"},
+  {"capability":"file_write","path":"web/core/lib/Drupal.php","decision":"deny","rule_id":"filesystem.write.core"},
+  {"capability":"file_write","path":"core/lib/Drupal.php","decision":"deny","rule_id":"filesystem.write.core"},
+  {"capability":"file_write","path":"vendor/example/package.php","decision":"deny","rule_id":"filesystem.write.vendor"},
+  {"capability":"file_write","path":"web/modules/contrib/example/example.module","decision":"deny","rule_id":"filesystem.write.contrib_module"},
+  {"capability":"file_write","path":"web/themes/contrib/example/example.info.yml","decision":"deny","rule_id":"filesystem.write.contrib_theme"},
+  {"capability":"file_write","path":"web/modules/custom/example/example.module","decision":"allow","rule_id":"default.no_matching_rule"},
+  {"capability":"file_write","path":"web/themes/custom/example/example.info.yml","decision":"allow","rule_id":"default.no_matching_rule"},
+  {"capability":"file_read","path":"web/core/lib/Drupal.php","decision":"allow","rule_id":"default.no_matching_rule"}
+]

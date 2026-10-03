@@ -10,5 +10,5 @@ mod project;
 mod shell;
 
 fn main() {
-    cli::run();
+    std::process::exit(cli::run());
 }

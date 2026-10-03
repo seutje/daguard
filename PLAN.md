@@ -83,119 +83,119 @@ Goal: establish the stable internal request/decision protocol and deterministic 
 
 ## 1.1 Canonical request model
 
-- [ ] Define a versioned canonical request schema.
-- [ ] Include protocol/schema version.
-- [ ] Include agent identifier.
-- [ ] Include hook/event type.
-- [ ] Include session identifier when available.
-- [ ] Include tool/call identifier when available.
-- [ ] Include working directory.
-- [ ] Include normalized capability.
-- [ ] Include original tool name.
-- [ ] Include raw-but-bounded tool arguments required for policy analysis.
-- [ ] Define behavior for absent optional fields.
-- [ ] Define explicit representation for unknown tools/capabilities.
-- [ ] Ensure malformed canonical input can never implicitly become `allow`.
+- [x] Define a versioned canonical request schema.
+- [x] Include protocol/schema version.
+- [x] Include agent identifier.
+- [x] Include hook/event type.
+- [x] Include session identifier when available.
+- [x] Include tool/call identifier when available.
+- [x] Include working directory.
+- [x] Include normalized capability.
+- [x] Include original tool name.
+- [x] Include raw-but-bounded tool arguments required for policy analysis.
+- [x] Define behavior for absent optional fields.
+- [x] Define explicit representation for unknown tools/capabilities.
+- [x] Ensure malformed canonical input can never implicitly become `allow`.
 
 ## 1.2 Capability model
 
-- [ ] Implement `FILE_READ` capability.
-- [ ] Implement `FILE_WRITE` capability.
-- [ ] Implement `FILE_DELETE` capability.
-- [ ] Implement `SHELL_EXECUTE` capability.
-- [ ] Implement `NETWORK_READ` capability.
-- [ ] Implement `NETWORK_WRITE` capability.
-- [ ] Implement `MCP_CALL` capability.
-- [ ] Implement `UNKNOWN` capability.
-- [ ] Document mapping rules in code comments and tests.
+- [x] Implement `FILE_READ` capability.
+- [x] Implement `FILE_WRITE` capability.
+- [x] Implement `FILE_DELETE` capability.
+- [x] Implement `SHELL_EXECUTE` capability.
+- [x] Implement `NETWORK_READ` capability.
+- [x] Implement `NETWORK_WRITE` capability.
+- [x] Implement `MCP_CALL` capability.
+- [x] Implement `UNKNOWN` capability.
+- [x] Document mapping rules in code comments and tests.
 
 ## 1.3 Canonical decision model
 
-- [ ] Define `allow` decision.
-- [ ] Define `deny` decision.
-- [ ] Define optional approval/ask semantic internally without requiring every adapter to support it.
-- [ ] Include stable rule identifier.
-- [ ] Include human-readable reason.
-- [ ] Include severity/category fields.
-- [ ] Include safe evidence fields that do not contain secrets.
-- [ ] Include policy source/layer information where useful.
-- [ ] Ensure deny reasons are useful to developers but do not echo sensitive input.
+- [x] Define `allow` decision.
+- [x] Define `deny` decision.
+- [x] Define optional approval/ask semantic internally without requiring every adapter to support it.
+- [x] Include stable rule identifier.
+- [x] Include human-readable reason.
+- [x] Include severity/category fields.
+- [x] Include safe evidence fields that do not contain secrets.
+- [x] Include policy source/layer information where useful.
+- [x] Ensure deny reasons are useful to developers but do not echo sensitive input.
 
 ## 1.4 Policy loader
 
-- [ ] Implement JSON policy loading using a mature pinned parser crate.
-- [ ] Validate policy schema before use.
-- [ ] Reject unknown mandatory schema versions.
-- [ ] Define default behavior for unknown optional policy fields.
-- [ ] Fail closed when mandatory organization policy is unreadable.
-- [ ] Fail closed when mandatory organization policy is invalid.
-- [ ] Implement deterministic rule ordering.
-- [ ] Implement stable rule IDs.
-- [ ] Add `daguard policy lint` command.
+- [x] Implement JSON policy loading using a mature pinned parser crate.
+- [x] Validate policy schema before use.
+- [x] Reject unknown mandatory schema versions.
+- [x] Define default behavior for unknown optional policy fields.
+- [x] Fail closed when mandatory organization policy is unreadable.
+- [x] Fail closed when mandatory organization policy is invalid.
+- [x] Implement deterministic rule ordering.
+- [x] Implement stable rule IDs.
+- [x] Add `daguard policy lint` command.
 
 ## 1.5 Policy layering
 
-- [ ] Implement immutable built-in invariants.
-- [ ] Implement organization policy layer.
-- [ ] Implement optional project policy layer.
-- [ ] Ensure project policy may only preserve or strengthen mandatory rules.
-- [ ] Reject attempted weakening of organization policy.
-- [ ] Add tests for contradictory organization/project rules.
-- [ ] Document policy precedence in CLI help and README.
+- [x] Implement immutable built-in invariants.
+- [x] Implement organization policy layer.
+- [x] Implement optional project policy layer.
+- [x] Ensure project policy may only preserve or strengthen mandatory rules.
+- [x] Reject attempted weakening of organization policy.
+- [x] Add tests for contradictory organization/project rules.
+- [x] Document policy precedence in CLI help and README.
 
 ## 1.6 Path normalization
 
-- [ ] Normalize relative paths against request `cwd`.
-- [ ] Normalize `.` and `..` segments lexically before matching.
-- [ ] Handle repeated path separators.
-- [ ] Handle Linux absolute paths.
-- [ ] Avoid unsafe reliance on path existence for policy matching.
-- [ ] Define symlink handling semantics for v1.
-- [ ] Add traversal test cases such as `foo/../sites/default/settings.php`.
-- [ ] Add path matching tests for Drupal multisite layouts.
+- [x] Normalize relative paths against request `cwd`.
+- [x] Normalize `.` and `..` segments lexically before matching.
+- [x] Handle repeated path separators.
+- [x] Handle Linux absolute paths.
+- [x] Avoid unsafe reliance on path existence for policy matching.
+- [x] Define symlink handling semantics for v1.
+- [x] Add traversal test cases such as `foo/../sites/default/settings.php`.
+- [x] Add path matching tests for Drupal multisite layouts.
 
 ## 1.7 Critical built-in file rules
 
-- [ ] Deny read of `**/.env`.
-- [ ] Deny read of `**/.env.*`.
-- [ ] Deny read of `**/auth.json`.
-- [ ] Deny read of `**/composer-auth.json`.
-- [ ] Deny read of `**/sites/*/settings.php`.
-- [ ] Deny read of `**/sites/*/settings.local.php`.
-- [ ] Deny read of `**/*.pem`.
-- [ ] Deny read of `**/*.key`.
-- [ ] Deny write to Drupal core.
-- [ ] Deny write to `vendor/**`.
-- [ ] Deny write to contributed modules.
-- [ ] Deny write to contributed themes.
-- [ ] Allow normal custom-module and custom-theme paths unless another rule blocks them.
+- [x] Deny read of `**/.env`.
+- [x] Deny read of `**/.env.*`.
+- [x] Deny read of `**/auth.json`.
+- [x] Deny read of `**/composer-auth.json`.
+- [x] Deny read of `**/sites/*/settings.php`.
+- [x] Deny read of `**/sites/*/settings.local.php`.
+- [x] Deny read of `**/*.pem`.
+- [x] Deny read of `**/*.key`.
+- [x] Deny write to Drupal core.
+- [x] Deny write to `vendor/**`.
+- [x] Deny write to contributed modules.
+- [x] Deny write to contributed themes.
+- [x] Allow normal custom-module and custom-theme paths unless another rule blocks them.
 
 ## 1.8 CLI shell
 
-- [ ] Implement `daguard version`.
-- [ ] Implement `daguard check` for fixture/manual evaluation.
-- [ ] Implement `daguard explain <rule-id>`.
-- [ ] Implement stable non-zero exit codes for guard failures.
-- [ ] Keep machine-readable stdout separate from diagnostic stderr where adapters require strict JSON output.
+- [x] Implement `daguard version`.
+- [x] Implement `daguard check` for fixture/manual evaluation.
+- [x] Implement `daguard explain <rule-id>`.
+- [x] Implement stable non-zero exit codes for guard failures.
+- [x] Keep machine-readable stdout separate from diagnostic stderr where adapters require strict JSON output.
 
 ## 1.9 Enforcement-core tests
 
-- [ ] Unit test every canonical model parser.
-- [ ] Unit test every path-normalization primitive.
-- [ ] Unit test precedence between policy layers.
-- [ ] Unit test malformed JSON behavior.
-- [ ] Unit test missing-field behavior.
-- [ ] Unit test unknown-capability behavior.
-- [ ] Add fixture tests for all initial protected paths.
-- [ ] Verify tests never embed real credentials or real developer secrets.
+- [x] Unit test every canonical model parser.
+- [x] Unit test every path-normalization primitive.
+- [x] Unit test precedence between policy layers.
+- [x] Unit test malformed JSON behavior.
+- [x] Unit test missing-field behavior.
+- [x] Unit test unknown-capability behavior.
+- [x] Add fixture tests for all initial protected paths.
+- [x] Verify tests never embed real credentials or real developer secrets.
 
 ### Phase 1 exit criteria
 
-- [ ] Canonical request and decision schemas are stable enough for adapters.
-- [ ] Initial protected file rules are enforced by the core independently of any agent.
-- [ ] Invalid mandatory policy fails closed.
-- [ ] `daguard check` can evaluate synthetic requests from stdin/files.
-- [ ] Test suite proves malformed input cannot result in implicit allow.
+- [x] Canonical request and decision schemas are stable enough for adapters.
+- [x] Initial protected file rules are enforced by the core independently of any agent.
+- [x] Invalid mandatory policy fails closed.
+- [x] `daguard check` can evaluate synthetic requests from stdin/files.
+- [x] Test suite proves malformed input cannot result in implicit allow.
 
 ---
 

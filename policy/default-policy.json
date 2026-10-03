@@ -1,4 +1,33 @@
 {
-  "schema_version": 1,
+  "schema": 1,
+  "defaults": {
+    "unknown_tool": "deny_if_sensitive_otherwise_allow"
+  },
+  "paths": {
+    "deny_read": [
+      "**/.env",
+      "**/.env.*",
+      "**/auth.json",
+      "**/composer-auth.json",
+      "**/sites/*/settings.php",
+      "**/sites/*/settings.local.php",
+      "**/*.pem",
+      "**/*.key"
+    ],
+    "deny_write": [
+      "**/web/core/**",
+      "**/core/**",
+      "**/vendor/**",
+      "**/web/modules/contrib/**",
+      "**/web/themes/contrib/**"
+    ],
+    "writable": [
+      "**/web/modules/custom/**",
+      "**/web/themes/custom/**",
+      "**/modules/custom/**",
+      "**/themes/custom/**",
+      "**/tests/**"
+    ]
+  },
   "rules": []
 }

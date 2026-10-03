@@ -11,3 +11,5 @@ once releases begin.
 ### Added
 
 - Initial Rust project structure and engineering controls.
+- Phase 1 canonical request/decision protocol, layered JSON policy validation,
+  lexical path enforcement, core CLI commands, and protected-path fixtures.

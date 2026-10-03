@@ -417,6 +417,8 @@ file_delete
 file_move
 file_search
 shell_execute
+network_read
+network_write
 network_request
 mcp_call
 git_operation
@@ -830,6 +832,11 @@ Example organization policy:
 
 The shipped schema should be represented by strongly typed Rust structures and validated during deserialization plus explicit semantic validation. JSON Schema generation/validation may be used in CI, but the deployed binary must not require an external validator.
 
+Within a supported schema version, documented optional fields receive explicit
+safe defaults when absent. Unknown fields are rejected so misspelled mandatory
+settings cannot silently weaken enforcement. Forward-compatible additions use a
+new schema version when they change the accepted policy contract.
+
 ---
 
 ## 15. Path handling
@@ -841,10 +848,12 @@ For every candidate path:
 1. normalize path separators to `/`;
 2. expand `~` using the executing user's home directory only when appropriate;
 3. resolve relative paths against request `cwd`;
-4. use `os.path.abspath` and `os.path.realpath`;
-5. record both lexical and resolved path where useful;
-6. reject attempts to exploit `..` to escape protected roots;
-7. account for symlinks;
+4. compute a lexical absolute path without requiring the target to exist;
+5. record the normalized lexical path where useful;
+6. normalize `..` before applying protected-path rules;
+7. do not resolve symlinks in v1; symlink aliases are a documented residual risk
+   covered by OS permissions until a trusted, race-aware resolution design is
+   implemented;
 8. compare paths case-sensitively inside normal WSL Linux filesystems;
 9. treat `/mnt/c/...` as external to the Linux project root unless explicitly allowed.
 
@@ -2501,4 +2510,3 @@ The following upstream materials should be re-verified during implementation and
 
 11. Cargo dependency locking (`Cargo.lock`):  
     https://doc.rust-lang.org/cargo/guide/cargo-toml-vs-cargo-lock.html
-
