@@ -754,20 +754,384 @@ impl BuiltInRule {
     }
 }
 
+struct RuleDocumentation {
+    id: &'static str,
+    effect: DecisionEffect,
+    severity: Severity,
+    category: &'static str,
+    reason: &'static str,
+    remediation: &'static str,
+}
+
+macro_rules! rule_doc {
+    ($id:literal, $effect:ident, $severity:ident, $category:literal, $reason:literal, $remediation:literal) => {
+        RuleDocumentation {
+            id: $id,
+            effect: DecisionEffect::$effect,
+            severity: Severity::$severity,
+            category: $category,
+            reason: $reason,
+            remediation: $remediation,
+        }
+    };
+}
+
+const RULE_DOCUMENTATION: &[RuleDocumentation] = &[
+    rule_doc!(
+        "guard.evaluation_error",
+        Deny,
+        Critical,
+        "guard",
+        "The guard could not safely evaluate or audit the request.",
+        "Review the guard diagnostics and installation with `daguard doctor`; do not bypass the failed check."
+    ),
+    rule_doc!(
+        "organization.path.deny_read",
+        Deny,
+        High,
+        "filesystem",
+        "Organization policy prohibits reading the matched path.",
+        "Use an approved non-sensitive source or ask the policy owner for a safe derived value."
+    ),
+    rule_doc!(
+        "organization.path.deny_write",
+        Deny,
+        High,
+        "filesystem",
+        "Organization policy prohibits writing the matched path.",
+        "Write to an approved project-owned path or use the managed update workflow."
+    ),
+    rule_doc!(
+        "project.path.deny_read",
+        Deny,
+        High,
+        "filesystem",
+        "Project policy prohibits reading the matched path.",
+        "Use an approved non-sensitive source documented by the project."
+    ),
+    rule_doc!(
+        "project.path.deny_write",
+        Deny,
+        High,
+        "filesystem",
+        "Project policy prohibits writing the matched path.",
+        "Write to a project-approved path or use the documented managed workflow."
+    ),
+    rule_doc!(
+        "drupal.secret.env",
+        Deny,
+        Critical,
+        "secrets",
+        "Environment files commonly contain credentials and tokens.",
+        "Use documented non-secret configuration or ask a developer for the specific derived value needed."
+    ),
+    rule_doc!(
+        "composer.secret.auth_json",
+        Deny,
+        Critical,
+        "secrets",
+        "Composer authentication files contain repository credentials.",
+        "Use Composer commands that do not expose credentials, such as `composer validate`."
+    ),
+    rule_doc!(
+        "drupal.secret.settings_php",
+        Deny,
+        Critical,
+        "secrets",
+        "Drupal settings.php files commonly contain credentials and salts.",
+        "Use `ddev describe`, `drush status`, or request a specific non-secret derived value."
+    ),
+    rule_doc!(
+        "filesystem.secret.private_key",
+        Deny,
+        Critical,
+        "secrets",
+        "Private key material must not be exposed to an agent.",
+        "Use a credential-free development workflow or have a developer perform the authenticated operation."
+    ),
+    rule_doc!(
+        "filesystem.write.core",
+        Deny,
+        High,
+        "filesystem",
+        "Drupal core is managed dependency source.",
+        "Apply changes through Composer patches, configuration, or custom code."
+    ),
+    rule_doc!(
+        "filesystem.write.vendor",
+        Deny,
+        High,
+        "filesystem",
+        "Vendor files are managed by Composer.",
+        "Change the dependency declaration or use a reviewed Composer patch."
+    ),
+    rule_doc!(
+        "filesystem.write.contrib_module",
+        Deny,
+        High,
+        "filesystem",
+        "Contributed modules are managed dependencies.",
+        "Use a Composer patch or implement the behavior in a custom module."
+    ),
+    rule_doc!(
+        "filesystem.write.contrib_theme",
+        Deny,
+        High,
+        "filesystem",
+        "Contributed themes are managed dependencies.",
+        "Use a Composer patch or implement the behavior in a custom theme."
+    ),
+    rule_doc!(
+        "shell.nesting_limit",
+        Deny,
+        High,
+        "shell",
+        "Nested shell wrappers exceeded the bounded analyzer depth.",
+        "Run a simpler directly inspectable command."
+    ),
+    rule_doc!(
+        "shell.ambiguous",
+        Deny,
+        High,
+        "shell",
+        "The shell syntax cannot be classified safely.",
+        "Rewrite the operation as a simple command without expansion, heredocs, or unsupported redirection."
+    ),
+    rule_doc!(
+        "shell.privilege_escalation",
+        Deny,
+        Critical,
+        "shell",
+        "Privilege escalation is outside the agent boundary.",
+        "Have an authorized developer perform the privileged operation separately."
+    ),
+    rule_doc!(
+        "shell.language_eval",
+        Deny,
+        High,
+        "shell",
+        "Arbitrary language evaluation cannot be inspected safely.",
+        "Use a checked-in script or a purpose-specific, inspectable command."
+    ),
+    rule_doc!(
+        "shell.drush.eval",
+        Deny,
+        Critical,
+        "drush",
+        "Arbitrary PHP evaluation through Drush bypasses bounded analysis.",
+        "Use a specific read-only Drush command or checked-in custom code."
+    ),
+    rule_doc!(
+        "shell.drush.sql_dump",
+        Deny,
+        High,
+        "drush",
+        "Database dumps may expose sensitive data.",
+        "Use a sanitized fixture or have a developer export data through the approved process."
+    ),
+    rule_doc!(
+        "shell.drush.sql_cli",
+        Deny,
+        High,
+        "drush",
+        "Interactive SQL cannot be inspected before execution.",
+        "Use a single explicit read-only `drush sql:query` statement."
+    ),
+    rule_doc!(
+        "drush.mutation.review",
+        Ask,
+        Medium,
+        "drush",
+        "State-changing Drush operations require review.",
+        "Request approval with the intended configuration or schema change described."
+    ),
+    rule_doc!(
+        "ddev.shell_escape",
+        Deny,
+        High,
+        "ddev",
+        "An unrestricted DDEV shell cannot be inspected safely.",
+        "Run the required command directly through `ddev exec`."
+    ),
+    rule_doc!(
+        "ddev.database_transfer",
+        Deny,
+        High,
+        "ddev",
+        "Database import/export may expose or overwrite sensitive data.",
+        "Use the organization's reviewed and sanitized database transfer process."
+    ),
+    rule_doc!(
+        "ddev.sql.interactive",
+        Deny,
+        High,
+        "sql",
+        "Interactive SQL cannot be inspected before execution.",
+        "Use one explicit read-only SQL statement."
+    ),
+    rule_doc!(
+        "sql.read.sensitive_table",
+        Deny,
+        High,
+        "sql",
+        "The query reads a configured sensitive table.",
+        "Query a non-sensitive aggregate or request sanitized data."
+    ),
+    rule_doc!(
+        "sql.mutation.insert",
+        Deny,
+        Critical,
+        "sql",
+        "Mutating SQL is prohibited.",
+        "Use reviewed Drupal APIs, configuration workflows, or migrations."
+    ),
+    rule_doc!(
+        "sql.mutation.update",
+        Deny,
+        Critical,
+        "sql",
+        "Mutating SQL is prohibited.",
+        "Use reviewed Drupal APIs, configuration workflows, or migrations."
+    ),
+    rule_doc!(
+        "sql.mutation.delete",
+        Deny,
+        Critical,
+        "sql",
+        "Mutating SQL is prohibited.",
+        "Use reviewed Drupal APIs, configuration workflows, or migrations."
+    ),
+    rule_doc!(
+        "sql.mutation.drop",
+        Deny,
+        Critical,
+        "sql",
+        "Mutating SQL is prohibited.",
+        "Use reviewed Drupal APIs, configuration workflows, or migrations."
+    ),
+    rule_doc!(
+        "sql.mutation.alter",
+        Deny,
+        Critical,
+        "sql",
+        "Mutating SQL is prohibited.",
+        "Use reviewed Drupal APIs, configuration workflows, or migrations."
+    ),
+    rule_doc!(
+        "sql.mutation.truncate",
+        Deny,
+        Critical,
+        "sql",
+        "Mutating SQL is prohibited.",
+        "Use reviewed Drupal APIs, configuration workflows, or migrations."
+    ),
+    rule_doc!(
+        "sql.mutation.replace",
+        Deny,
+        Critical,
+        "sql",
+        "Mutating SQL is prohibited.",
+        "Use reviewed Drupal APIs, configuration workflows, or migrations."
+    ),
+    rule_doc!(
+        "sql.mutation.create",
+        Deny,
+        Critical,
+        "sql",
+        "Mutating SQL is prohibited.",
+        "Use reviewed Drupal APIs, configuration workflows, or migrations."
+    ),
+    rule_doc!(
+        "sql.mutation.grant",
+        Deny,
+        Critical,
+        "sql",
+        "Mutating SQL is prohibited.",
+        "Have an authorized administrator manage database privileges."
+    ),
+    rule_doc!(
+        "sql.mutation.revoke",
+        Deny,
+        Critical,
+        "sql",
+        "Mutating SQL is prohibited.",
+        "Have an authorized administrator manage database privileges."
+    ),
+    rule_doc!(
+        "git.force_push",
+        Deny,
+        High,
+        "git",
+        "Force-pushing can rewrite shared history.",
+        "Push normally or have a developer coordinate the history rewrite."
+    ),
+    rule_doc!(
+        "git.credential_config",
+        Deny,
+        High,
+        "git",
+        "Agent-driven credential configuration is prohibited.",
+        "Have a developer configure credentials outside the agent session."
+    ),
+    rule_doc!(
+        "git.write.review",
+        Ask,
+        Medium,
+        "git",
+        "Repository writes and pushes require approval.",
+        "Request approval after summarizing the exact commit or push."
+    ),
+    rule_doc!(
+        "composer.dependencies.modify",
+        Ask,
+        Medium,
+        "composer",
+        "Dependency changes require review.",
+        "Request approval with the intended package and constraint changes."
+    ),
+    rule_doc!(
+        "composer.scripts.execute",
+        Ask,
+        High,
+        "composer",
+        "Composer scripts execute project or dependency code.",
+        "Request approval or use a read-only Composer command."
+    ),
+];
+
 pub(crate) fn explain(rule_id: &str) -> Option<String> {
-    BUILT_INS
+    RULE_DOCUMENTATION
         .iter()
-        .find(|rule| rule.id == rule_id)
-        .map(|rule| {
+        .find(|documentation| documentation.id == rule_id)
+        .map(|documentation| {
             format!(
-                "Rule: {}\nLayer: built_in\nSeverity: {:?}\nCategory: {}\nReason: {}\nPatterns: {}",
-                rule.id,
-                rule.severity,
-                rule.category,
-                rule.reason,
-                rule.patterns.join(", ")
+                "Rule: {}\nEffect: {}\nSeverity: {}\nCategory: {}\nReason: {}\nRemediation: {}",
+                documentation.id,
+                effect_name(documentation.effect),
+                severity_name(documentation.severity),
+                documentation.category,
+                documentation.reason,
+                documentation.remediation,
             )
         })
+}
+
+const fn effect_name(effect: DecisionEffect) -> &'static str {
+    match effect {
+        DecisionEffect::Allow => "allow",
+        DecisionEffect::Ask => "ask",
+        DecisionEffect::Deny => "deny",
+    }
+}
+
+const fn severity_name(severity: Severity) -> &'static str {
+    match severity {
+        Severity::Info => "info",
+        Severity::Low => "low",
+        Severity::Medium => "medium",
+        Severity::High => "high",
+        Severity::Critical => "critical",
+    }
 }
 
 #[derive(Debug)]

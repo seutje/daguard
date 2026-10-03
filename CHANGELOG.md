@@ -20,3 +20,6 @@ once releases begin.
   sensitive SQL tables.
 - Phase 4 Cursor `preToolUse` normalization, native fail-closed responses,
   deployment diagnostics, golden fixtures, and Codex/Cursor policy-parity tests.
+- Phase 5 redacted, versioned append-only JSONL audit events; comprehensive
+  installation diagnostics and policy fingerprints; and actionable core-rule
+  explanations with stable fail-closed error identifiers.

@@ -5,9 +5,10 @@ intercept coding-agent tool calls and apply shared, deterministic policy before 
 operation runs. Its primary deployment target is WSL2 with DDEV; Codex, Cursor,
 and OpenCode are the first planned integrations.
 
-The repository includes the first four phases defined in [PLAN.md](PLAN.md):
+The repository includes the first five phases defined in [PLAN.md](PLAN.md):
 the canonical enforcement core, Codex and Cursor adapters, and bounded command
-analysis for shell, DDEV, Drush, SQL, Composer, and Git operations. The
+analysis for shell, DDEV, Drush, SQL, Composer, and Git operations, plus safe
+local auditing and operator diagnostics. The
 architecture and security model are specified in [DESIGN.md](DESIGN.md).
 
 ## CLI
@@ -28,9 +29,26 @@ daguard version
 daguard explain drupal.secret.settings_php
 daguard policy lint policy/default-policy.json
 daguard policy lint --layer project .daguard/project.json
+daguard doctor --policy /etc/daguard/policy.json \
+  --audit-log ~/.local/state/daguard/audit.jsonl
 daguard doctor codex config/codex/hooks.json
 daguard doctor cursor config/cursor/hooks.json
 ```
+
+Add `--audit-log PATH` to `check` or an adapter invocation to append a
+versioned JSONL event. Audit events contain allowlisted classifier metadata and SHA-256
+pseudonyms for session/call IDs, never raw input, commands, paths, contents, or
+decision evidence. The parent directory must already exist; on Unix, an
+existing log must be a regular owner-only file. An append failure fails closed.
+Rotate logs with an owner-only OS policy at a bounded size (for example 10 MiB,
+five retained files); rename-and-create rotation works well because each guard
+invocation reopens the configured path.
+
+`daguard doctor` reports the executable path and target, organization-policy
+validity and SHA-256, audit-directory status, WSL/DDEV detection, and Codex and
+Cursor hook status without executing DDEV or an agent. It warns when the binary
+or mandatory policy is inside a project repository. OpenCode diagnostics remain
+explicitly deferred until the Phase 6 integration exists.
 
 Policy precedence is `built-in deny > organization > project > default`, and
 decision strength is `deny > ask > allow`. Project policy may add only denial
@@ -124,8 +142,10 @@ Normal end-user installation will use a packaged native executable and will not
 require Rust or Cargo.
 
 Production dependencies are intentionally limited to `serde`/`serde_json` for
-typed JSON and `globset` for mature path-pattern matching. They are compiled into
-the binary, pinned by `Cargo.lock`, and checked by the CI vulnerability and
+typed JSON, `globset` for mature path-pattern matching, and `sha2` for standard
+SHA-256 audit pseudonyms and policy fingerprints. Using the established digest
+implementation avoids a bespoke security primitive. Dependencies are compiled
+into the binary, pinned by `Cargo.lock`, and checked by the CI vulnerability and
 license jobs.
 
 ## Security

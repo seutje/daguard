@@ -145,8 +145,7 @@ pub(crate) fn render(decision: &Decision) -> Response {
 }
 
 pub(crate) fn error_response() -> Response {
-    let message =
-        "Blocked because Drupal Agent Guard could not safely evaluate the request.".to_owned();
+    let message = "Blocked by team policy: guard.evaluation_error".to_owned();
     Response {
         permission: "deny",
         user_message: Some(message.clone()),

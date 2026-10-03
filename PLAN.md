@@ -402,56 +402,56 @@ Goal: enforce Drupal-development semantics rather than only filesystem patterns.
 
 ## 5.1 Audit event format
 
-- [ ] Define versioned audit event schema.
-- [ ] Record timestamp.
-- [ ] Record agent name/version when known.
-- [ ] Record adapter/schema version.
-- [ ] Record decision.
-- [ ] Record rule ID.
-- [ ] Record category/severity.
-- [ ] Record non-sensitive normalized operation metadata.
-- [ ] Record session/call IDs where safe and useful.
-- [ ] Do not record full raw tool input by default.
-- [ ] Do not record file contents.
-- [ ] Do not record SQL result data.
-- [ ] Do not record secrets/tokens/passwords.
+- [x] Define versioned audit event schema.
+- [x] Record timestamp.
+- [x] Record agent name/version when known.
+- [x] Record adapter/schema version.
+- [x] Record decision.
+- [x] Record rule ID.
+- [x] Record category/severity.
+- [x] Record non-sensitive normalized operation metadata.
+- [x] Record session/call IDs where safe and useful.
+- [x] Do not record full raw tool input by default.
+- [x] Do not record file contents.
+- [x] Do not record SQL result data.
+- [x] Do not record secrets/tokens/passwords.
 
 ## 5.2 Local logging
 
-- [ ] Implement local append-only audit logging where configured.
-- [ ] Handle missing/unwritable audit destination safely.
-- [ ] Ensure logging failure cannot silently transform deny into allow.
-- [ ] Implement bounded/log-rotation guidance.
-- [ ] Add redaction tests.
+- [x] Implement local append-only audit logging where configured.
+- [x] Handle missing/unwritable audit destination safely.
+- [x] Ensure logging failure cannot silently transform deny into allow.
+- [x] Implement bounded/log-rotation guidance.
+- [x] Add redaction tests.
 
 ## 5.3 `daguard doctor`
 
-- [ ] Report executable version.
-- [ ] Report OS/architecture.
-- [ ] Report canonical binary path.
-- [ ] Report organization policy path/status.
-- [ ] Report policy schema validity.
-- [ ] Report policy hash.
-- [ ] Detect WSL where practical.
-- [ ] Detect DDEV availability but do not require it.
-- [ ] Check Codex integration where practical.
-- [ ] Check Cursor integration where practical.
-- [ ] Check OpenCode integration where practical once implemented.
-- [ ] Warn when executable or mandatory policy is inside an agent-writable project repository.
+- [x] Report executable version.
+- [x] Report OS/architecture.
+- [x] Report canonical binary path.
+- [x] Report organization policy path/status.
+- [x] Report policy schema validity.
+- [x] Report policy hash.
+- [x] Detect WSL where practical.
+- [x] Detect DDEV availability but do not require it.
+- [x] Check Codex integration where practical.
+- [x] Check Cursor integration where practical.
+- [x] Report that OpenCode integration checking is deferred until its Phase 6 implementation.
+- [x] Warn when executable or mandatory policy is inside an agent-writable project repository.
 
 ## 5.4 Explainability
 
-- [ ] Implement rule documentation registry.
-- [ ] Implement `daguard explain <rule-id>`.
-- [ ] Include remediation/safe alternative where appropriate.
-- [ ] Ensure explanations do not encourage bypassing mandatory policy.
+- [x] Implement rule documentation registry.
+- [x] Implement `daguard explain <rule-id>`.
+- [x] Include remediation/safe alternative where appropriate.
+- [x] Ensure explanations do not encourage bypassing mandatory policy.
 
 ### Phase 5 exit criteria
 
-- [ ] Every deny response has a stable rule ID.
-- [ ] Developers can use `doctor` to diagnose installation issues.
-- [ ] Audit logs do not contain known secret fixtures.
-- [ ] A support engineer can explain a denial without reproducing the sensitive payload.
+- [x] Every deny response has a stable rule ID.
+- [x] Developers can use `doctor` to diagnose installation issues.
+- [x] Audit logs do not contain known secret fixtures.
+- [x] A support engineer can explain a denial without reproducing the sensitive payload.
 
 ---
 

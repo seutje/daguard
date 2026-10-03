@@ -1,5 +1,6 @@
 use std::io::Write;
 use std::process::{Command, Output, Stdio};
+use std::{fs, path::PathBuf};
 
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -22,6 +23,17 @@ fn run(args: &[&str], stdin: &[u8]) -> Output {
         .unwrap();
     child.stdin.take().unwrap().write_all(stdin).unwrap();
     child.wait_with_output().unwrap()
+}
+
+fn temporary_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "daguard-{name}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ))
 }
 
 fn request(capability: &str, path: &str) -> Vec<u8> {
@@ -182,6 +194,86 @@ fn version_and_explain_are_available() {
     let explain = run(&["explain", "drupal.secret.settings_php"], b"");
     assert!(explain.status.success());
     assert!(String::from_utf8_lossy(&explain.stdout).contains("settings.php"));
+    assert!(String::from_utf8_lossy(&explain.stdout).contains("Remediation:"));
+}
+
+#[test]
+fn configured_audit_log_appends_redacted_versioned_events() {
+    let audit = temporary_path("audit.jsonl");
+    let audit_arg = audit.to_str().unwrap();
+    let secret_command = "cat web/sites/default/settings.php";
+    for _ in 0..2 {
+        let output = run(
+            &["check", "--audit-log", audit_arg],
+            &shell_request(secret_command),
+        );
+        assert!(output.status.success());
+    }
+
+    let contents = fs::read_to_string(&audit).unwrap();
+    let lines = contents.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 2);
+    let event: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(event["schema"], 1);
+    assert_eq!(event["decision"], "deny");
+    assert_eq!(event["rule_id"], "drupal.secret.settings_php");
+    assert!(event["timestamp_unix_ms"].as_u64().is_some());
+    assert!(!contents.contains(secret_command));
+    assert!(!contents.contains("settings.php"));
+    assert!(!contents.contains("tool_input"));
+    fs::remove_file(audit).unwrap();
+}
+
+#[test]
+fn audit_failure_cannot_emit_an_allow_and_native_adapter_fails_closed() {
+    let directory = env!("CARGO_MANIFEST_DIR");
+    let canonical = run(
+        &["check", "--audit-log", directory],
+        &request("file_read", "README.md"),
+    );
+    assert_eq!(canonical.status.code(), Some(4));
+    assert_eq!(canonical.stdout, Vec::<u8>::new());
+
+    let native = run_codex(
+        &codex_request("read_file", &json!({"path": "README.md"})),
+        &["--audit-log", directory],
+    );
+    assert!(native.status.success());
+    let response: Value = serde_json::from_slice(&native.stdout).unwrap();
+    assert_eq!(response["hookSpecificOutput"]["permissionDecision"], "deny");
+}
+
+#[test]
+fn doctor_reports_installation_policy_hash_and_integrations() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let policy = format!("{manifest}/policy/default-policy.json");
+    let codex = format!("{manifest}/config/codex/hooks.json");
+    let cursor = format!("{manifest}/config/cursor/hooks.json");
+    let output = run(
+        &[
+            "doctor",
+            "--policy",
+            &policy,
+            "--codex-hooks",
+            &codex,
+            "--cursor-hooks",
+            &cursor,
+        ],
+        b"",
+    );
+    assert!(output.status.success());
+    let report = String::from_utf8_lossy(&output.stdout);
+    assert!(report.contains("daguard 0.0.0"));
+    assert!(report.contains("policy SHA-256:"));
+    assert!(report.contains("organization policy schema is valid"));
+    assert!(report.contains("Codex hook valid"));
+    assert!(report.contains("Cursor hook valid"));
+    assert!(report.contains("OpenCode integration is planned for Phase 6"));
+
+    let invalid = format!("{manifest}/tests/fixtures/invalid-policy.json");
+    let failed = run(&["doctor", "--policy", &invalid], b"");
+    assert_eq!(failed.status.code(), Some(3));
+    assert!(String::from_utf8_lossy(&failed.stdout).contains("[ERROR]"));
 }
 
 #[test]

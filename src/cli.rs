@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::adapters::{codex, cursor};
+use crate::audit;
+use crate::doctor::{self, DoctorOptions};
 use crate::model::CanonicalRequest;
 use crate::policy::{self, Policy, PolicyKind};
 
@@ -60,7 +62,7 @@ fn dispatch(args: Vec<std::ffi::OsString>) -> Result<(), CliError> {
 fn adapter_command(mut args: Vec<String>) -> Result<(), CliError> {
     let Some(adapter) = args.first().cloned() else {
         return Err(CliError::usage(
-            "usage: daguard --adapter <codex|cursor> --event pre-tool [--policy PATH] [--project-policy PATH]",
+            "usage: daguard --adapter <codex|cursor> --event pre-tool [--policy PATH] [--project-policy PATH] [--audit-log PATH]",
         ));
     };
     args.remove(0);
@@ -80,38 +82,52 @@ fn adapter_command(mut args: Vec<String>) -> Result<(), CliError> {
             }
         },
         _ => Err(CliError::usage(
-            "usage: daguard --adapter <codex|cursor> --event pre-tool [--policy PATH] [--project-policy PATH]",
+            "usage: daguard --adapter <codex|cursor> --event pre-tool [--policy PATH] [--project-policy PATH] [--audit-log PATH]",
         )),
     }
 }
 
 fn evaluate_cursor_hook(args: &[String]) -> Result<cursor::Response, CliError> {
-    let (organization, project) = adapter_options(args, "Cursor")?;
+    let options = adapter_options(args, "Cursor")?;
     let bytes = read_bounded(None).map_err(|error| CliError::evaluation(error.to_string()))?;
     let request = cursor::normalize(&bytes)
         .map_err(|error| CliError::evaluation(format!("Cursor adapter error: {error}")))?;
-    let decision = policy::evaluate(&request, organization.as_ref(), project.as_ref())
-        .map_err(|error| CliError::evaluation(error.to_string()))?;
+    let decision = policy::evaluate(
+        &request,
+        options.organization.as_ref(),
+        options.project.as_ref(),
+    )
+    .map_err(|error| CliError::evaluation(error.to_string()))?;
+    write_audit(options.audit_log.as_deref(), &request, &decision, Some(1))?;
     Ok(cursor::render(&decision))
 }
 
 fn evaluate_codex_hook(args: &[String]) -> Result<codex::Response, CliError> {
-    let (organization, project) = adapter_options(args, "Codex")?;
+    let options = adapter_options(args, "Codex")?;
     let bytes = read_bounded(None).map_err(|error| CliError::evaluation(error.to_string()))?;
     let request = codex::normalize(&bytes)
         .map_err(|error| CliError::evaluation(format!("Codex adapter error: {error}")))?;
-    let decision = policy::evaluate(&request, organization.as_ref(), project.as_ref())
-        .map_err(|error| CliError::evaluation(error.to_string()))?;
+    let decision = policy::evaluate(
+        &request,
+        options.organization.as_ref(),
+        options.project.as_ref(),
+    )
+    .map_err(|error| CliError::evaluation(error.to_string()))?;
+    write_audit(options.audit_log.as_deref(), &request, &decision, Some(1))?;
     Ok(codex::render(&decision))
 }
 
-fn adapter_options(
-    args: &[String],
-    adapter_name: &str,
-) -> Result<(Option<Policy>, Option<Policy>), CliError> {
+struct EvaluationOptions {
+    organization: Option<Policy>,
+    project: Option<Policy>,
+    audit_log: Option<PathBuf>,
+}
+
+fn adapter_options(args: &[String], adapter_name: &str) -> Result<EvaluationOptions, CliError> {
     let mut event = None;
     let mut organization = None;
     let mut project = None;
+    let mut audit_log = None;
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
@@ -129,6 +145,10 @@ fn adapter_options(
             "--project-policy" => {
                 index += 1;
                 project = Some(required_path(args, index, "--project-policy")?);
+            }
+            "--audit-log" => {
+                index += 1;
+                audit_log = Some(required_path(args, index, "--audit-log")?);
             }
             value => return Err(CliError::usage(format!("unexpected argument: {value}"))),
         }
@@ -150,7 +170,11 @@ fn adapter_options(
         .map(|path| Policy::load(path, PolicyKind::Project))
         .transpose()
         .map_err(|error| CliError::config(error.to_string()))?;
-    Ok((organization, project))
+    Ok(EvaluationOptions {
+        organization,
+        project,
+        audit_log,
+    })
 }
 
 fn write_json(value: &impl Serialize) -> Result<(), CliError> {
@@ -166,6 +190,7 @@ fn check(args: &[String]) -> Result<(), CliError> {
     let mut organization = None;
     let mut project = None;
     let mut input = None;
+    let mut audit_log = None;
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
@@ -176,6 +201,10 @@ fn check(args: &[String]) -> Result<(), CliError> {
             "--project-policy" => {
                 index += 1;
                 project = Some(required_path(args, index, "--project-policy")?);
+            }
+            "--audit-log" => {
+                index += 1;
+                audit_log = Some(required_path(args, index, "--audit-log")?);
             }
             "-" if input.is_none() => input = Some(PathBuf::from("-")),
             value if !value.starts_with('-') && input.is_none() => {
@@ -202,7 +231,22 @@ fn check(args: &[String]) -> Result<(), CliError> {
         .map_err(|error| CliError::evaluation(error.to_string()))?;
     let decision = policy::evaluate(&request, organization.as_ref(), project.as_ref())
         .map_err(|error| CliError::evaluation(error.to_string()))?;
+    write_audit(audit_log.as_deref(), &request, &decision, None)?;
     write_json(&decision)
+}
+
+fn write_audit(
+    path: Option<&Path>,
+    request: &CanonicalRequest,
+    decision: &crate::model::Decision,
+    adapter_schema: Option<u16>,
+) -> Result<(), CliError> {
+    if let Some(path) = path {
+        audit::append(path, request, decision, None, adapter_schema).map_err(|error| {
+            CliError::evaluation(format!("could not append audit log: {error}"))
+        })?;
+    }
+    Ok(())
 }
 
 fn required_path(args: &[String], index: usize, flag: &str) -> Result<PathBuf, CliError> {
@@ -287,26 +331,46 @@ fn policy_command(mut args: Vec<String>) -> Result<(), CliError> {
 }
 
 fn doctor(args: &[String]) -> Result<(), CliError> {
-    if args.len() != 2 {
-        return Err(CliError::usage(
-            "usage: daguard doctor <codex|cursor> <hooks.json>",
-        ));
+    if args.len() == 2 && matches!(args[0].as_str(), "codex" | "cursor") {
+        let bytes = read_bounded(Some(Path::new(&args[1])))
+            .map_err(|error| CliError::config(error.to_string()))?;
+        match args[0].as_str() {
+            "codex" => codex::validate_hooks_config(&bytes)
+                .map_err(|error| CliError::config(error.to_string()))?,
+            "cursor" => cursor::validate_hooks_config(&bytes)
+                .map_err(|error| CliError::config(error.to_string()))?,
+            _ => unreachable!(),
+        }
+        println!("{} hook configuration is valid for daguard", args[0]);
+        return Ok(());
     }
-    let bytes = read_bounded(Some(Path::new(&args[1])))
-        .map_err(|error| CliError::config(error.to_string()))?;
-    match args[0].as_str() {
-        "codex" => codex::validate_hooks_config(&bytes)
-            .map_err(|error| CliError::config(error.to_string()))?,
-        "cursor" => cursor::validate_hooks_config(&bytes)
-            .map_err(|error| CliError::config(error.to_string()))?,
-        _ => return Err(CliError::usage("doctor adapter must be codex or cursor")),
+
+    let mut options = DoctorOptions::default();
+    let mut index = 0;
+    while index < args.len() {
+        let destination = match args[index].as_str() {
+            "--policy" => &mut options.policy,
+            "--audit-log" => &mut options.audit_log,
+            "--codex-hooks" => &mut options.codex_hooks,
+            "--cursor-hooks" => &mut options.cursor_hooks,
+            value => return Err(CliError::usage(format!("unexpected argument: {value}"))),
+        };
+        index += 1;
+        *destination = Some(required_path(args, index, &args[index - 1])?);
+        index += 1;
     }
-    println!("{} hook configuration is valid for daguard", args[0]);
+    let report = doctor::diagnose(&options);
+    for line in report.lines {
+        println!("{line}");
+    }
+    if report.has_errors {
+        return Err(CliError::config("doctor found installation errors"));
+    }
     Ok(())
 }
 
 fn help() -> &'static str {
-    "Usage:\n  daguard version\n  daguard check [--policy PATH] [--project-policy PATH] [FILE|-]\n  daguard explain <rule-id>\n  daguard policy lint [--layer organization|project] <path>\n  daguard doctor <codex|cursor> <hooks.json>\n  daguard --adapter <codex|cursor> --event pre-tool [--policy PATH] [--project-policy PATH]\n\nPolicy precedence: built-in invariants, organization policy, project tightening, default.\nA lower layer can never override a higher-layer deny."
+    "Usage:\n  daguard version\n  daguard check [--policy PATH] [--project-policy PATH] [--audit-log PATH] [FILE|-]\n  daguard explain <rule-id>\n  daguard policy lint [--layer organization|project] <path>\n  daguard doctor [--policy PATH] [--audit-log PATH] [--codex-hooks PATH] [--cursor-hooks PATH]\n  daguard doctor <codex|cursor> <hooks.json>\n  daguard --adapter <codex|cursor> --event pre-tool [--policy PATH] [--project-policy PATH] [--audit-log PATH]\n\nPolicy precedence: built-in invariants, organization policy, project tightening, default.\nA lower layer can never override a higher-layer deny."
 }
 
 struct CliError {

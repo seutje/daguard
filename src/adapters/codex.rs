@@ -219,8 +219,7 @@ pub(crate) fn error_response() -> Response {
             hook_event_name: PRE_TOOL_USE,
             permission_decision: "deny",
             permission_decision_reason: Some(
-                "Blocked because Drupal Agent Guard could not safely evaluate the request."
-                    .to_owned(),
+                "Blocked by team policy: guard.evaluation_error".to_owned(),
             ),
         },
     }

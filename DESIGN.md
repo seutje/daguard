@@ -266,6 +266,7 @@ A small build-time dependency set is acceptable when it reduces implementation r
 
 - `serde` for strongly typed serialization models;
 - `serde_json` for hook and policy JSON;
+- `sha2` for standard SHA-256 audit pseudonyms and policy fingerprints;
 - avoid large CLI frameworks where simple `std::env::args` parsing is sufficient;
 - avoid regex dependencies if glob/token matching can safely cover the v1 policy language;
 - avoid async runtimes: hook evaluation is local, synchronous, and short-lived;
@@ -1436,6 +1437,14 @@ Provide a diagnostic command:
 daguard doctor
 ```
 
+Optional `--policy`, `--audit-log`, `--codex-hooks`, and `--cursor-hooks`
+arguments select non-standard installation paths. Without them, diagnostics
+inspect the managed/user policy locations, the per-user audit directory, and
+the standard per-user hook paths. Diagnostics are read-only: they do not create
+configuration, start DDEV, or invoke an agent. OpenCode checks are added with
+the Phase 6 integration rather than guessing at a configuration that does not
+yet exist.
+
 Expected WSL output:
 
 ```text
@@ -1506,18 +1515,42 @@ Example event:
 
 ```json
 {
-  "ts": "2026-10-03T08:41:12+02:00",
+  "schema": 1,
+  "timestamp_unix_ms": 1791016872000,
   "guard_version": "0.1.0",
   "agent": "cursor",
   "event": "pre_tool_use",
   "session": "sha256:...",
-  "tool": "Shell",
+  "call": "sha256:...",
+  "adapter_schema": 1,
   "capability": "shell_execute",
   "decision": "deny",
   "rule_id": "drupal.secret.settings_php",
   "severity": "critical"
 }
 ```
+
+Audit logging is opt-in per invocation through `--audit-log PATH`. The event
+schema uses a Unix-epoch millisecond timestamp so recording needs no locale,
+timezone database, or additional runtime service. Agent versions are recorded
+only when a trusted native payload supplies one; absent versions are omitted
+rather than inferred. Records include only bounded classifier metadata. They do
+not include raw input, commands, paths, working directories, reasons/evidence,
+file contents, SQL data, HTTP bodies, or environment values.
+
+The logger opens the configured file with create-and-append semantics for each
+event and creates new files with mode `0600` on Unix. It refuses non-regular
+destinations and, on Unix, existing files that permit group or other access. It
+never creates missing parent directories. Failure to construct or append an
+event is an evaluation failure: canonical checks emit no decision, and native
+adapters emit the stable fail-closed `guard.evaluation_error` denial.
+
+Operators should rotate JSONL files with a trusted OS facility at a bounded
+size, for example 10 MiB with five retained files, preserving owner-only
+permissions. Rename-and-create rotation is preferred because each guard
+invocation opens the current path; rotation tooling must not upload logs or
+relax permissions. Retention and collection policy remain an organization
+decision.
 
 ### 26.1 Never log
 
@@ -1538,6 +1571,8 @@ Commands should either be omitted, redacted, or represented by a hash and safe c
 ### 26.2 Session identifiers
 
 Raw session identifiers are not needed for normal auditing. Hash them with SHA-256 before logging.
+Call identifiers receive the same treatment. SHA-256 pseudonyms support local
+correlation but are not a substitute for access controls on the audit file.
 
 ---
 
