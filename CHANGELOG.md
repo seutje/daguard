@@ -14,6 +14,9 @@ once releases begin.
 
 ### Fixed
 
+- Validate state-directory ancestors and ownership before descriptor-based
+  permission changes; reject symlinks without changing their targets.
+
 - Add enforcement and synthetic leakage oracles to fuzz targets and exercise
   the scanner at its production size limit.
 

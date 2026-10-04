@@ -1542,7 +1542,7 @@ Keep these unchecked unless the scope is intentionally expanded.
 - [x] A19: Release publication is independent of required security checks.
 - [x] A20: The architectural policy example cannot be loaded and writable is inert.
 - [x] A21: Fuzzing mostly checks crashes rather than security properties.
-- [ ] A22: State directory permissions change before symlink validation.
+- [x] A22: State directory permissions change before symlink validation.
 
 Policy capabilities deferred after contract audit:
 

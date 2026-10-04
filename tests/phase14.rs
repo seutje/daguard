@@ -23,14 +23,16 @@ fn run(args: &[&str], input: &Value) -> Output {
 }
 
 fn temporary_directory(label: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "daguard-phase14-{label}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
+    let path = fs::canonicalize(std::env::temp_dir())
+        .unwrap()
+        .join(format!(
+            "daguard-phase14-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
     fs::create_dir(&path).unwrap();
     path
 }

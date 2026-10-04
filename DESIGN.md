@@ -3453,3 +3453,16 @@ incomplete envelopes and complete known-sensitive sources. Scanner campaigns
 reach the production 1 MiB boundary plus one byte; parser targets retain 64 KiB
 boundaries. Sanitizer campaigns, deterministic matrices and performance limits
 are separate evidence, not proof of complete shell semantics or secret detection.
+
+### State-directory initialization (audit A22)
+
+Unix initialization traverses absolute components with directory descriptors and
+`openat(O_DIRECTORY | O_NOFOLLOW)`, creating missing directories with mode 0700.
+It rejects ancestor/final symlinks and parent traversal before mutation, verifies
+final effective-user ownership, then applies 0700 through the validated descriptor.
+Existing ancestors are never chmodded. A final inode/device check detects path
+replacement during initialization. Explicit roots must use their physical path;
+the OS-selected temporary parent is canonicalized once for default roots (including
+macOS system aliases). Later state operations still assume the owning user and
+parent hierarchy are trusted; this does not isolate state from that same user.
+Native Windows ACL enforcement remains a separate assurance gate.

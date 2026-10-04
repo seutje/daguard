@@ -56,6 +56,66 @@ fn trusted_mode(uid: u32, mode: u32) -> bool {
     uid == 0 && mode & 0o022 == 0
 }
 
+/// Traverse using directory descriptors so symlinks (including ancestors) are
+/// rejected before creation or permission changes. Existing ancestors are not
+/// chmodded. Later operations still require the documented trusted-owner model.
+#[cfg(unix)]
+pub(crate) fn initialize_state_directory(path: &Path) -> std::io::Result<()> {
+    use std::ffi::CString;
+    use std::os::fd::{AsRawFd, FromRawFd};
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    use std::path::Component;
+
+    let invalid = || std::io::Error::other("state directory path is not trusted");
+    if !path.is_absolute() || path == Path::new("/") {
+        return Err(invalid());
+    }
+    let mut directory = fs::File::open("/")?;
+    for component in path.components() {
+        let name = match component {
+            Component::RootDir => continue,
+            Component::Normal(name) => CString::new(name.as_bytes()).map_err(|_| invalid())?,
+            _ => return Err(invalid()),
+        };
+        let flags = libc::O_RDONLY | libc::O_CLOEXEC | libc::O_DIRECTORY | libc::O_NOFOLLOW;
+        // SAFETY: directory is owned and live; name is a NUL-terminated component.
+        let mut fd = unsafe { libc::openat(directory.as_raw_fd(), name.as_ptr(), flags) };
+        if fd < 0 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::NotFound {
+            // SAFETY: same live descriptor and validated component; mode is owner-only.
+            let created = unsafe { libc::mkdirat(directory.as_raw_fd(), name.as_ptr(), 0o700) };
+            if created < 0
+                && std::io::Error::last_os_error().kind() != std::io::ErrorKind::AlreadyExists
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+            // SAFETY: no-follow open verifies the entry after creation/races.
+            fd = unsafe { libc::openat(directory.as_raw_fd(), name.as_ptr(), flags) };
+        }
+        if fd < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        // SAFETY: successful openat returns a new descriptor owned by this File.
+        directory = unsafe { fs::File::from_raw_fd(fd) };
+    }
+    let metadata = directory.metadata()?;
+    // SAFETY: geteuid has no arguments or memory preconditions.
+    if metadata.uid() != unsafe { libc::geteuid() } {
+        return Err(invalid());
+    }
+    // Operates on the validated descriptor, never on a replaced path entry.
+    directory.set_permissions(fs::Permissions::from_mode(0o700))?;
+    let current = fs::symlink_metadata(path)?;
+    if !current.is_dir()
+        || current.file_type().is_symlink()
+        || current.dev() != metadata.dev()
+        || current.ino() != metadata.ino()
+    {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     #[test]

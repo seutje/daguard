@@ -58,11 +58,11 @@ impl StateStore {
         if !root.is_absolute() {
             return Err(StateError::Invalid("state directory must be absolute"));
         }
+        #[cfg(not(unix))]
         fs::create_dir_all(&root).map_err(StateError::Io)?;
         #[cfg(unix)]
         {
-            fs::set_permissions(&root, fs::Permissions::from_mode(0o700))
-                .map_err(StateError::Io)?;
+            crate::platform::initialize_state_directory(&root).map_err(StateError::Io)?;
             let metadata = fs::symlink_metadata(&root).map_err(StateError::Io)?;
             if metadata.file_type().is_symlink()
                 || !metadata.is_dir()
@@ -362,14 +362,17 @@ fn default_state_root() -> PathBuf {
     // Use an identity-scoped owner-only directory. A caller that wants state
     // under XDG_RUNTIME_DIR can pass it explicitly with `--state-dir`; that
     // environment path is not guaranteed writable in sandboxed agent hosts.
-    std::env::temp_dir().join(format!("daguard-state-{}", effective_user_id()))
+    let temporary = std::env::temp_dir();
+    // Resolve the OS-selected temporary directory (e.g. macOS /var -> /private/var).
+    // Explicit state roots are never canonicalized or allowed to follow symlinks.
+    let temporary = fs::canonicalize(&temporary).unwrap_or(temporary);
+    temporary.join(format!("daguard-state-{}", effective_user_id()))
 }
 
 #[cfg(unix)]
 fn effective_user_id() -> u32 {
-    fs::metadata("/proc/self")
-        .or_else(|_| fs::metadata("."))
-        .map_or(u32::MAX, |metadata| metadata.uid())
+    // SAFETY: geteuid has no arguments or memory preconditions.
+    unsafe { libc::geteuid() }
 }
 
 #[cfg(not(unix))]
@@ -432,13 +435,44 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a22_rejected_symlinks_do_not_change_target_permissions() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let root = fs::canonicalize(std::env::temp_dir())
+            .unwrap()
+            .join(format!("daguard-state-symlink-{}", std::process::id()));
+        fs::create_dir_all(root.join("target")).unwrap();
+        fs::set_permissions(root.join("target"), fs::Permissions::from_mode(0o755)).unwrap();
+        symlink(root.join("target"), root.join("link")).unwrap();
+        assert!(StateStore::open(Some(&root.join("link"))).is_err());
+        assert_eq!(
+            fs::metadata(root.join("target"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o755
+        );
+        assert!(StateStore::open(Some(&root.join("link/child"))).is_err());
+        assert!(!root.join("target/child").exists());
+        let store = StateStore::open(Some(&root.join("normal/nested"))).unwrap();
+        assert_eq!(
+            fs::metadata(&store.root).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn persists_metadata_only_and_isolates_sessions_and_agents() {
-        let root = std::env::temp_dir().join(format!(
-            "daguard-state-test-{}-{}",
-            std::process::id(),
-            super::now_seconds().unwrap()
-        ));
+        let root = fs::canonicalize(std::env::temp_dir())
+            .unwrap()
+            .join(format!(
+                "daguard-state-test-{}-{}",
+                std::process::id(),
+                super::now_seconds().unwrap()
+            ));
         let store = StateStore::open(Some(&root)).unwrap();
         let canary = "SYNTHETIC_PHASE14_SECRET_CANARY";
         store
@@ -463,11 +497,13 @@ mod tests {
 
     #[test]
     fn expired_state_is_removed_after_restart() {
-        let root = std::env::temp_dir().join(format!(
-            "daguard-state-expiry-{}-{}",
-            std::process::id(),
-            super::now_seconds().unwrap()
-        ));
+        let root = fs::canonicalize(std::env::temp_dir())
+            .unwrap()
+            .join(format!(
+                "daguard-state-expiry-{}-{}",
+                std::process::id(),
+                super::now_seconds().unwrap()
+            ));
         let store = StateStore::open(Some(&root)).unwrap();
         store
             .merge(
@@ -492,11 +528,13 @@ mod tests {
 
     #[test]
     fn concurrent_updates_merge_without_losing_categories() {
-        let root = std::env::temp_dir().join(format!(
-            "daguard-state-concurrency-{}-{}",
-            std::process::id(),
-            super::now_seconds().unwrap()
-        ));
+        let root = fs::canonicalize(std::env::temp_dir())
+            .unwrap()
+            .join(format!(
+                "daguard-state-concurrency-{}-{}",
+                std::process::id(),
+                super::now_seconds().unwrap()
+            ));
         let categories = [
             SensitivityCategory::Credential,
             SensitivityCategory::PersonalData,
