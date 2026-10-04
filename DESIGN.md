@@ -3386,3 +3386,8 @@ footer is absent. Empty sensitive assignments, YAML literal/folded indicators,
 backslash continuations and incomplete quoted values redact the remainder of
 the complete result because a safe continuation boundary cannot be established.
 This can redact later non-sensitive lines, favoring containment under truncation.
+
+MCP blob-bearing objects, including embedded resource.blob and resource/read
+contents, are blocked regardless of absent, textual or JSON MIME claims. Text
+resources remain scanable. No base64 decoding or binary content guarantee is
+claimed by the v1 text scanner.

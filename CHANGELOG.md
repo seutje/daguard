@@ -10,6 +10,8 @@ once releases begin.
 
 ### Fixed
 
+- Block MCP blob resources regardless of MIME metadata.
+
 - Contain truncated private keys and multiline sensitive assignments.
 
 - Redact classified JSON keys and reject trust in input-shaped redaction markers.

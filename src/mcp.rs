@@ -91,7 +91,8 @@ fn contains_unsupported_binary(value: &Value) -> bool {
                 .or_else(|| values.get("mime_type"))
                 .and_then(Value::as_str)
                 .is_some_and(|mime| !mime.starts_with("text/") && mime != "application/json");
-            (binary_type && (values.contains_key("data") || values.contains_key("blob")))
+            values.contains_key("blob")
+                || (binary_type && values.contains_key("data"))
                 || (binary_mime && (values.contains_key("data") || values.contains_key("blob")))
                 || values.values().any(contains_unsupported_binary)
         }
@@ -378,6 +379,31 @@ mod tests {
     use super::{blocked_response, inspect_response, safe_response_id};
     use crate::model::ResultEffect;
     use crate::scanner::ScanConfig;
+
+    #[test]
+    fn a15_resource_blobs_ignore_mime_claims() {
+        for mime in [None, Some("text/plain"), Some("application/json")] {
+            let mut resource = serde_json::json!({"uri":"synthetic://resource", "blob":"U1lOVEhFVElDX0FVRElUX1NFQ1JFVA=="});
+            if let Some(mime) = mime {
+                resource["mimeType"] = mime.into();
+            }
+            let response = serde_json::json!({"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"resource","resource":resource}]}});
+            let decision = inspect_response(
+                &serde_json::to_vec(&response).unwrap(),
+                &ScanConfig::default(),
+            )
+            .unwrap();
+            assert_eq!(decision.decision, ResultEffect::Block);
+            assert!(decision.content.is_none());
+        }
+        let text = br#"{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"resource","resource":{"uri":"synthetic://resource","text":"ordinary text","mimeType":"text/plain"}}]}}"#;
+        assert_eq!(
+            inspect_response(text, &ScanConfig::default())
+                .unwrap()
+                .decision,
+            ResultEffect::Allow
+        );
+    }
 
     #[test]
     fn sanitizes_nested_mcp_text_without_returning_raw_content() {
