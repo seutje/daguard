@@ -228,17 +228,26 @@ fn lexical_words(sql: &str) -> Option<Vec<String>> {
                     index += 1;
                 } else {
                     quote = None;
+                    push(&mut result, &mut word);
                 }
             } else if character == '\\' {
-                index += 1;
+                return None; // SQL mode may disable backslash escaping.
+            } else if active != '\'' {
+                word.push(character.to_ascii_uppercase());
             }
             index += 1;
             continue;
         }
-        if character == '\'' || character == '"' {
+        if matches!(character, '\'' | '"' | '`') {
             push(&mut result, &mut word);
             quote = Some(character);
-        } else if character == '-' && chars.get(index + 1) == Some(&'-') {
+        } else if character == '#'
+            || (character == '-'
+                && chars.get(index + 1) == Some(&'-')
+                && chars.get(index + 2).is_none_or(|character| {
+                    character.is_ascii_whitespace() || character.is_ascii_control()
+                }))
+        {
             push(&mut result, &mut word);
             while index < chars.len() && chars[index] != '\n' {
                 index += 1;
@@ -258,6 +267,8 @@ fn lexical_words(sql: &str) -> Option<Vec<String>> {
                 return None;
             }
             index += 1;
+        } else if character == '\\' {
+            return None; // Client meta commands and mode-dependent escapes.
         } else if character == ';' {
             push(&mut result, &mut word);
             result.push(";".to_owned());

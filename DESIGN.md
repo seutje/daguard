@@ -3339,3 +3339,10 @@ Unknown options fail closed. SQL clients accept a single inspectable query in
 separated or attached -e/--execute form; DDEV also accepts its single positional
 query form. Repeated, missing, empty and interactive query inputs are denied.
 The same parser feeds source classification.
+
+SQL uses a conservative MySQL/MariaDB lexical subset: -- comments require
+following whitespace/control, # comments are recognized, and executable
+comments fail closed. Double quotes and backticks are retained as identifiers
+for sensitive-table checks. Mode-dependent backslash escaping/client commands
+are rejected; single-quoted literal keywords do not become mutation tokens.
+No database connection or SQL mode discovery occurs during evaluation.

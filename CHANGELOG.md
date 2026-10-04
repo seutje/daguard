@@ -10,6 +10,8 @@ once releases begin.
 
 ### Fixed
 
+- Align SQL comments and identifier quoting with conservative MySQL semantics.
+
 - Normalize Drush/Composer global options and SQL client query options.
 
 - Require protected-file exclusions for bulk searches and inspect Git object paths.

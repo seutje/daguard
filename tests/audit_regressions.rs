@@ -181,3 +181,19 @@ fn a07_command_options() {
         ("composer --working-dir . validate", "allow"),
     ]);
 }
+
+#[test]
+fn a08_mysql_lexing() {
+    cases(&[
+        ("drush sql:query 'SELECT 1--1; DELETE FROM node'", "deny"),
+        (
+            "drush sql:query 'SELECT * FROM \"users_field_data\"'",
+            "deny",
+        ),
+        ("drush sql:query 'SELECT * FROM `users_field_data`'", "deny"),
+        ("drush sql:query 'SELECT 1 -- harmless comment'", "allow"),
+        ("drush sql:query 'SELECT 1--1'", "allow"),
+        ("drush sql:query 'SELECT * FROM \"node\"'", "allow"),
+        ("drush sql:query \"SELECT 'DELETE' FROM node\"", "allow"),
+    ]);
+}

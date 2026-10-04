@@ -1528,7 +1528,7 @@ Keep these unchecked unless the scope is intentionally expanded.
 - [x] A05: Filesystem mutation analysis misses destinations and affected descendants.
 - [x] A06: Bulk reads and alternate representations bypass sensitive file rules.
 - [x] A07: Value-taking and attached command options bypass semantic rules.
-- [ ] A08: SQL lexical assumptions differ from the target database grammar.
+- [x] A08: SQL lexical assumptions differ from the target database grammar.
 - [ ] A09: SELECT is treated as read only even when it has filesystem effects.
 - [ ] A10: Structured MCP SQL bypasses pre execution SQL protection.
 - [ ] A11: Codex loses MCP transport identity for file named tools.
