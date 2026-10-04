@@ -58,49 +58,75 @@ pub(crate) fn hash_file(path: &Path) -> io::Result<String> {
     Ok(format!("{:x}", hash.finalize()))
 }
 
-/// The installer's two-entry manifest contains labels, never executable paths.
-pub(crate) fn compare_manifest(
-    path: &Path,
-    binary_hash: &str,
-    policy_hash: &str,
-) -> io::Result<()> {
+/// Bounded label-based inventory; never resolve paths supplied by the manifest.
+fn manifest_hashes(path: &Path) -> io::Result<std::collections::BTreeMap<String, String>> {
     let mut bytes = Vec::new();
     fs::File::open(path)?.take(1025).read_to_end(&mut bytes)?;
     if bytes.len() > 1024 {
         return Err(invalid_manifest());
     }
     let text = std::str::from_utf8(&bytes).map_err(|_| invalid_manifest())?;
-    let mut binary = None;
-    let mut policy = None;
+    let mut hashes = std::collections::BTreeMap::new();
     for line in text.lines() {
         let Some((hash, label)) = line.split_once("  ") else {
             return Err(invalid_manifest());
         };
-        if hash.len() != 64 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            return Err(invalid_manifest());
-        }
-        let slot = match label {
-            "daguard" => &mut binary,
-            "policy.json" => &mut policy,
-            _ => return Err(invalid_manifest()),
-        };
-        if slot.replace(hash).is_some() {
-            return Err(invalid_manifest());
-        }
-    }
-    match (binary, policy) {
-        (Some(binary), Some(policy))
-            if binary.eq_ignore_ascii_case(binary_hash)
-                && policy.eq_ignore_ascii_case(policy_hash) =>
+        if hash.len() != 64
+            || !hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || !matches!(
+                label,
+                "daguard" | "policy.json" | "opencode/index.js" | "opencode/package.json"
+            )
+            || hashes.insert(label.to_owned(), hash.to_owned()).is_some()
         {
-            Ok(())
+            return Err(invalid_manifest());
         }
-        (Some(_), Some(_)) => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "installed binary or policy checksum mismatch",
-        )),
-        _ => Err(invalid_manifest()),
     }
+    if !hashes.contains_key("daguard")
+        || !hashes.contains_key("policy.json")
+        || hashes.contains_key("opencode/index.js") != hashes.contains_key("opencode/package.json")
+    {
+        return Err(invalid_manifest());
+    }
+    Ok(hashes)
+}
+
+pub(crate) fn compare_manifest(
+    path: &Path,
+    binary_hash: &str,
+    policy_hash: &str,
+) -> io::Result<()> {
+    let hashes = manifest_hashes(path)?;
+    for (label, actual) in [("daguard", binary_hash), ("policy.json", policy_hash)] {
+        if !hashes
+            .get(label)
+            .is_some_and(|expected| expected.eq_ignore_ascii_case(actual))
+        {
+            return Err(io::Error::other(
+                "installed binary or policy checksum mismatch",
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn compare_bridge_manifest(manifest: &Path, bridge: &Path) -> io::Result<()> {
+    let hashes = manifest_hashes(manifest)?;
+    for (label, file) in [
+        ("opencode/index.js", "index.js"),
+        ("opencode/package.json", "package.json"),
+    ] {
+        let actual = hash_file(&bridge.join(file))?;
+        if !hashes
+            .get(label)
+            .is_some_and(|expected| expected.eq_ignore_ascii_case(&actual))
+        {
+            return Err(io::Error::other(
+                "installed OpenCode bridge checksum missing or mismatched",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn invalid_manifest() -> io::Error {

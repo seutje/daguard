@@ -380,3 +380,116 @@ fn unknown_command_approval_cannot_weaken_file_or_default_denials() {
     );
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn r08_doctor_checks_effective_native_bindings_and_session_configuration() {
+    let root = temporary_directory("effective-config");
+    let policy = root.join("policy.json");
+    let hooks = root.join("hooks.json");
+    std::fs::write(&policy, b"{\"schema\":3}").unwrap();
+    let binary = env!("CARGO_BIN_EXE_daguard");
+    let command = |event: &str| {
+        format!(
+            "'{binary}' --adapter codex --event {event} --policy '{}'",
+            policy.display()
+        )
+    };
+    let valid = json!({"hooks":{
+        "PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":command("pre-tool")}]}],
+        "PostToolUse":[{"matcher":"*","hooks":[{"type":"command","command":command("post-tool")}]}]
+    }});
+    let diagnose = |config: &Value| {
+        std::fs::write(&hooks, serde_json::to_vec(config).unwrap()).unwrap();
+        let output = run(
+            &[
+                "doctor",
+                "--policy",
+                policy.to_str().unwrap(),
+                "--codex-hooks",
+                hooks.to_str().unwrap(),
+            ],
+            b"",
+        );
+        String::from_utf8(output.stdout).unwrap()
+    };
+    assert!(diagnose(&valid).contains("[OK] Codex hook valid"));
+    for kind in 0..5 {
+        let mut invalid = valid.clone();
+        let hook = &mut invalid["hooks"]["PreToolUse"][0]["hooks"][0];
+        match kind {
+            0 => {
+                hook["command"] = json!(format!(
+                    "/other/daguard --adapter codex --event pre-tool --policy '{}'",
+                    policy.display()
+                ));
+            }
+            1 => {
+                hook["command"] = json!(format!(
+                    "{binary} --adapter codex --event pre-tool --policy /other/policy.json"
+                ));
+            }
+            2 => hook["command"] = json!(format!("{} --no-session-state", command("pre-tool"))),
+            3 => hook["async"] = json!(true),
+            _ => {
+                hook["command"] = json!(format!(
+                    "{} --state-dir /tmp/other-state",
+                    command("pre-tool")
+                ));
+            }
+        }
+        let report = diagnose(&invalid);
+        assert!(report.contains("[WARN] Codex hook invalid"));
+        assert!(!report.contains("[OK] Codex hook valid"));
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn r08_doctor_verifies_the_configured_bridge_against_installed_metadata() {
+    use sha2::{Digest, Sha256};
+    let root = temporary_directory("bridge-integrity");
+    let bridge = root.join("opencode");
+    std::fs::create_dir(&bridge).unwrap();
+    let policy = root.join("policy.json");
+    let config = root.join("opencode.json");
+    let manifest = root.join("SHA256SUMS");
+    std::fs::write(&policy, b"{\"schema\":3}").unwrap();
+    std::fs::write(bridge.join("index.js"), b"export {};").unwrap();
+    std::fs::write(bridge.join("package.json"), b"{\"type\":\"module\"}").unwrap();
+    let binary = env!("CARGO_BIN_EXE_daguard");
+    let config_value =
+        json!({"plugins":[{"package":bridge,"options":{"guard":binary,"policy":policy}}]});
+    std::fs::write(&config, serde_json::to_vec(&config_value).unwrap()).unwrap();
+    let mut inventory = String::new();
+    for (label, path) in [
+        ("daguard", std::path::PathBuf::from(binary)),
+        ("policy.json", policy.clone()),
+        ("opencode/index.js", bridge.join("index.js")),
+        ("opencode/package.json", bridge.join("package.json")),
+    ] {
+        use std::fmt::Write;
+        writeln!(
+            &mut inventory,
+            "{:x}  {label}",
+            Sha256::digest(std::fs::read(path).unwrap())
+        )
+        .unwrap();
+    }
+    std::fs::write(&manifest, inventory).unwrap();
+    let args = [
+        "doctor",
+        "--policy",
+        policy.to_str().unwrap(),
+        "--opencode-config",
+        config.to_str().unwrap(),
+    ];
+    let clean = run(&args, b"");
+    assert!(String::from_utf8_lossy(&clean.stdout).contains("[OK] OpenCode hook valid"));
+    std::fs::write(bridge.join("index.js"), b"export const altered = true;").unwrap();
+    let drift = run(&args, b"");
+    assert!(String::from_utf8_lossy(&drift.stdout).contains("[WARN] OpenCode hook invalid"));
+    assert!(
+        String::from_utf8_lossy(&drift.stdout).contains("bridge checksum missing or mismatched")
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}

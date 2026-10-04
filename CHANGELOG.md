@@ -14,6 +14,9 @@ once releases begin.
 
 ### Fixed
 
+- Diagnose effective hook bindings and session settings, inventory and verify
+  installed OpenCode bridge files, and support persistent bridge `stateDir`.
+
 - Protect known extensionless SSH and cloud/container/package credential stores
   through mandatory `filesystem.secret.credential_store`.
 

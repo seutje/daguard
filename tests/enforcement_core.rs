@@ -492,7 +492,7 @@ fn audit_failure_cannot_emit_an_allow_and_native_adapter_fails_closed() {
 }
 
 #[test]
-fn doctor_reports_installation_policy_hash_and_integrations() {
+fn doctor_reports_policy_hash_and_uninstalled_template_bindings() {
     let manifest = env!("CARGO_MANIFEST_DIR");
     let policy = format!("{manifest}/policy/default-policy.json");
     let codex = format!("{manifest}/config/codex/hooks.json");
@@ -517,9 +517,9 @@ fn doctor_reports_installation_policy_hash_and_integrations() {
     assert!(report.contains(&format!("daguard {}", env!("CARGO_PKG_VERSION"))));
     assert!(report.contains("policy SHA-256:"));
     assert!(report.contains("organization policy schema is valid"));
-    assert!(report.contains("Codex hook valid"));
-    assert!(report.contains("Cursor hook valid"));
-    assert!(report.contains("OpenCode hook valid"));
+    assert!(report.contains("Codex hook invalid"));
+    assert!(report.contains("Cursor hook invalid"));
+    assert!(report.contains("OpenCode hook invalid"));
 
     fs::remove_file(opencode).unwrap();
     fs::remove_dir_all(opencode_plugin).unwrap();

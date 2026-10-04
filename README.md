@@ -142,3 +142,11 @@ responses. Use a persistent protected state directory for long-lived sessions;
 retire metadata only when the corresponding model context has been discarded.
 Configure storage quotas/retention through a trusted operator. Native hooks do
 not serialize tool lifetimes or prevent the agent's OS user deleting state.
+
+Full `doctor --policy PATH` verifies that native hooks point at this executable
+and policy, use the diagnosed managed mode, run synchronously and keep session
+state enabled with consistent pre/post directories. Installed OpenCode bridges
+also need matching `index.js` and `package.json` manifest hashes. The bridge
+accepts `stateDir` for a persistent absolute metadata directory. Structural
+`doctor codex|cursor|opencode CONFIG` checks alone do not verify those bindings or
+prove that the live host activates them.

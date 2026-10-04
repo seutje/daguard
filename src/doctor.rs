@@ -2,6 +2,7 @@
 
 use std::env;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use crate::adapters::{codex, cursor, opencode};
@@ -76,33 +77,13 @@ pub(crate) fn diagnose(options: &DoctorOptions) -> DoctorReport {
         None => lines.push("[WARN] ddev not found on PATH (not required by daguard)".to_owned()),
     }
 
-    inspect_integration(
+    inspect_integrations(
         &mut lines,
-        "Codex",
-        options
-            .codex_hooks
-            .clone()
-            .or_else(|| home_join(".codex/hooks.json")),
-        |bytes| codex::validate_hooks_config(bytes).map_err(|error| error.to_string()),
+        options,
+        executable.as_ref().ok(),
+        policy.as_deref(),
     );
-    inspect_integration(
-        &mut lines,
-        "Cursor",
-        options
-            .cursor_hooks
-            .clone()
-            .or_else(|| home_join(".cursor/hooks.json")),
-        |bytes| cursor::validate_hooks_config(bytes).map_err(|error| error.to_string()),
-    );
-    inspect_integration(
-        &mut lines,
-        "OpenCode",
-        options
-            .opencode_config
-            .clone()
-            .or_else(|| home_join(".config/opencode/opencode.json")),
-        |bytes| opencode::validate_installed_config(bytes).map_err(|error| error.to_string()),
-    );
+    lines.push("[INFO] doctor checks installed configuration; host activation, callback failures and live result delivery require versioned smoke evidence".to_owned());
     let has_errors = lines.iter().any(|line| line.starts_with("[ERROR]"));
     DoctorReport { lines, has_errors }
 }
@@ -161,7 +142,6 @@ fn inspect_policy(lines: &mut Vec<String>, path: &Path) {
         path.display()
     ));
     match fs::File::open(path).and_then(|file| {
-        use std::io::Read;
         let mut bytes = Vec::new();
         file.take(1024 * 1024 + 1).read_to_end(&mut bytes)?;
         Ok(bytes)
@@ -236,7 +216,13 @@ where
         ));
         return;
     };
-    match fs::read(&path) {
+    let bytes = fs::File::open(&path).and_then(|file| {
+        let mut bytes = Vec::new();
+        file.take(crate::json::MAX_REQUEST_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)?;
+        Ok(bytes)
+    });
+    match bytes {
         Ok(bytes) => match validate(&bytes) {
             Ok(()) => lines.push(format!("[OK] {name} hook valid: {}", path.display())),
             Err(error) => lines.push(format!("[WARN] {name} hook invalid: {error}")),
@@ -270,4 +256,116 @@ fn home_join(relative: &str) -> Option<PathBuf> {
     env::var_os("HOME")
         .map(PathBuf::from)
         .map(|home| home.join(relative))
+}
+
+fn verify_bindings(
+    bytes: &[u8],
+    adapter: &str,
+    binary: Option<&PathBuf>,
+    policy: Option<&Path>,
+    managed: bool,
+    manifest: Option<&Path>,
+) -> Result<(), String> {
+    let bindings = crate::adapters::deployment::bindings(bytes, adapter).map_err(str::to_owned)?;
+    let binary = binary.ok_or("diagnosed binary unavailable")?;
+    let policy = policy.ok_or("diagnosed policy unavailable; pass --policy PATH")?;
+    let state = &bindings[0].state;
+    for binding in &bindings {
+        if !same_file_path(&binding.binary, binary) || !same_file_path(&binding.policy, policy) {
+            return Err("hook binary/policy differs from the diagnosed installation".to_owned());
+        }
+        if binding.managed != managed {
+            return Err("hook managed mode differs from doctor mode".to_owned());
+        }
+        if binding.state != *state {
+            return Err("pre/post hooks use different state directories".to_owned());
+        }
+        if let Some(bridge) = &binding.bridge {
+            if managed {
+                for file in ["index.js", "package.json"] {
+                    crate::integrity::managed_path(&bridge.join(file))
+                        .map_err(|error| error.to_string())?;
+                }
+            }
+            let default_manifest = policy.with_file_name("SHA256SUMS");
+            crate::integrity::compare_bridge_manifest(
+                manifest.unwrap_or(&default_manifest),
+                bridge,
+            )
+            .map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+fn same_file_path(left: &Path, right: &Path) -> bool {
+    match (fs::canonicalize(left), fs::canonicalize(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => left == right,
+    }
+}
+
+fn inspect_integrations(
+    lines: &mut Vec<String>,
+    options: &DoctorOptions,
+    executable: Option<&PathBuf>,
+    policy: Option<&Path>,
+) {
+    inspect_integration(
+        lines,
+        "Codex",
+        options
+            .codex_hooks
+            .clone()
+            .or_else(|| home_join(".codex/hooks.json")),
+        |bytes| {
+            codex::validate_hooks_config(bytes).map_err(|error| error.to_string())?;
+            verify_bindings(
+                bytes,
+                "codex",
+                executable,
+                policy,
+                options.managed,
+                options.integrity_manifest.as_deref(),
+            )
+        },
+    );
+    inspect_integration(
+        lines,
+        "Cursor",
+        options
+            .cursor_hooks
+            .clone()
+            .or_else(|| home_join(".cursor/hooks.json")),
+        |bytes| {
+            cursor::validate_hooks_config(bytes).map_err(|error| error.to_string())?;
+            verify_bindings(
+                bytes,
+                "cursor",
+                executable,
+                policy,
+                options.managed,
+                options.integrity_manifest.as_deref(),
+            )
+        },
+    );
+    inspect_integration(
+        lines,
+        "OpenCode",
+        options
+            .opencode_config
+            .clone()
+            .or_else(|| home_join(".config/opencode/opencode.json")),
+        |bytes| {
+            opencode::validate_installed_config(bytes).map_err(|error| error.to_string())?;
+            verify_bindings(
+                bytes,
+                "opencode",
+                executable,
+                policy,
+                options.managed,
+                options.integrity_manifest.as_deref(),
+            )
+        },
+    );
 }

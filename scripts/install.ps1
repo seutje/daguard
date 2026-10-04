@@ -132,7 +132,9 @@ if ($ReplacePolicy -or -not (Test-Path -LiteralPath $policyDestination)) {
 
 $binaryHash = (Get-FileHash -LiteralPath $binaryDestination -Algorithm SHA256).Hash.ToLowerInvariant()
 $policyHash = (Get-FileHash -LiteralPath $policyDestination -Algorithm SHA256).Hash.ToLowerInvariant()
-@("$binaryHash  daguard", "$policyHash  policy.json") | Set-Content -LiteralPath $manifestDestination -Encoding ascii
+$bridgeHash = (Get-FileHash -LiteralPath (Join-Path $pluginDestination 'index.js') -Algorithm SHA256).Hash.ToLowerInvariant()
+$packageHash = (Get-FileHash -LiteralPath (Join-Path $pluginDestination 'package.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+@("$binaryHash  daguard", "$policyHash  policy.json", "$bridgeHash  opencode/index.js", "$packageHash  opencode/package.json") | Set-Content -LiteralPath $manifestDestination -Encoding ascii
 
 if ($Scope -eq 'Machine' -and -not $DestinationRoot) {
     Set-MachineAcl $layout.Bin

@@ -137,3 +137,24 @@ test("passes managed mode to the bridge and rejects non-boolean values", async (
   })
   await assert.rejects(invalid(event), /guard\.evaluation_error/)
 })
+
+test("validates an explicit persistent state directory for both bridge hooks", async () => {
+  for (const create of [createToolHook, createPostToolHook]) {
+    let received
+    const hook = create({
+      options: { ...options, stateDir: "/tmp/synthetic-state" },
+      directory: "/workspace/project",
+      run(config, payload, phase) {
+        received = config
+        return phase === "post-tool" ? '{"schema":1,"recorded":true}' : '{"schema":1,"decision":"allow"}'
+      },
+    })
+    await hook({ ...event, status: "completed", result: "safe" })
+    assert.equal(received.stateDir, "/tmp/synthetic-state")
+    const invalid = create({
+      options: { ...options, stateDir: "relative" },
+      directory: "/workspace/project",
+    })
+    await assert.rejects(invalid({ ...event, status: "completed", result: "safe" }), /guard\.evaluation_error/)
+  }
+})

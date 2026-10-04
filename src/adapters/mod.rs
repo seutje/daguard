@@ -2,6 +2,7 @@
 
 pub(crate) mod codex;
 pub(crate) mod cursor;
+pub(crate) mod deployment;
 pub(crate) mod opencode;
 
 pub(crate) fn command_tokens(command: &str) -> Option<Vec<String>> {

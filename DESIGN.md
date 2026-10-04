@@ -2954,7 +2954,7 @@ For managed installations, record SHA-256 hashes for:
 `daguard doctor` may report drift.
 
 `doctor` streams hashes of the binary and policy and compares them to the
-installer's two-entry `SHA256SUMS` adjacent to policy, or an explicit
+installer's labeled binary/policy/bridge `SHA256SUMS` adjacent to policy, or an explicit
 `--integrity-manifest PATH`. It rejects duplicate, unknown, missing, oversized,
 or malformed manifest entries and detects binary/policy drift. A missing
 automatically discovered manifest is a warning, not proof of integrity.
@@ -3530,3 +3530,19 @@ through shared path checks. Nonstandard identities, provider caches, credentials
 inside nominally safe files, environment output, encoding and arbitrary dumps
 still require organization-specific path/source strategy. This bounded list and
 result scanning do not establish universal credential discovery.
+
+### Effective installation diagnostics (audit risk R08)
+
+Full `doctor` compares parsed native guard bindings with the diagnosed executable,
+policy and managed mode, rejects asynchronous/templated/unsupported commands and
+disabled session state, and checks pre/post state-directory consistency. Native
+configuration translation is isolated in `adapters/deployment.rs`. Configuration
+reads are bounded and duplicate keys rejected. OpenCode adds an optional absolute
+`stateDir` bridge setting, passed unchanged to the guard. Installers now inventory
+both bridge entrypoint and package metadata; configured bridge files must match
+those labels in the installed manifest and pass managed trust checks where used.
+Legacy binary/policy-only metadata remains readable for those two components,
+but cannot validate an OpenCode bridge. Full diagnostics are advisory and still
+cannot prove host activation, managed host configuration immutability, callback
+failure semantics or result delivery. Structural `doctor <adapter>` checks retain
+their narrower role; use full diagnostics plus versioned live allow/deny tests.

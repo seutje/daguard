@@ -180,6 +180,8 @@ fi
 {
     printf '%s  %s\n' "$(hash_file "$bin_dir/daguard")" daguard
     printf '%s  %s\n' "$(hash_file "$policy")" policy.json
+    printf '%s  %s\n' "$(hash_file "$share_dir/opencode/index.js")" opencode/index.js
+    printf '%s  %s\n' "$(hash_file "$share_dir/opencode/package.json")" opencode/package.json
 } > "$checksums_tmp"
 chmod "$file_mode" "$checksums_tmp"
 mv -f "$metadata_tmp" "$config_dir/version.json"

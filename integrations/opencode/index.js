@@ -38,6 +38,7 @@ function bridgeConfig(options) {
     policy: requiredAbsolutePath(options?.policy),
     projectPolicy: optionalAbsolutePath(options?.projectPolicy),
     auditLog: optionalAbsolutePath(options?.auditLog),
+    stateDir: optionalAbsolutePath(options?.stateDir),
     timeoutMs,
   }
 }
@@ -54,6 +55,7 @@ function invokeGuard(config, payload, event = "pre-tool") {
   if (config.managed) args.push("--managed")
   if (config.projectPolicy) args.push("--project-policy", config.projectPolicy)
   if (config.auditLog) args.push("--audit-log", config.auditLog)
+  if (config.stateDir) args.push("--state-dir", config.stateDir)
 
   const result = spawnSync(config.guard, args, {
     input: JSON.stringify(payload),

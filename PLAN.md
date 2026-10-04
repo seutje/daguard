@@ -1562,3 +1562,6 @@ Additional audit risk remediation:
 
 - [x] R07: Protect known credential stores with direct/variant and public-file workflow regressions.
 - [ ] R07 deployment: Review organization-specific credential paths, caches and source formats.
+
+- [x] R08: Verify effective binary/policy/mode/state bindings and installed bridge hashes in full diagnostics.
+- [ ] R08 assurance: Live activation and host-controlled immutable integration configuration.
