@@ -4,13 +4,17 @@ use std::env;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::Serialize;
 
 use crate::adapters::{codex, cursor, opencode};
 use crate::audit;
 use crate::doctor::{self, DoctorOptions};
-use crate::model::{CanonicalPostToolEvent, CanonicalRequest, DecisionEffect};
+use crate::model::{
+    CanonicalPostToolEvent, CanonicalRequest, Capability, DecisionEffect, Facts, PROTOCOL_VERSION,
+    Tool,
+};
 use crate::policy::{self, Policy, PolicyKind};
 use crate::state::StateStore;
 
@@ -31,10 +35,10 @@ pub(crate) fn run() -> i32 {
 
 fn handle_result(
     args: &[std::ffi::OsString],
-    result: std::thread::Result<Result<(), CliError>>,
+    result: std::thread::Result<Result<i32, CliError>>,
 ) -> i32 {
     match result {
-        Ok(Ok(())) => EXIT_OK,
+        Ok(Ok(code)) => code,
         Ok(Err(error)) => {
             eprintln!("daguard: {}", error.message);
             error.exit_code
@@ -72,7 +76,7 @@ fn panic_response(args: &[std::ffi::OsString]) -> Option<serde_json::Value> {
     }
 }
 
-fn dispatch(args: Vec<std::ffi::OsString>) -> Result<(), CliError> {
+fn dispatch(args: Vec<std::ffi::OsString>) -> Result<i32, CliError> {
     let mut args = args
         .into_iter()
         .map(|value| {
@@ -87,20 +91,390 @@ fn dispatch(args: Vec<std::ffi::OsString>) -> Result<(), CliError> {
     match args.remove(0).as_str() {
         "version" | "--version" | "-V" if args.is_empty() => {
             println!("{}", crate::version::details());
-            Ok(())
+            Ok(EXIT_OK)
         }
         "help" | "--help" | "-h" if args.is_empty() => {
             println!("{}", help());
-            Ok(())
+            Ok(EXIT_OK)
         }
-        "check" => check(&args),
-        "capabilities" if args.is_empty() => write_json(crate::capabilities::ADAPTER_CAPABILITIES),
-        "explain" => explain(&args),
-        "policy" => policy_command(args),
-        "doctor" => doctor(&args),
-        "--adapter" => adapter_command(args),
+        "check" => check(&args).map(|()| EXIT_OK),
+        "inspect-result" => inspect_result(&args),
+        "exec" => guarded_exec(&args),
+        "mcp-proxy" => mcp_proxy(&args),
+        "capabilities" if args.is_empty() => {
+            write_json(crate::capabilities::ADAPTER_CAPABILITIES).map(|()| EXIT_OK)
+        }
+        "explain" => explain(&args).map(|()| EXIT_OK),
+        "policy" => policy_command(args).map(|()| EXIT_OK),
+        "doctor" => doctor(&args).map(|()| EXIT_OK),
+        "--adapter" => adapter_command(args).map(|()| EXIT_OK),
         _ => Err(CliError::usage(help())),
     }
+}
+
+fn inspect_result(args: &[String]) -> Result<i32, CliError> {
+    let mut organization = None;
+    let mut project = None;
+    let mut input = None;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--policy" => {
+                index += 1;
+                organization = Some(required_path(args, index, "--policy")?);
+            }
+            "--project-policy" => {
+                index += 1;
+                project = Some(required_path(args, index, "--project-policy")?);
+            }
+            "-" if input.is_none() => input = Some(PathBuf::from("-")),
+            value => return Err(CliError::usage(format!("unexpected argument: {value}"))),
+        }
+        index += 1;
+    }
+    let organization = organization
+        .as_deref()
+        .map(|path| Policy::load(path, PolicyKind::Organization))
+        .transpose()
+        .map_err(|error| CliError::config(error.to_string()))?;
+    let project = project
+        .as_deref()
+        .map(|path| Policy::load(path, PolicyKind::Project))
+        .transpose()
+        .map_err(|error| CliError::config(error.to_string()))?;
+    let bytes = read_result_bounded(input.as_deref())
+        .map_err(|error| CliError::evaluation(error.to_string()))?;
+    let decision = crate::scanner::inspect(
+        &bytes,
+        &policy::scan_config(organization.as_ref(), project.as_ref()),
+    );
+    let blocked = matches!(decision.decision, crate::model::ResultEffect::Block);
+    write_json(&decision)?;
+    Ok(if blocked {
+        crate::guarded::BLOCKED_EXIT_CODE
+    } else {
+        EXIT_OK
+    })
+}
+
+fn guarded_exec(args: &[String]) -> Result<i32, CliError> {
+    let (options, command) = execution_options(args, "exec")?;
+    let cwd_path = options
+        .cwd
+        .clone()
+        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from("/")));
+    let cwd = cwd_path
+        .to_str()
+        .ok_or_else(|| CliError::evaluation("working directory must be valid UTF-8"))?;
+    let command_text = shell_join(command);
+    let request = CanonicalRequest {
+        protocol: PROTOCOL_VERSION,
+        agent: "guarded_execution".to_owned(),
+        event: "pre_tool_use".to_owned(),
+        session_id: options.session_id.clone(),
+        call_id: None,
+        cwd: cwd.to_owned(),
+        tool: Tool {
+            native_name: command[0].clone(),
+            capability: Capability::ShellExecute,
+        },
+        input: serde_json::json!({"argv": command}),
+        facts: Facts {
+            command: Some(command_text),
+            argv: command.to_vec(),
+            ..Facts::default()
+        },
+    };
+    request
+        .validate()
+        .map_err(|error| CliError::evaluation(error.to_string()))?;
+    let evaluation = EvaluationOptions {
+        event: AdapterEvent::PreTool,
+        organization: options.organization,
+        project: options.project,
+        audit_log: options.audit_log.clone(),
+        state_dir: options.state_dir.clone(),
+        session_state: options.session_id.is_some(),
+    };
+    let decision = evaluate_and_audit(&evaluation, &request, None)?;
+    if decision.effect != DecisionEffect::Allow {
+        eprintln!(
+            "daguard blocked guarded command [{}]: {}",
+            decision.rule_id, decision.reason
+        );
+        return Ok(crate::guarded::BLOCKED_EXIT_CODE);
+    }
+    let scan_config = policy::scan_config(
+        evaluation.organization.as_ref(),
+        evaluation.project.as_ref(),
+    );
+    let source_classifications = crate::sensitivity::classify_request(
+        &request,
+        evaluation.organization.as_ref(),
+        evaluation.project.as_ref(),
+    )
+    .map_err(|error| CliError::evaluation(error.to_string()))?;
+    let protect_stdout = source_classifications
+        .iter()
+        .any(|classification| classification.resource_kind == "sql_table");
+    let mut execution = crate::guarded::execute(&crate::guarded::ExecutionOptions {
+        program: &command[0],
+        arguments: &command[1..],
+        cwd: &cwd_path,
+        timeout: options.timeout,
+        config: &scan_config,
+        protect_stdout,
+    })
+    .map_err(|error| CliError::evaluation(format!("guarded execution failed: {error}")))?;
+    execution.classifications.extend(source_classifications);
+    if let Some(session_id) = options.session_id.as_deref()
+        && !execution.classifications.is_empty()
+    {
+        StateStore::open(options.state_dir.as_deref())
+            .and_then(|store| {
+                store.merge("guarded_execution", session_id, &execution.classifications)
+            })
+            .map_err(|error| CliError::evaluation(error.to_string()))?;
+    }
+    if let Some(path) = options.audit_log.as_deref() {
+        audit::append_result(
+            path,
+            "guarded_execution",
+            options.session_id.as_deref(),
+            &execution.classifications,
+            execution.effect,
+            execution.exit_code,
+        )
+        .map_err(|error| CliError::evaluation(format!("could not append audit log: {error}")))?;
+    }
+    execution
+        .release()
+        .map_err(|error| CliError::evaluation(format!("could not release guarded output: {error}")))
+}
+
+fn mcp_proxy(args: &[String]) -> Result<i32, CliError> {
+    let (options, command) = execution_options(args, "mcp-proxy")?;
+    let cwd_path = options
+        .cwd
+        .clone()
+        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from("/")));
+    let cwd = cwd_path
+        .to_str()
+        .ok_or_else(|| CliError::evaluation("working directory must be valid UTF-8"))?
+        .to_owned();
+    let scan_config = policy::scan_config(options.organization.as_ref(), options.project.as_ref());
+    let evaluation = EvaluationOptions {
+        event: AdapterEvent::PreTool,
+        organization: options.organization,
+        project: options.project,
+        audit_log: options.audit_log.clone(),
+        state_dir: options.state_dir.clone(),
+        session_state: options.session_id.is_some(),
+    };
+    let upstream_request = CanonicalRequest {
+        protocol: PROTOCOL_VERSION,
+        agent: "mcp_proxy".to_owned(),
+        event: "pre_tool_use".to_owned(),
+        session_id: options.session_id.clone(),
+        call_id: None,
+        cwd: cwd.clone(),
+        tool: Tool {
+            native_name: command[0].clone(),
+            capability: Capability::ShellExecute,
+        },
+        input: serde_json::json!({"argv": command}),
+        facts: Facts {
+            command: Some(shell_join(command)),
+            argv: command.to_vec(),
+            ..Facts::default()
+        },
+    };
+    upstream_request
+        .validate()
+        .map_err(|error| CliError::evaluation(error.to_string()))?;
+    let upstream_decision = evaluate_and_audit(&evaluation, &upstream_request, None)?;
+    if upstream_decision.effect != DecisionEffect::Allow {
+        eprintln!(
+            "daguard blocked MCP upstream [{}]: {}",
+            upstream_decision.rule_id, upstream_decision.reason
+        );
+        return Ok(crate::guarded::BLOCKED_EXIT_CODE);
+    }
+    crate::mcp::proxy(
+        &crate::mcp::ProxyOptions {
+            command,
+            cwd: &cwd_path,
+            config: &scan_config,
+            state_dir: options.state_dir.as_deref(),
+            session_id: options.session_id.as_deref(),
+            audit_log: options.audit_log.as_deref(),
+        },
+        |value| {
+            let method = value
+                .get("method")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown");
+            let native_name = value
+                .pointer("/params/name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(method);
+            let request = CanonicalRequest {
+                protocol: PROTOCOL_VERSION,
+                agent: "mcp_proxy".to_owned(),
+                event: "pre_tool_use".to_owned(),
+                session_id: options.session_id.clone(),
+                call_id: value.get("id").map(ToString::to_string),
+                cwd: cwd.clone(),
+                tool: Tool {
+                    native_name: native_name.to_owned(),
+                    capability: Capability::McpCall,
+                },
+                input: value
+                    .get("params")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null),
+                facts: Facts::default(),
+            };
+            request
+                .validate()
+                .map_err(|error| io::Error::other(error.to_string()))?;
+            let decision = evaluate_and_audit(&evaluation, &request, None)
+                .map_err(|error| io::Error::other(error.message))?;
+            Ok((decision.effect != DecisionEffect::Allow).then_some(decision.rule_id))
+        },
+    )
+    .map_err(|error| CliError::evaluation(format!("MCP gateway failed: {error}")))
+}
+struct CommandOptions {
+    organization: Option<Policy>,
+    project: Option<Policy>,
+    audit_log: Option<PathBuf>,
+    state_dir: Option<PathBuf>,
+    session_id: Option<String>,
+    cwd: Option<PathBuf>,
+    timeout: Duration,
+}
+
+fn execution_options<'a>(
+    args: &'a [String],
+    command_name: &str,
+) -> Result<(CommandOptions, &'a [String]), CliError> {
+    let mut organization_path = None;
+    let mut project_path = None;
+    let mut audit_log = None;
+    let mut state_dir = None;
+    let mut session_id = None;
+    let mut cwd = None;
+    let mut timeout = Duration::from_secs(30);
+    let mut managed = false;
+    let mut index = 0;
+    while index < args.len() && args[index] != "--" {
+        let flag = args[index].as_str();
+        if flag == "--managed" {
+            managed = true;
+            index += 1;
+            continue;
+        }
+        index += 1;
+        match flag {
+            "--policy" => organization_path = Some(required_path(args, index, flag)?),
+            "--project-policy" => project_path = Some(required_path(args, index, flag)?),
+            "--audit-log" => audit_log = Some(required_path(args, index, flag)?),
+            "--state-dir" => state_dir = Some(required_path(args, index, flag)?),
+            "--cwd" => cwd = Some(required_path(args, index, flag)?),
+            "--session-id" => {
+                session_id = Some(
+                    args.get(index)
+                        .filter(|value| !value.is_empty())
+                        .cloned()
+                        .ok_or_else(|| CliError::usage("--session-id requires a value"))?,
+                );
+            }
+            "--timeout-seconds" => {
+                if command_name != "exec" {
+                    return Err(CliError::usage(
+                        "--timeout-seconds is supported only by daguard exec",
+                    ));
+                }
+                let seconds = args
+                    .get(index)
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .filter(|seconds| (1..=3600).contains(seconds))
+                    .ok_or_else(|| {
+                        CliError::usage("--timeout-seconds must be between 1 and 3600")
+                    })?;
+                timeout = Duration::from_secs(seconds);
+            }
+            value => return Err(CliError::usage(format!("unexpected argument: {value}"))),
+        }
+        index += 1;
+    }
+    if args.get(index).map(String::as_str) != Some("--") || index + 1 >= args.len() {
+        return Err(CliError::usage(format!(
+            "usage: daguard {command_name} [OPTIONS] -- COMMAND [ARG ...]"
+        )));
+    }
+    validate_managed(managed, organization_path.as_deref())?;
+    let organization = organization_path
+        .as_deref()
+        .map(|path| Policy::load(path, PolicyKind::Organization))
+        .transpose()
+        .map_err(|error| CliError::config(error.to_string()))?;
+    let project = project_path
+        .as_deref()
+        .map(|path| Policy::load(path, PolicyKind::Project))
+        .transpose()
+        .map_err(|error| CliError::config(error.to_string()))?;
+    Ok((
+        CommandOptions {
+            organization,
+            project,
+            audit_log,
+            state_dir,
+            session_id,
+            cwd,
+            timeout,
+        },
+        &args[index + 1..],
+    ))
+}
+
+fn shell_join(command: &[String]) -> String {
+    command
+        .iter()
+        .map(|argument| {
+            if argument.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric()
+                    || matches!(byte, b'_' | b'-' | b'.' | b'/' | b':' | b'@' | b'=' | b'+')
+            }) {
+                argument.clone()
+            } else {
+                format!("'{}'", argument.replace('\'', "'\\''"))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn read_result_bounded(path: Option<&Path>) -> io::Result<Vec<u8>> {
+    let limit = crate::scanner::MAX_SCAN_BYTES as u64;
+    let mut bytes = Vec::new();
+    match path {
+        None => io::stdin().take(limit + 1).read_to_end(&mut bytes)?,
+        Some(path) if path == Path::new("-") => {
+            io::stdin().take(limit + 1).read_to_end(&mut bytes)?
+        }
+        Some(_) => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "inspect-result accepts stdin only",
+            ));
+        }
+    };
+    if bytes.len() as u64 > limit {
+        return Ok(bytes);
+    }
+    Ok(bytes)
 }
 
 fn adapter_command(mut args: Vec<String>) -> Result<(), CliError> {
@@ -619,7 +993,7 @@ fn doctor(args: &[String]) -> Result<(), CliError> {
 }
 
 fn help() -> &'static str {
-    "Usage:\n  daguard version\n  daguard capabilities\n  daguard check [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [FILE|-]\n  daguard explain <rule-id>\n  daguard policy lint [--layer organization|project] <path>\n  daguard doctor [--managed] [--integrity-manifest PATH] [--policy PATH] [--audit-log PATH] [--codex-hooks PATH] [--cursor-hooks PATH] [--opencode-config PATH]\n  daguard doctor <codex|cursor|opencode> <config.json>\n  daguard --adapter <codex|cursor|opencode> --event <pre-tool|post-tool> [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--no-session-state]\n\nPolicy precedence: built-in invariants, organization policy, project tightening, default.\nA lower layer can never override a higher-layer deny."
+    "Usage:\n  daguard version\n  daguard capabilities\n  daguard check [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [FILE|-]\n  daguard inspect-result [--policy PATH] [--project-policy PATH] [-]\n  daguard exec [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--session-id ID] [--cwd PATH] [--timeout-seconds N] -- COMMAND [ARG ...]\n  daguard mcp-proxy [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--session-id ID] [--cwd PATH] -- SERVER [ARG ...]\n  daguard explain <rule-id>\n  daguard policy lint [--layer organization|project] <path>\n  daguard doctor [--managed] [--integrity-manifest PATH] [--policy PATH] [--audit-log PATH] [--codex-hooks PATH] [--cursor-hooks PATH] [--opencode-config PATH]\n  daguard doctor <codex|cursor|opencode> <config.json>\n  daguard --adapter <codex|cursor|opencode> --event <pre-tool|post-tool> [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--no-session-state]\n\nPolicy precedence: built-in invariants, organization policy, project tightening, default.\nA lower layer can never override a higher-layer deny."
 }
 
 struct CliError {

@@ -1123,14 +1123,14 @@ technically enforceable. It builds on the taxonomy and state model from Phase
 
 ## 15.1 Pre-context security boundary
 
-- [ ] Define `pre-context interception` formally.
-- [ ] Document the difference between post-tool observation and safe pre-context replacement.
+- [x] Define `pre-context interception` formally.
+- [x] Document the difference between post-tool observation and safe pre-context replacement.
 - [ ] Verify actual behavior for every supported agent/tool combination before claiming support.
-- [ ] Classify each path as `native_replace`, `guarded_execution`, `mcp_proxy`, `observe_only`, or `unsupported`.
-- [ ] Never claim containment for `observe_only`.
-- [ ] Fail closed for policy-designated sensitive operations when no safe interception path exists.
-- [ ] Pin or document minimum tested agent versions.
-- [ ] Treat upstream hook-semantics changes as security-critical compatibility changes.
+- [x] Classify each path as `native_replace`, `guarded_execution`, `mcp_proxy`, `observe_only`, or `unsupported`.
+- [x] Never claim containment for `observe_only`.
+- [x] Fail closed for policy-designated sensitive operations when no safe interception path exists.
+- [x] Pin or document minimum tested agent versions.
+- [x] Treat upstream hook-semantics changes as security-critical compatibility changes.
 
 Required architecture:
 
@@ -1160,56 +1160,56 @@ tool
 
 ## 15.2 Result decision model
 
-- [ ] Define canonical `ALLOW`, `SANITIZE`, and `BLOCK` result-decision types.
-- [ ] `ALLOW` forwards raw output only when policy permits.
-- [ ] `SANITIZE` forwards transformed output only.
-- [ ] `BLOCK` discards raw output and emits a safe synthetic result.
-- [ ] Make sanitization failure become `BLOCK`.
-- [ ] Make scanner/parser failures fail closed for protected operations.
-- [ ] Never return original and sanitized content together.
-- [ ] Never include matched sensitive values in reasons or errors.
+- [x] Define canonical `ALLOW`, `SANITIZE`, and `BLOCK` result-decision types.
+- [x] `ALLOW` forwards raw output only when policy permits.
+- [x] `SANITIZE` forwards transformed output only.
+- [x] `BLOCK` discards raw output and emits a safe synthetic result.
+- [x] Make sanitization failure become `BLOCK`.
+- [x] Make scanner/parser failures fail closed for protected operations.
+- [x] Never return original and sanitized content together.
+- [x] Never include matched sensitive values in reasons or errors.
 
 ## 15.3 Secret detection engine
 
-- [ ] Detect PEM/private key blocks.
-- [ ] Detect JWTs.
-- [ ] Detect Bearer/Authorization credentials.
-- [ ] Detect database URLs with embedded credentials.
-- [ ] Detect password/secret/token assignments.
-- [ ] Detect common API-token formats.
-- [ ] Detect GitHub/GitLab tokens.
-- [ ] Detect major cloud-provider credentials where safely recognizable.
-- [ ] Detect Stripe/payment-provider token formats.
-- [ ] Detect Slack-style tokens.
-- [ ] Detect OAuth access/refresh-token patterns.
-- [ ] Detect cookie/session values where structured context supports classification.
-- [ ] Detect Drupal password/hash fields where schema context makes detection reliable.
-- [ ] Support organization/project-specific secret patterns.
-- [ ] Consider optional conservative entropy-based detection.
-- [ ] Support multiline matching.
-- [ ] Handle split/chunk boundaries.
-- [ ] Enforce strict runtime and memory bounds.
-- [ ] Complete a regex safety review.
+- [x] Detect PEM/private key blocks.
+- [x] Detect JWTs.
+- [x] Detect Bearer/Authorization credentials.
+- [x] Detect database URLs with embedded credentials.
+- [x] Detect password/secret/token assignments.
+- [x] Detect common API-token formats.
+- [x] Detect GitHub/GitLab tokens.
+- [x] Detect major cloud-provider credentials where safely recognizable.
+- [x] Detect Stripe/payment-provider token formats.
+- [x] Detect Slack-style tokens.
+- [x] Detect OAuth access/refresh-token patterns.
+- [x] Detect cookie/session values where structured context supports classification.
+- [x] Detect Drupal password/hash fields where schema context makes detection reliable.
+- [x] Support organization/project-specific secret patterns.
+- [x] Consider optional conservative entropy-based detection.
+- [x] Support multiline matching.
+- [x] Handle split/chunk boundaries.
+- [x] Enforce strict runtime and memory bounds.
+- [x] Complete a regex safety review.
 
 Detector findings contain category, detector ID, offsets, and confidence, but
 must not duplicate matched values into persistent objects or logs.
 
 ## 15.4 Personal and sensitive-data detection
 
-- [ ] Detect email addresses.
-- [ ] Detect phone numbers.
-- [ ] Detect IP addresses where configured as personal data.
-- [ ] Detect payment card numbers with Luhn validation.
-- [ ] Detect IBANs with checksum validation.
-- [ ] Detect dates of birth only with adequate context.
-- [ ] Detect structured postal-address data.
-- [ ] Classify configured sensitive field/column names.
-- [ ] Classify Drupal user/account output.
-- [ ] Classify Webform submission output.
-- [ ] Classify Commerce order/customer/profile output.
-- [ ] Classify Commerce payment/payment-method output.
-- [ ] Classify comment author metadata.
-- [ ] Support site-specific/custom field classifications.
+- [x] Detect email addresses.
+- [x] Detect phone numbers.
+- [x] Detect IP addresses where configured as personal data.
+- [x] Detect payment card numbers with Luhn validation.
+- [x] Detect IBANs with checksum validation.
+- [x] Detect dates of birth only with adequate context.
+- [x] Detect structured postal-address data.
+- [x] Classify configured sensitive field/column names.
+- [x] Classify Drupal user/account output.
+- [x] Classify Webform submission output.
+- [x] Classify Commerce order/customer/profile output.
+- [x] Classify Commerce payment/payment-method output.
+- [x] Classify comment author metadata.
+- [x] Support site-specific/custom field classifications.
 
 Prefer structured evidence such as a `mail` column plus an email-shaped value,
 or a `pass` column, over loose matching of arbitrary values.
@@ -1227,21 +1227,21 @@ column "billing_address"
 
 ## 15.5 Structured sanitization
 
-- [ ] Support plain text.
-- [ ] Support JSON.
-- [ ] Support nested JSON.
-- [ ] Support SQL/table-formatted output.
-- [ ] Support key/value output.
-- [ ] Support dotenv-like output.
-- [ ] Support common CLI table output.
-- [ ] Preserve safe structural context.
-- [ ] Preserve keys and column names when safe.
-- [ ] Redact values rather than dropping whole records where practical.
-- [ ] Define canonical placeholders.
-- [ ] Merge overlapping detections safely.
-- [ ] Preserve valid UTF-8.
-- [ ] Preserve valid JSON when input JSON is valid.
-- [ ] Define malformed-input fallback behavior.
+- [x] Support plain text.
+- [x] Support JSON.
+- [x] Support nested JSON.
+- [x] Support SQL/table-formatted output.
+- [x] Support key/value output.
+- [x] Support dotenv-like output.
+- [x] Support common CLI table output.
+- [x] Preserve safe structural context.
+- [x] Preserve keys and column names when safe.
+- [x] Redact values rather than dropping whole records where practical.
+- [x] Define canonical placeholders.
+- [x] Merge overlapping detections safely.
+- [x] Preserve valid UTF-8.
+- [x] Preserve valid JSON when input JSON is valid.
+- [x] Define malformed-input fallback behavior.
 
 Canonical placeholders should include:
 
@@ -1272,49 +1272,49 @@ safe output only
 agent
 ```
 
-- [ ] Define `daguard exec -- ...` behavior.
-- [ ] Avoid shell interpolation unless explicitly required.
-- [ ] Capture stdout and stderr privately.
-- [ ] Scan both streams before release.
-- [ ] Preserve exit status semantics where practical.
-- [ ] Handle signals.
-- [ ] Handle timeouts.
-- [ ] Bound output size.
-- [ ] Define large-output behavior.
-- [ ] Avoid raw-output temporary files.
-- [ ] Define streaming behavior that cannot leak early chunks before a verdict.
-- [ ] Plan DDEV-specific tests.
-- [ ] Plan Drush SQL-result tests.
-- [ ] Plan stderr-secret leakage tests.
-- [ ] Plan Composer/Git diagnostic leakage tests.
+- [x] Define `daguard exec -- ...` behavior.
+- [x] Avoid shell interpolation unless explicitly required.
+- [x] Capture stdout and stderr privately.
+- [x] Scan both streams before release.
+- [x] Preserve exit status semantics where practical.
+- [x] Handle signals.
+- [x] Handle timeouts.
+- [x] Bound output size.
+- [x] Define large-output behavior.
+- [x] Avoid raw-output temporary files.
+- [x] Define streaming behavior that cannot leak early chunks before a verdict.
+- [x] Plan DDEV-specific tests.
+- [x] Plan Drush SQL-result tests.
+- [x] Plan stderr-secret leakage tests.
+- [x] Plan Composer/Git diagnostic leakage tests.
 
 ## 15.7 Sensitive-file containment
 
-- [ ] Keep direct `deny_read` protections for known secret files.
-- [ ] Do not weaken pre-tool denial merely because redaction exists.
-- [ ] Route any future sanitized file reads through guarded reads.
-- [ ] Scan before exposing content.
-- [ ] Treat redaction as defense in depth, not permission to read unnecessary secrets.
-- [ ] Plan tests for `.env`, Drupal settings files, private keys, and Composer auth files.
+- [x] Keep direct `deny_read` protections for known secret files.
+- [x] Do not weaken pre-tool denial merely because redaction exists.
+- [x] Route any future sanitized file reads through guarded reads.
+- [x] Scan before exposing content.
+- [x] Treat redaction as defense in depth, not permission to read unnecessary secrets.
+- [x] Plan tests for `.env`, Drupal settings files, private keys, and Composer auth files.
 
 ## 15.8 SQL result containment
 
-- [ ] Reuse Phase 14 sensitive-table classifications.
-- [ ] Add optional sensitive-column classification.
-- [ ] Prefer pre-execution deny where results should never be exposed.
-- [ ] Route permitted sensitive SQL queries through guarded execution/result inspection.
-- [ ] Apply structured column-level redaction where possible.
-- [ ] Handle aliases.
-- [ ] Handle joins.
-- [ ] Handle Drupal table prefixes.
-- [ ] Handle DDEV/Drush SQL commands.
-- [ ] Block when safe sanitization cannot be established.
-- [ ] Plan tests covering `users` and `users_field_data`.
-- [ ] Plan tests covering `sessions`.
-- [ ] Plan tests covering Webform submissions and comments.
-- [ ] Plan tests covering Commerce orders, payments, and payment methods.
-- [ ] Plan tests covering profiles.
-- [ ] Plan tests covering ordinary nonsensitive node queries.
+- [x] Reuse Phase 14 sensitive-table classifications.
+- [x] Add optional sensitive-column classification.
+- [x] Prefer pre-execution deny where results should never be exposed.
+- [x] Route permitted sensitive SQL queries through guarded execution/result inspection.
+- [x] Apply structured column-level redaction where possible.
+- [x] Handle aliases.
+- [x] Handle joins.
+- [x] Handle Drupal table prefixes.
+- [x] Handle DDEV/Drush SQL commands.
+- [x] Block when safe sanitization cannot be established.
+- [x] Plan tests covering `users` and `users_field_data`.
+- [x] Plan tests covering `sessions`.
+- [x] Plan tests covering Webform submissions and comments.
+- [x] Plan tests covering Commerce orders, payments, and payment methods.
+- [x] Plan tests covering profiles.
+- [x] Plan tests covering ordinary nonsensitive node queries.
 
 ## 15.9 MCP response gateway
 
@@ -1328,61 +1328,61 @@ agent
 → agent
 ```
 
-- [ ] Intercept MCP requests.
-- [ ] Apply existing pre-tool policy.
-- [ ] Forward approved requests.
-- [ ] Capture responses before returning them.
-- [ ] Recursively inspect textual and structured content.
-- [ ] Sanitize supported result types.
-- [ ] Block unsupported sensitive binary/attachment output.
-- [ ] Preserve MCP protocol correctness.
-- [ ] Never return raw and sanitized content together.
-- [ ] Feed detected classifications into Phase 14 taint state.
-- [ ] Add planned end-to-end tests.
+- [x] Intercept MCP requests.
+- [x] Apply existing pre-tool policy.
+- [x] Forward approved requests.
+- [x] Capture responses before returning them.
+- [x] Recursively inspect textual and structured content.
+- [x] Sanitize supported result types.
+- [x] Block unsupported sensitive binary/attachment output.
+- [x] Preserve MCP protocol correctness.
+- [x] Never return raw and sanitized content together.
+- [x] Feed detected classifications into Phase 14 taint state.
+- [x] Add planned end-to-end tests.
 
 ## 15.10 Integration with Phase 14
 
-- [ ] Map detected credentials to `credential` taint.
-- [ ] Map authentication material to `authentication` taint.
-- [ ] Map detected PII to `personal_data` taint.
-- [ ] Map Commerce/customer output to appropriate customer/financial taints.
-- [ ] Ensure sanitization does not implicitly remove taint.
-- [ ] Allow a blocked result to taint the session when the operation accessed protected data.
-- [ ] Reuse the exact Phase 14 taxonomy without duplicate classification concepts.
+- [x] Map detected credentials to `credential` taint.
+- [x] Map authentication material to `authentication` taint.
+- [x] Map detected PII to `personal_data` taint.
+- [x] Map Commerce/customer output to appropriate customer/financial taints.
+- [x] Ensure sanitization does not implicitly remove taint.
+- [x] Allow a blocked result to taint the session when the operation accessed protected data.
+- [x] Reuse the exact Phase 14 taxonomy without duplicate classification concepts.
 
 ## 15.11 Canary leakage tests
 
-- [ ] Add deterministic fake credential canaries.
-- [ ] Add deterministic fake personal-data canaries.
-- [ ] Use reserved/example domains for test emails.
-- [ ] Cover direct sensitive-file paths.
-- [ ] Cover guarded-shell paths.
-- [ ] Cover SQL-result paths.
-- [ ] Cover MCP-response paths.
-- [ ] Cover stderr paths.
-- [ ] Cover audit-log paths.
-- [ ] Cover error-message paths.
-- [ ] Cover chunk/split-secret cases.
-- [ ] Cover ANSI escapes.
-- [ ] Cover JSON escaping.
-- [ ] Cover Unicode.
-- [ ] Cover overlapping matches.
-- [ ] Cover oversized/truncated output.
+- [x] Add deterministic fake credential canaries.
+- [x] Add deterministic fake personal-data canaries.
+- [x] Use reserved/example domains for test emails.
+- [x] Cover direct sensitive-file paths.
+- [x] Cover guarded-shell paths.
+- [x] Cover SQL-result paths.
+- [x] Cover MCP-response paths.
+- [x] Cover stderr paths.
+- [x] Cover audit-log paths.
+- [x] Cover error-message paths.
+- [x] Cover chunk/split-secret cases.
+- [x] Cover ANSI escapes.
+- [x] Cover JSON escaping.
+- [x] Cover Unicode.
+- [x] Cover overlapping matches.
+- [x] Cover oversized/truncated output.
 - [ ] Verify model context/transcripts where technically testable.
 
 ## 15.12 Resource and performance limits
 
-- [ ] Define maximum scan size.
-- [ ] Define scan time budget.
-- [ ] Define memory budget.
-- [ ] Define oversized-result behavior.
-- [ ] Fail closed for protected operations when full scanning cannot complete.
-- [ ] Avoid catastrophic regular expressions.
-- [ ] Benchmark common DDEV/Drupal commands.
-- [ ] Benchmark large SQL results.
-- [ ] Plan fuzzing of scanners.
-- [ ] Plan fuzzing of redaction-range merging.
-- [ ] Plan fuzzing of structured sanitizers.
+- [x] Define maximum scan size.
+- [x] Define scan time budget.
+- [x] Define memory budget.
+- [x] Define oversized-result behavior.
+- [x] Fail closed for protected operations when full scanning cannot complete.
+- [x] Avoid catastrophic regular expressions.
+- [x] Benchmark common DDEV/Drupal commands.
+- [x] Benchmark large SQL results.
+- [x] Plan fuzzing of scanners.
+- [x] Plan fuzzing of redaction-range merging.
+- [x] Plan fuzzing of structured sanitizers.
 
 ## 15.13 Agent/tool capability matrix
 
@@ -1397,25 +1397,46 @@ Cursor: shell, file read, MCP, native tools
 OpenCode: shell, file read, MCP, plugin/custom tools
 ```
 
-- [ ] Populate capability assumptions only from tested/documented behavior.
-- [ ] Treat upstream behavior changes as security-relevant.
-- [ ] Never silently downgrade to `observe_only`.
-- [ ] Plan compatibility tests for agent updates.
+- [x] Populate capability assumptions only from tested/documented behavior.
+- [x] Treat upstream behavior changes as security-relevant.
+- [x] Never silently downgrade to `observe_only`.
+- [x] Plan compatibility tests for agent updates.
 
 ### Phase 15 exit criteria
 
-- [ ] Every supported agent/tool path has an explicit interception classification.
+- [x] Every supported agent/tool path has an explicit interception classification.
 - [ ] Integrations claiming containment prove raw canaries do not reach model context.
-- [ ] Secret scanning is deterministic and bounded.
-- [ ] PII scanning has documented confidence/false-positive behavior.
-- [ ] Structured sanitization preserves safe useful context.
-- [ ] Protected-result scanner failure fails closed.
-- [ ] Oversized protected output fails closed.
-- [ ] Audit/error paths cannot leak canary values.
-- [ ] Sensitive SQL output can be denied or safely contained.
-- [ ] MCP responses can be sanitized or blocked before agent delivery.
-- [ ] Phase 15 detections feed Phase 14 taint state.
-- [ ] Existing stateless and Phase 14 features remain independently usable.
+- [x] Secret scanning is deterministic and bounded.
+- [x] PII scanning has documented confidence/false-positive behavior.
+- [x] Structured sanitization preserves safe useful context.
+- [x] Protected-result scanner failure fails closed.
+- [x] Oversized protected output fails closed.
+- [x] Audit/error paths cannot leak canary values.
+- [x] Sensitive SQL output can be denied or safely contained.
+- [x] MCP responses can be sanitized or blocked before agent delivery.
+- [x] Phase 15 detections feed Phase 14 taint state.
+- [x] Existing stateless and Phase 14 features remain independently usable.
+
+Implementation note (2026-10-04): Phase 15 adds the versioned result-decision
+model, bounded deterministic scanner and structured sanitizers, policy-schema-3
+detector extensions, `daguard exec`, a newline-delimited stdio MCP gateway,
+metadata-only taint/audit integration, capability-schema-2 records, leakage
+tests, scanner fuzz coverage, and result benchmarks. Native Codex, Cursor, and
+OpenCode post-tool hooks remain explicitly `observe_only`; no native replacement
+claim was introduced. The three live-integration checkboxes above remain open
+until configured agent versions prove with transcript inspection that a raw
+canary cannot bypass the routed guarded-execution/MCP boundary. Cursor remains
+version-unverified. Repository tests prove only the guard/proxy output contract.
+An optimized WSL2 smoke run measured 4.1 µs P95 for a common JSON result and
+8.5 ms P95 for a 512 KiB synthetic SQL table after the standard 20 warmups
+(three recorded samples); representative release benchmarking remains part of
+the existing performance process.
+
+Local validation passed `cargo fmt --check`, strict all-target/all-feature
+Clippy, `cargo test --locked` (83 unit, 39 enforcement-core, 9 hardening, 3
+Phase 14, 8 Phase 15, and 71 example-harness tests), fuzz-crate formatting and
+locked compilation, a 101,816-execution bounded result-scanner fuzz smoke run,
+and `cargo deny check` for advisories, bans, licenses, and sources.
 
 ---
 

@@ -1716,6 +1716,69 @@ result size, timestamp, and bounded non-sensitive identifiers. They must not
 contain raw results, matched credentials, matched PII, secret excerpts, scanner
 input, or values copied into error and tracing output.
 
+### 21.11 Implemented Phase 15 contract
+
+The implemented native Codex, Cursor, and OpenCode result hooks remain
+`observe_only`; none is advertised as a replacement boundary. The versioned
+capability matrix records pre-call denial, input rewrite, result observation,
+pre-context replacement, guarded-execution/MCP-proxy availability, security
+mode, and minimum tested version for each agent/tool class. Codex CLI 0.160.0
+and OpenCode 2.0.22 retain their previously tested minimums; Cursor remains
+`unverified`. A supported host/version must complete a live canary/transcript
+test before the team claims that its configuration uses a containing route.
+
+`daguard exec [OPTIONS] -- COMMAND [ARG ...]` is the guarded shell boundary. It
+applies ordinary pre-tool policy, directly spawns the requested argv without
+implicit shell interpolation, privately and concurrently drains stdout/stderr,
+and releases neither stream until both have been completely inspected. It uses
+no raw-output temporary file. The default child timeout is 30 seconds, an
+operator may select 1–3600 seconds, timeout exits 124, containment block exits
+125, and otherwise the child exit code is preserved. On Unix the child runs in
+a dedicated process group; the guard forwards `SIGINT`, `SIGTERM`, and `SIGHUP`
+and kills the full group on timeout or cleanup. Output is never streamed before
+a verdict. The small direct `libc` dependency provides these process-group and
+signal operations without a separately installed runtime.
+
+`daguard mcp-proxy [OPTIONS] -- SERVER [ARG ...]` implements a
+newline-delimited JSON-RPC stdio gateway. The upstream launch and each MCP
+request receive pre-tool policy evaluation. Responses are captured as complete
+bounded messages, recursively inspected, and allowed, sanitized, or replaced
+with a safe JSON-RPC error. Text and structured JSON are supported; binary/image,
+audio, blob, and attachment bodies are blocked. Server stderr is also buffered
+and sanitized. HTTP/SSE and Content-Length-framed MCP transports are not claimed;
+batched client requests are rejected rather than bypassing per-call policy.
+
+Each scanned stream/message/result is limited to 1 MiB, one second of scanner
+wall time, 256 findings, JSON depth 32, and bounded JSON value/string sizes. A
+guarded child can retain one stdout and one stderr buffer; scanner and structured
+sanitizer working memory has a design budget of 32 MiB per invocation. Invalid
+UTF-8, oversized data, finding overflow, malformed JSON-shaped content,
+unsupported binary output, time-budget exhaustion, or sanitizer failure blocks
+release. The scanner uses finite byte scans and no backtracking regular
+expressions. Complete buffering handles producer chunk boundaries. ANSI escape
+removal retains original byte-offset mapping; overlapping findings merge before
+redaction.
+
+Built-in detection covers private-key blocks, JWTs, authorization/bearer
+material, embedded database credentials, credential assignments, recognizable
+GitHub/GitLab/cloud/payment/Slack/OAuth tokens, email, context-labelled phone,
+birth-date/address values, configured personal IP addresses, Luhn-valid cards,
+checksum-valid IBANs, and structured Drupal/Webform/Commerce/comment fields.
+Entropy-only detection is intentionally disabled because it lacks adequate
+context. Policy schema 3 adds bounded secret-prefix and sensitive-field
+extensions plus the personal-IP switch. Structured JSON, nested JSON,
+dotenv/key-value data, and pipe/tabular SQL/CLI output preserve safe shape and
+use canonical Phase 14 category placeholders.
+
+Detector findings contain only detector ID, taxonomy category, offsets, and
+confidence. Sanitized and blocked results both add dynamic metadata-only Phase
+14 taint when a session identity is supplied. Audit schema 4 adds result-
+containment events whose API cannot accept a result body. Repository leakage
+tests cover stdout, stderr, JSON, ANSI, Unicode, overlaps, oversize/error paths,
+audit/state files, SQL tables, and MCP messages using deterministic synthetic
+canaries. They prove the guard/proxy output contract, not vendor host routing or
+model-transcript behavior.
+
 ---
 
 ## 22. Production boundary
@@ -2031,7 +2094,7 @@ Example event:
 
 ```json
 {
-  "schema": 3,
+  "schema": 4,
   "mode": "enforce",
   "enforcement_decision": "deny",
   "enforcement_rule_id": "drupal.secret.settings_php",
@@ -2060,6 +2123,9 @@ all matching rules. Audit schema 3 adds metadata-only `post_tool_use` records,
 result status/content-type/byte-size fields, source IDs, sensitivity categories,
 and optional pre-tool sink/category fields. It never adds raw result or resource
 content. Consumers must distinguish all audit schema versions explicitly.
+Audit schema 4 adds metadata-only result-containment decisions, detector/source
+IDs, categories, and guarded exit status. Its construction API accepts no raw or
+sanitized result body.
 
 Audit logging is opt-in per invocation through `--audit-log PATH`, and is
 required when organization candidate audit-only evaluation is enabled. The event
@@ -2731,6 +2797,10 @@ daguard/
 │   ├── paths.rs
 │   ├── shell.rs
 │   ├── sensitivity.rs
+│   ├── scanner.rs
+│   ├── result.rs
+│   ├── guarded.rs
+│   ├── mcp.rs
 │   ├── state.rs
 │   ├── sink.rs
 │   ├── capabilities.rs

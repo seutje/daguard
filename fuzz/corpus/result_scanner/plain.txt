@@ -1,0 +1,2 @@
+mail=phase15@example.test
+token=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890

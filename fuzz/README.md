@@ -38,6 +38,7 @@ Targets:
 | shell | Tokenization and shared semantic evaluation, including wrappers |
 | sql | SQL lexical classification with synthetic sensitive tables |
 | policy | Organization and project policy decoding and validation |
+| result_scanner | Phase 15 detection, overlap merging, JSON/plain-text sanitization |
 
 Tracked corpus seeds copy existing sanitized adapter/request/policy fixtures and
 include synthetic traversal, chaining, SQL, transfer, and duplicate-key cases.

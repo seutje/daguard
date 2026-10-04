@@ -10,6 +10,19 @@ once releases begin.
 
 ### Added
 
+- Phase 15 canonical allow/sanitize/block result decisions; bounded secret,
+  authentication, personal, financial, customer, and configured-field scanning;
+  JSON/key-value/table sanitization with stable placeholders; guarded direct
+  execution; and a newline-delimited stdio MCP response gateway.
+- Phase 15 integration with metadata-only session taint and audit schema 4,
+  versioned policy-schema-3 detector extensions, per-tool capability fields,
+  fake-canary leakage tests, scanner fuzz coverage, and scanner benchmarks.
+- Result containment is claimed only for explicitly routed `daguard exec` and
+  `daguard mcp-proxy` paths. Native Codex, Cursor, and OpenCode result hooks stay
+  explicitly `observe_only`.
+- A direct, pinned `libc` dependency supports WSL/Linux process-group cleanup
+  and signal forwarding in guarded execution without an external runtime.
+
 - Phase 14 canonical post-tool metadata for Codex, Cursor, and OpenCode;
   canonical sensitivity and interception-capability taxonomies; metadata-only
   expiring session taint with bounded cleanup and concurrency-safe atomic

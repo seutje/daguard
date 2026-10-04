@@ -72,3 +72,10 @@ path = "fuzz_targets/policy.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "result_scanner"
+path = "fuzz_targets/result_scanner.rs"
+test = false
+doc = false
+bench = false

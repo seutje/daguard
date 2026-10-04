@@ -98,14 +98,14 @@ fixtures cover command and SQL mutation classification without executing them.
 Use [the live WSL/DDEV harness](../../tests/wsl_ddev_live.sh) only as documented,
 and record live tests separately from synthetic classification.
 
-Audit schema 3 retains the schema-2 `mode`, evaluated `decision`/`rule_id`, and actual
+Audit schema 4 retains the schema-2 `mode`, evaluated `decision`/`rule_id`, and actual
 canonical `enforcement_decision`/`enforcement_rule_id`. A would-deny candidate
 allowed to execute has `decision: deny` and `enforcement_decision: allow`.
 If a mandatory deny also matches, `enforcement_decision` remains `deny`.
 Canonical `ask` is rendered as native deny by current adapters. Logs retain only
 the winning evaluated and enforced rule, not every matching candidate. They omit
 commands, paths, content, reasons, evidence and raw identifiers. Mixed retained
-schema-1/schema-2/schema-3 logs must be interpreted by their schema version.
+schema-1/schema-2/schema-3/schema-4 logs must be interpreted by their schema version.
 
 The log cannot determine whether a denial was a false positive, identify an
 unknown tool's name, measure host latency, or identify the installed agent version

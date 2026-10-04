@@ -8,7 +8,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 export CARGO_NET_OFFLINE=true
 cargo +nightly fuzz build
-for target in canonical codex cursor opencode path shell sql policy; do
+for target in canonical codex cursor opencode path shell sql policy result_scanner; do
     mkdir "$work/$target"
     cp fuzz/corpus/"$target"/* "$work/$target/"
     cargo +nightly fuzz run "$target" "$work/$target" -- \

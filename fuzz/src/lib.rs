@@ -12,6 +12,10 @@ mod model;
 mod paths;
 #[path = "../../src/policy.rs"]
 mod policy;
+#[path = "../../src/result.rs"]
+mod result;
+#[path = "../../src/scanner.rs"]
+mod scanner;
 #[path = "../../src/shell.rs"]
 mod shell;
 
@@ -86,4 +90,20 @@ pub fn sql(bytes: &[u8]) {
 pub fn policy(bytes: &[u8]) {
     let _ = policy::Policy::from_slice(bytes, policy::PolicyKind::Organization);
     let _ = policy::Policy::from_slice(bytes, policy::PolicyKind::Project);
+}
+pub fn result_scanner(bytes: &[u8]) {
+    let decision = scanner::inspect(bytes, &scanner::ScanConfig::default());
+    if let Some(content) = decision.content {
+        assert!(content.is_char_boundary(content.len()));
+        if serde_json::from_slice::<serde_json::Value>(bytes).is_ok() {
+            let _ = serde_json::from_str::<serde_json::Value>(&content);
+        }
+    }
+    let protected = scanner::inspect_sensitive_source(bytes, &scanner::ScanConfig::default());
+    if let Some(content) = protected.content {
+        assert!(content.is_char_boundary(content.len()));
+        if serde_json::from_slice::<serde_json::Value>(bytes).is_ok() {
+            let _ = serde_json::from_str::<serde_json::Value>(&content);
+        }
+    }
 }

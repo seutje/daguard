@@ -1,6 +1,6 @@
 //! Policy loading, validation, precedence, and evaluation orchestration.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::fs;
 use std::io::Read;
@@ -10,12 +10,12 @@ use serde::Deserialize;
 
 use crate::model::{
     CanonicalRequest, Capability, Decision, DecisionEffect, Evidence, PROTOCOL_VERSION,
-    PolicyLayer, Severity,
+    PolicyLayer, SensitivityCategory, Severity,
 };
 use crate::paths::{self, PathPattern};
 use crate::{analyzers, shell};
 
-pub(crate) const POLICY_SCHEMA_VERSION: u16 = 2;
+pub(crate) const POLICY_SCHEMA_VERSION: u16 = 3;
 const MAX_POLICY_BYTES: u64 = 1024 * 1024;
 const MAX_RULES: usize = 1_024;
 const MAX_PATTERNS_PER_RULE: usize = 256;
@@ -113,6 +113,8 @@ pub(crate) struct Policy {
     #[serde(default)]
     sql: SqlPolicy,
     #[serde(default)]
+    result: ResultPolicy,
+    #[serde(default)]
     rules: Vec<Rule>,
 }
 
@@ -129,6 +131,17 @@ where
 struct SqlPolicy {
     #[serde(default)]
     sensitive_tables: Vec<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ResultPolicy {
+    #[serde(default)]
+    secret_prefixes: Vec<String>,
+    #[serde(default)]
+    sensitive_fields: BTreeMap<String, SensitivityCategory>,
+    #[serde(default)]
+    ip_addresses_are_personal: bool,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -210,14 +223,14 @@ impl Policy {
     }
 
     fn validate(&self, kind: PolicyKind) -> Result<(), PolicyError> {
-        if !matches!(self.schema, 1 | POLICY_SCHEMA_VERSION) {
+        if !(1..=POLICY_SCHEMA_VERSION).contains(&self.schema) {
             return Err(PolicyError::Invalid("unsupported policy schema version"));
         }
         if self.rules.len() > MAX_RULES {
             return Err(PolicyError::Invalid("policy contains too many rules"));
         }
         if let Some(observed) = &self.audit_only_rules {
-            if self.schema == 1 {
+            if self.schema < 2 {
                 return Err(PolicyError::Invalid(
                     "audit-only rules require policy schema 2",
                 ));
@@ -272,6 +285,7 @@ impl Policy {
                 "SQL sensitive table configuration is invalid",
             ));
         }
+        validate_result_policy(self.schema, &self.result)?;
         let mut ids = HashSet::new();
         for rule in &self.rules {
             validate_rule_id(&rule.id)?;
@@ -308,6 +322,66 @@ impl Policy {
     pub(crate) fn sensitive_tables(&self) -> impl Iterator<Item = &str> {
         self.sql.sensitive_tables.iter().map(String::as_str)
     }
+
+    pub(crate) fn extend_scan_config(&self, config: &mut crate::scanner::ScanConfig) {
+        config
+            .secret_prefixes
+            .extend(self.result.secret_prefixes.iter().cloned());
+        for (field, category) in &self.result.sensitive_fields {
+            config
+                .sensitive_fields
+                .entry(field.to_ascii_lowercase().replace('-', "_"))
+                .or_insert(*category);
+        }
+        config.ip_addresses_are_personal |= self.result.ip_addresses_are_personal;
+    }
+}
+
+fn validate_result_policy(schema: u16, result: &ResultPolicy) -> Result<(), PolicyError> {
+    if schema < 3
+        && (!result.secret_prefixes.is_empty()
+            || !result.sensitive_fields.is_empty()
+            || result.ip_addresses_are_personal)
+    {
+        return Err(PolicyError::Invalid(
+            "result scanning policy requires policy schema 3",
+        ));
+    }
+    if result.secret_prefixes.len() > MAX_PATTERNS_PER_RULE
+        || result.secret_prefixes.iter().any(|prefix| {
+            prefix.is_empty()
+                || prefix.len() > 64
+                || !prefix.is_ascii()
+                || prefix.bytes().any(|byte| byte.is_ascii_whitespace())
+        })
+        || result.sensitive_fields.len() > MAX_PATTERNS_PER_RULE
+        || result.sensitive_fields.keys().any(|field| {
+            field.is_empty()
+                || field.len() > 128
+                || !field
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        })
+    {
+        return Err(PolicyError::Invalid(
+            "result scanning configuration is invalid",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn scan_config(
+    organization: Option<&Policy>,
+    project: Option<&Policy>,
+) -> crate::scanner::ScanConfig {
+    let mut config = crate::scanner::ScanConfig::default();
+    if let Some(policy) = organization {
+        policy.extend_scan_config(&mut config);
+    }
+    if let Some(policy) = project {
+        policy.extend_scan_config(&mut config);
+    }
+    config
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1709,5 +1783,51 @@ mod tests {
                 "{pattern} must be rejected"
             );
         }
+    }
+
+    #[test]
+    fn result_scanning_configuration_is_versioned_and_bounded() {
+        let valid = json!({
+            "schema": 3,
+            "result": {
+                "secret_prefixes": ["org_live_"],
+                "sensitive_fields": {"case_reference": "private_content"},
+                "ip_addresses_are_personal": true
+            }
+        });
+        let organization = policy(&valid, PolicyKind::Organization);
+        let config = super::scan_config(Some(&organization), None);
+        assert_eq!(config.secret_prefixes, ["org_live_"]);
+        assert!(config.ip_addresses_are_personal);
+        let project = policy(
+            &json!({
+                "schema": 3,
+                "result": {"sensitive_fields": {"case_reference": "personal_data"}}
+            }),
+            PolicyKind::Project,
+        );
+        let layered = super::scan_config(Some(&organization), Some(&project));
+        assert_eq!(
+            layered.sensitive_fields["case_reference"],
+            crate::model::SensitivityCategory::PrivateContent
+        );
+        assert!(
+            Policy::from_slice(
+                &serde_json::to_vec(&json!({"schema":2,"result":{"secret_prefixes":["x_"]}}))
+                    .unwrap(),
+                PolicyKind::Organization,
+            )
+            .is_err()
+        );
+        assert!(
+            Policy::from_slice(
+                &serde_json::to_vec(
+                    &json!({"schema":3,"result":{"secret_prefixes":["bad prefix"]}})
+                )
+                .unwrap(),
+                PolicyKind::Organization,
+            )
+            .is_err()
+        );
     }
 }

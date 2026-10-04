@@ -13,11 +13,11 @@ use std::os::unix::fs::OpenOptionsExt;
 
 use crate::model::{
     CanonicalPostToolEvent, CanonicalRequest, Capability, Decision, DecisionEffect, PolicyLayer,
-    ResultStatus, SensitivityCategory, Severity, SinkCategory,
+    ResultEffect, ResultStatus, SensitivityCategory, Severity, SinkCategory,
 };
 use crate::sensitivity::SourceClassification;
 
-pub(crate) const AUDIT_SCHEMA_VERSION: u16 = 3;
+pub(crate) const AUDIT_SCHEMA_VERSION: u16 = 4;
 
 /// A deliberately small event that cannot contain raw tool input, commands,
 /// paths, file contents, SQL data, HTTP bodies, or decision evidence.
@@ -193,6 +193,61 @@ pub(crate) fn append_post(
     write_event(path, &audit)
 }
 
+#[derive(Debug, Serialize)]
+struct ResultAuditEvent<'a> {
+    schema: u16,
+    timestamp_unix_ms: u128,
+    guard_version: &'static str,
+    agent: &'static str,
+    event: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session: Option<String>,
+    decision: &'static str,
+    exit_code: i32,
+    source_ids: Vec<&'a str>,
+    sensitivity_categories: BTreeSet<SensitivityCategory>,
+}
+
+/// Append only result-decision metadata. Neither the raw nor sanitized body is
+/// accepted by this API, making result leakage structurally impossible here.
+pub(crate) fn append_result(
+    path: &Path,
+    agent: &str,
+    session_id: Option<&str>,
+    classifications: &[SourceClassification],
+    result_effect: ResultEffect,
+    exit_code: i32,
+) -> io::Result<()> {
+    let timestamp_unix_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(io::Error::other)?
+        .as_millis();
+    let mut sensitivity_categories = BTreeSet::new();
+    for classification in classifications {
+        sensitivity_categories.extend(classification.categories.iter().copied());
+    }
+    let event = ResultAuditEvent {
+        schema: AUDIT_SCHEMA_VERSION,
+        timestamp_unix_ms,
+        guard_version: env!("CARGO_PKG_VERSION"),
+        agent: known_agent(agent),
+        event: "result_containment",
+        session: session_id.map(pseudonymize),
+        decision: match result_effect {
+            ResultEffect::Allow => "allow",
+            ResultEffect::Sanitize => "sanitize",
+            ResultEffect::Block => "block",
+        },
+        exit_code,
+        source_ids: classifications
+            .iter()
+            .map(|classification| classification.source_id.as_str())
+            .collect(),
+        sensitivity_categories,
+    };
+    write_event(path, &event)
+}
+
 fn write_event(path: &Path, event: &impl Serialize) -> io::Result<()> {
     let mut line = serde_json::to_vec(event).map_err(io::Error::other)?;
     line.push(b'\n');
@@ -246,6 +301,8 @@ fn known_agent(agent: &str) -> &'static str {
         b"codex" => "codex",
         b"cursor" => "cursor",
         b"opencode" => "opencode",
+        b"guarded_execution" => "guarded_execution",
+        b"mcp_proxy" => "mcp_proxy",
         _ => "unknown",
     }
 }

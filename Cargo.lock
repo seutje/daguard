@@ -60,6 +60,7 @@ name = "daguard"
 version = "0.0.7"
 dependencies = [
  "globset",
+ "libc",
  "serde",
  "serde_json",
  "sha2",

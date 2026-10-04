@@ -227,6 +227,16 @@ pub(crate) enum InterceptionCapability {
     Unsupported,
 }
 
+/// A pre-context verdict for one fully buffered tool result. This contract is
+/// deliberately distinct from the pre-tool allow/ask/deny decision.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ResultEffect {
+    Allow,
+    Sanitize,
+    Block,
+}
+
 impl CanonicalRequest {
     pub(crate) fn from_slice(input: &[u8]) -> Result<Self, ModelError> {
         if input.len() > MAX_INPUT_BYTES {
@@ -305,7 +315,10 @@ impl CanonicalRequest {
             .iter()
             .map(String::as_str)
             .collect::<Vec<_>>();
-        if matches!(self.tool.capability, Capability::Unknown) {
+        if matches!(
+            self.tool.capability,
+            Capability::Unknown | Capability::McpCall
+        ) {
             collect_path_values(&self.input, None, &mut paths);
         }
         paths

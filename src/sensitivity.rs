@@ -42,6 +42,14 @@ pub(crate) fn classify(
     project: Option<&Policy>,
 ) -> Result<Vec<SourceClassification>, PolicyError> {
     let request = event.as_request();
+    classify_request(&request, organization, project)
+}
+
+pub(crate) fn classify_request(
+    request: &crate::model::CanonicalRequest,
+    organization: Option<&Policy>,
+    project: Option<&Policy>,
+) -> Result<Vec<SourceClassification>, PolicyError> {
     let mut paths = request
         .candidate_paths()
         .into_iter()

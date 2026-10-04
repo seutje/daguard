@@ -12,6 +12,10 @@ mod model;
 mod paths;
 #[path = "../src/policy.rs"]
 mod policy;
+#[path = "../src/result.rs"]
+mod result;
+#[path = "../src/scanner.rs"]
+mod scanner;
 #[path = "../src/shell.rs"]
 mod shell;
 
@@ -304,6 +308,33 @@ fn measure_components(
     policy_path: &Path,
     measurements: &mut Vec<Measurement>,
 ) -> Result<(), Box<dyn Error>> {
+    let common_result = br#"{"status":"ok","rows":[{"nid":1,"title":"Synthetic node"}]}"#;
+    let mut large_sql_result = String::from("nid|title|mail\n");
+    while large_sql_result.len() < 512 * 1024 {
+        large_sql_result.push_str("1|Synthetic node|phase15@example.test\n");
+    }
+    measurements.push(measure(
+        "result.scan_common_ddev",
+        options.samples,
+        options.iterations,
+        || {
+            Ok(scanner::inspect(
+                black_box(common_result),
+                &scanner::ScanConfig::default(),
+            ))
+        },
+    )?);
+    measurements.push(measure(
+        "result.scan_large_sql",
+        options.samples,
+        options.iterations,
+        || {
+            Ok(scanner::inspect(
+                black_box(large_sql_result.as_bytes()),
+                &scanner::ScanConfig::default(),
+            ))
+        },
+    )?);
     measurements.push(measure(
         "policy.parse_validate",
         options.samples,

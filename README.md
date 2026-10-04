@@ -18,8 +18,10 @@ informational CI reports; team performance acceptance remains pending. See
 [performance methodology](docs/performance/README.md).
 Phase 14 adds metadata-only post-tool observation, the shared sensitivity
 taxonomy, expiring per-session taint, deterministic outbound sink detection,
-and source-to-sink exfiltration decisions. It does not claim Phase 15 result
-containment.
+and source-to-sink exfiltration decisions. Phase 15 adds bounded deterministic
+result scanning, structured redaction, guarded direct execution, and a
+line-delimited stdio MCP gateway. Native post-tool hooks remain observe-only;
+see the [result-containment contract](docs/operations/result-containment.md).
 
 Managed rollout procedures, role ownership, upgrades, rollback, support, and the
 no-break-glass decision are in the [operations runbook](docs/operations/rollout.md).
@@ -133,6 +135,9 @@ daguard check < request.json
 daguard check --policy /etc/daguard/policy.json request.json
 daguard check --policy /etc/daguard/policy.json \
   --project-policy .daguard/project.json request.json
+daguard inspect-result --policy /etc/daguard/policy.json < result.txt
+daguard exec -- ddev drush status
+daguard mcp-proxy -- /trusted/path/to/mcp-server --stdio
 ```
 
 Other core commands are:
@@ -202,10 +207,12 @@ Drush config imports/database updates produce `ask`; adapters without stable
 approval support map that result to deny. Unsupported expansion, heredoc,
 background, or input-redirection syntax is denied conservatively.
 
-Exit codes are stable at this process boundary: `0` means a decision or requested
+Exit codes are stable at the ordinary process boundary: `0` means a decision or requested
 informational output was emitted, `2` is invalid CLI usage, `3` is a policy or
 configuration failure, and `4` is malformed input or an internal evaluation
 failure. A policy denial is a successfully evaluated decision and exits `0`.
+Guarded execution additionally returns the child's exit status after safe output
+release, 124 on timeout, and 125 when output or execution is blocked.
 
 Canonical paths are normalized lexically without requiring the target to exist.
 The current version does not resolve symlink aliases; deployments must retain OS
@@ -445,11 +452,12 @@ switch to disable mandatory enforcement. Pilot mode requires `--audit-log PATH`;
 `doctor` and invocation diagnostics identify the mode. Schema-1 policies continue
 to enforce every rule.
 
-Audit events now use schema 3: `decision`/`rule_id` describe evaluated policy,
+Audit events now use schema 4: `decision`/`rule_id` describe evaluated policy,
 while `enforcement_decision`/`enforcement_rule_id` describe the actual canonical
 response decision. `mode` distinguishes enforcing and candidate audit-only
 runs. Schema 3 also adds metadata-only post-tool classification events and
-optional sensitivity/sink fields; raw results and resource values remain
-excluded. Native adapter response schemas are unchanged. The
+optional sensitivity/sink fields, plus metadata-only Phase 15 result decisions;
+raw and sanitized result bodies remain excluded. Native adapter response schemas
+are unchanged. The
 [report template](docs/pilot/report-template.md) requires real pilot evidence;
 automated synthetic replay does not establish team acceptance.
