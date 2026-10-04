@@ -14,6 +14,9 @@ once releases begin.
 
 ### Fixed
 
+- Preserve valid top-level JSON strings when sanitizing sensitive contents,
+  with synthetic leakage regressions and the scanner fuzz validity oracle.
+
 - Inspect DDEV Bash reconstruction/raw mode, require explicit directories for
   relative filesystem effects, and test harmless live DDEV execution semantics.
 

@@ -268,7 +268,10 @@ fn within_budget(started: Instant, decision: ResultDecision) -> ResultDecision {
 }
 
 fn looks_like_json(text: &str) -> bool {
-    matches!(text.trim_start().as_bytes().first(), Some(b'{' | b'['))
+    matches!(
+        text.trim_start().as_bytes().first(),
+        Some(b'{' | b'[' | b'"')
+    )
 }
 
 fn sanitize_json(
@@ -1357,6 +1360,44 @@ mod tests {
         assert!(started.elapsed() < std::time::Duration::from_secs(1));
         assert_eq!(decision.decision, ResultEffect::Block);
         assert!(decision.content.is_none());
+    }
+
+    #[test]
+    fn root_json_strings_remain_valid_after_secret_redaction() {
+        for text in [
+            "-----BEGIN PRIVATE KEY-----\nSYNTHETIC_ROOT_JSON_CANARY\n",
+            "password=\nSYNTHETIC_ROOT_JSON_CANARY\n",
+        ] {
+            let input = serde_json::to_vec(text).unwrap();
+            let decision = inspect(&input, &ScanConfig::default());
+            assert!(
+                !serde_json::to_string(&decision)
+                    .unwrap()
+                    .contains("SYNTHETIC_ROOT_JSON_CANARY")
+            );
+            if let Some(content) = decision.content {
+                assert!(
+                    serde_json::from_str::<serde_json::Value>(&content).is_ok(),
+                    "sanitized root JSON must remain valid"
+                );
+            }
+        }
+        let input = br#""ordinary public text""#;
+        let decision = inspect(input, &ScanConfig::default());
+        assert_eq!(decision.decision, ResultEffect::Allow);
+        assert_eq!(decision.content.as_deref(), std::str::from_utf8(input).ok());
+        let input = serde_json::to_vec("SYNTHETIC_ROOT_JSON_CANARY").unwrap();
+        let decision = inspect_sensitive_source(&input, &ScanConfig::default());
+        assert!(
+            !serde_json::to_string(&decision)
+                .unwrap()
+                .contains("SYNTHETIC_ROOT_JSON_CANARY")
+        );
+        assert!(
+            decision
+                .content
+                .is_none_or(|content| serde_json::from_str::<serde_json::Value>(&content).is_ok())
+        );
     }
 
     #[test]

@@ -3583,3 +3583,12 @@ and [working-directory selection](https://github.com/ddev/ddev/blob/main/pkg/dde
 The live suite passed on WSL2 kernel 5.15.167.4-microsoft-standard-WSL2,
 DDEV 1.25.3 and Docker 29.1.0 on 2026-10-04. The configured cwd change required
 restarting the isolated project; the test does so before its second cwd probe.
+
+### Root JSON string sanitization
+
+Structured-result recognition includes JSON strings, so their contents are
+decoded, scanned and reserialized just like nested strings. Plaintext range
+redaction must not remove a JSON delimiter or leave encoded continuations
+uninspected. Quoted but invalid JSON blocks conservatively. Unit regressions
+and the enforcement fuzz oracle require valid delivered JSON and absence of
+synthetic private-key/assignment canaries; ordinary root strings remain allowed.

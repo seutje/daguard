@@ -197,6 +197,8 @@ pub fn result_scanner(bytes: &[u8]) {
         serde_json::json!({"password": canary}),
         serde_json::json!({"customer_profile": {canary.clone(): null}}),
         serde_json::json!({"password": format!("[REDACTED:credentials:provider_token:{canary}]")}),
+        serde_json::json!(format!("-----BEGIN PRIVATE KEY-----\n{canary}\n")),
+        serde_json::json!(format!("password=\n{canary}\n")),
     ] {
         let input = serde_json::to_vec(&value).unwrap();
         let decision = scanner::inspect(&input, &config);
