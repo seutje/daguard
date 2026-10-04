@@ -17,6 +17,9 @@ once releases begin.
 
 ### Fixed
 
+- Handle LF and CRLF checkouts in the design-policy example test, fixing its
+  panic in the native Windows CI smoke suite.
+
 - Deny explicit PATH, shell startup/options and dynamic-loader overrides in analyzed wrappers.
 
 - Reject ambiguous native Windows device, stream, trailing-dot/space and short-alias paths.

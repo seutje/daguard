@@ -2182,16 +2182,23 @@ mod tests {
 
     #[test]
     fn a20_design_policy_example_is_loadable() {
-        let design = include_str!("../DESIGN.md");
-        let section = design.split("## 14. Policy file schema").nth(1).unwrap();
-        let example = section
-            .split("```json\n")
-            .nth(1)
-            .unwrap()
-            .split("```")
-            .next()
-            .unwrap();
-        assert!(Policy::from_slice(example.as_bytes(), PolicyKind::Organization).is_ok());
+        // Exercise both checkout line endings regardless of the host platform.
+        let lines = include_str!("../DESIGN.md").lines().collect::<Vec<_>>();
+        for line_ending in ["\n", "\r\n"] {
+            let design = lines.join(line_ending);
+            let (_, section) = design
+                .split_once("## 14. Policy file schema")
+                .expect("design must contain the policy schema section");
+            // JSON accepts the LF or CRLF whitespace following the fence.
+            let example = section
+                .split_once("```json")
+                .expect("policy schema section must contain a JSON example")
+                .1
+                .split_once("```")
+                .expect("policy example must have a closing fence")
+                .0;
+            assert!(Policy::from_slice(example.as_bytes(), PolicyKind::Organization).is_ok());
+        }
     }
 
     #[test]

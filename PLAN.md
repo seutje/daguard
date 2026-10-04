@@ -1541,6 +1541,7 @@ Keep these unchecked unless the scope is intentionally expanded.
 - [x] A18: MCP scanning does not preserve protocol metadata or full lifecycle behavior.
 - [x] A19: Release publication is independent of required security checks.
 - [x] A20: The architectural policy example cannot be loaded and writable is inert.
+- [x] A20 CI follow-up: Load the design policy example with both LF and CRLF line endings on any test host.
 - [x] A21: Fuzzing mostly checks crashes rather than security properties.
 - [x] A22: State directory permissions change before symlink validation.
 - [x] Scanner follow-up: Root JSON string redaction preserves valid JSON and removes synthetic canaries.
