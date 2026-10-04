@@ -1,5 +1,6 @@
 //! Synthetic audit regressions. Proposed commands are classified, never executed.
 use serde_json::{Value, json};
+use std::fmt::Write as _;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -121,4 +122,43 @@ fn a05_filesystem_effects() {
             "allow",
         ),
     ]);
+}
+
+#[test]
+fn a06_bulk_and_historical_reads() {
+    cases(&[
+        ("rg --hidden --no-ignore secret .", "deny"),
+        ("rg secret", "deny"),
+        ("grep -r secret web", "deny"),
+        ("git show HEAD:web/sites/default/settings.php", "deny"),
+        ("git -C web show HEAD:sites/default/settings.php", "deny"),
+        ("git cat-file -p HEAD:.env", "deny"),
+        ("git show HEAD:web/modules/custom/example.module", "allow"),
+        ("rg secret web/modules/custom/example.module", "allow"),
+        ("git status", "allow"),
+        ("git diff", "allow"),
+    ]);
+}
+
+#[test]
+fn a06_filtered_search_preserves_protections() {
+    let patterns = [
+        "**/.env",
+        "**/.env.*",
+        "**/auth.json",
+        "**/composer-auth.json",
+        "**/sites/*/settings.php",
+        "**/sites/*/settings.local.php",
+        "**/env/**/settings.php",
+        "**/env/**/settings.local.php",
+        "**/*.pem",
+        "**/*.key",
+    ];
+    let mut flags = String::new();
+    for pattern in patterns {
+        write!(flags, " -g '!{pattern}'").unwrap();
+    }
+    assert_eq!(check(&format!("rg secret .{flags}")), "allow");
+    assert_eq!(check(&format!("rg secret .{flags} -g '*.php'")), "deny");
+    assert_eq!(check(&format!("rg -L secret .{flags}")), "deny");
 }

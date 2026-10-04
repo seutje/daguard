@@ -882,13 +882,11 @@ fn analyze_path_argv(
             }
         }
     }
+    if program == "git" {
+        return analyze_git_paths(args, context);
+    }
     if matches!(program, "grep" | "rg") {
-        for candidate in search_path_candidates(program, args) {
-            if let Some(decision) = evaluate_shell_path(context, candidate, RuleOperation::Read)? {
-                return Ok(Some(decision));
-            }
-        }
-        return Ok(None);
+        return analyze_search(program, args, context);
     }
     let path_operation = match program {
         "sed"
@@ -930,6 +928,148 @@ fn analyze_path_argv(
     {
         if let Some(decision) = evaluate_shell_path(context, path, RuleOperation::Read)? {
             return Ok(Some(decision));
+        }
+    }
+    Ok(None)
+}
+
+fn analyze_search(
+    program: &str,
+    args: &[&str],
+    context: &ShellContext<'_>,
+) -> Result<Option<Decision>, PolicyError> {
+    let candidates = search_path_candidates(program, args);
+    for candidate in &candidates {
+        if let Some(decision) = evaluate_shell_path(context, candidate, RuleOperation::Read)? {
+            return Ok(Some(decision));
+        }
+    }
+    let bulk = candidates.is_empty()
+        || candidates.iter().any(|path| {
+            *path == "."
+                || *path == ".."
+                || path.ends_with('/')
+                || !path.rsplit('/').next().unwrap_or(path).contains('.')
+        })
+        || args.iter().any(|arg| {
+            matches!(*arg, "--files" | "--recursive" | "--dereference-recursive")
+                || (arg.starts_with('-') && !arg.starts_with("--") && arg.contains(['r', 'R']))
+        });
+    if bulk && !search_excludes_protected(program, args, context) {
+        return Ok(Some(command_decision(
+            DecisionEffect::Deny,
+            "filesystem.read.bulk",
+            "Bulk reads require explicit exclusions for every protected read pattern.",
+            Severity::High,
+        )));
+    }
+    Ok(None)
+}
+
+fn search_excludes_protected(program: &str, args: &[&str], context: &ShellContext<'_>) -> bool {
+    if program != "rg"
+        || args.iter().any(|arg| {
+            matches!(*arg, "-L" | "--follow" | "--pre" | "--pre-glob") || arg.starts_with("--pre=")
+        })
+    {
+        return false;
+    }
+    let mut exclusions = Vec::new();
+    let mut index = 0;
+    while let Some(arg) = args.get(index) {
+        let value = if matches!(*arg, "-g" | "--glob") {
+            index += 1;
+            args.get(index).copied()
+        } else {
+            arg.strip_prefix("--glob=")
+                .or_else(|| arg.strip_prefix("-g").filter(|value| !value.is_empty()))
+        };
+        if let Some(value) = value {
+            if let Some(exclusion) = value.strip_prefix('!') {
+                exclusions.push(exclusion);
+            } else {
+                exclusions.clear();
+            } // Later inclusion globs can override exclusions.
+        }
+        if *arg == "--iglob" || arg.starts_with("--iglob=") {
+            return false;
+        }
+        index += 1;
+    }
+    BUILT_INS
+        .iter()
+        .filter(|rule| matches!(rule.operation, RuleOperation::Read))
+        .flat_map(|rule| rule.patterns.iter().copied())
+        .chain(
+            context
+                .organization
+                .into_iter()
+                .chain(context.project)
+                .flat_map(|policy| policy.paths.deny_read.iter().map(String::as_str)),
+        )
+        .all(|pattern| exclusions.contains(&pattern))
+}
+
+fn analyze_git_paths(
+    args: &[&str],
+    context: &ShellContext<'_>,
+) -> Result<Option<Decision>, PolicyError> {
+    let mut cwd = context.cwd.to_owned();
+    let mut index = 0;
+    while let Some(arg) = args.get(index) {
+        if *arg == "-C" {
+            cwd = paths::normalize(
+                &cwd,
+                args.get(index + 1)
+                    .ok_or(PolicyError::Invalid("missing Git directory"))?,
+            )
+            .map_err(PolicyError::Path)?;
+            index += 2;
+        } else if arg.starts_with("--git-dir") || arg.starts_with("--work-tree") {
+            return Ok(Some(command_decision(
+                DecisionEffect::Deny,
+                "git.context.unknown",
+                "Git filesystem context cannot be established safely.",
+                Severity::High,
+            )));
+        } else if *arg == "-c" {
+            index += 2;
+        } else if arg.starts_with('-') {
+            index += 1;
+        } else {
+            break;
+        }
+    }
+    let context = ShellContext {
+        cwd: &cwd,
+        ..*context
+    };
+    if args
+        .get(index)
+        .is_some_and(|arg| matches!(*arg, "show" | "cat-file"))
+    {
+        let mut inspectable = false;
+        for arg in &args[index + 1..] {
+            if let Some((_, path)) = arg.split_once(':') {
+                let path = path
+                    .strip_prefix("0:")
+                    .or_else(|| path.strip_prefix("1:"))
+                    .or_else(|| path.strip_prefix("2:"))
+                    .or_else(|| path.strip_prefix("3:"))
+                    .unwrap_or(path);
+                inspectable = true;
+                if let Some(decision) = evaluate_shell_path(&context, path, RuleOperation::Read)? {
+                    return Ok(Some(decision));
+                }
+            }
+        }
+        if !inspectable {
+            return Ok(Some(command_decision(
+                DecisionEffect::Deny,
+                "git.read.opaque_object",
+                "Git object reads require inspectable path selectors.",
+                Severity::High,
+            )));
         }
     }
     Ok(None)
@@ -1177,6 +1317,19 @@ fn evaluate_built_ins(
     request: &CanonicalRequest,
     paths: &[String],
 ) -> Result<Option<Decision>, PolicyError> {
+    if request.tool.capability == Capability::FileSearch
+        && (paths.is_empty()
+            || paths
+                .iter()
+                .any(|path| !path.rsplit('/').next().unwrap_or(path).contains('.')))
+    {
+        return Ok(Some(command_decision(
+            DecisionEffect::Deny,
+            "filesystem.read.bulk",
+            "Unfiltered native subtree searches cannot protect sensitive descendants.",
+            Severity::High,
+        )));
+    }
     for rule in BUILT_INS {
         if rule.operation.applies(request.tool.capability)
             && let Some(path) = first_matching_path(paths, rule.patterns)?

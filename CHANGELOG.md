@@ -10,6 +10,8 @@ once releases begin.
 
 ### Fixed
 
+- Require protected-file exclusions for bulk searches and inspect Git object paths.
+
 - Check mutation endpoints, protected ancestors and explicit download outputs.
 
 - Inspect DDEV execution aliases, options and container cwd; deny destructive lifecycle operations.

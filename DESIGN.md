@@ -3324,3 +3324,12 @@ Deletion checks include protected literal-prefix descendants. Curl/wget explicit
 output destinations are writes; remote filename modes and wget without an
 explicit destination fail closed. Custom-code moves and subtree deletes remain
 allowed when they do not overlap protected prefixes.
+
+Recursive/root searches require ripgrep exclusion globs for every mandatory
+and configured deny-read pattern, placed after inclusion globs; preprocessors
+and symlink following are not accepted as a filtered boundary. Explicit safe
+file operands remain usable. Unfiltered custom-directory searches also require
+these exclusions because protected files may exist anywhere in the subtree.
+Git show/cat-file path selectors are checked, including -C and index selectors;
+opaque object reads and alternate Git work-tree contexts are denied. This is
+lexical operand enforcement, not complete Git history/diff content containment.

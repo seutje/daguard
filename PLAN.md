@@ -1526,7 +1526,7 @@ Keep these unchecked unless the scope is intentionally expanded.
 - [x] A03: Common wrappers bypass both command and sink analysis.
 - [x] A04: DDEV aliases and options lose the nested execution target.
 - [x] A05: Filesystem mutation analysis misses destinations and affected descendants.
-- [ ] A06: Bulk reads and alternate representations bypass sensitive file rules.
+- [x] A06: Bulk reads and alternate representations bypass sensitive file rules.
 - [ ] A07: Value-taking and attached command options bypass semantic rules.
 - [ ] A08: SQL lexical assumptions differ from the target database grammar.
 - [ ] A09: SELECT is treated as read only even when it has filesystem effects.

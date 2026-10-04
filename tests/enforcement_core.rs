@@ -148,8 +148,8 @@ fn organization_directory_read_policy_applies_to_recursive_shell_searches() {
     }
 
     for command in [
-        "rg synthetic_pattern web/modules/custom",
-        "rg env web/modules/custom",
+        "rg synthetic_pattern web/modules/custom/example/example.module",
+        "rg env web/modules/custom/example/example.module",
     ] {
         let output = run(&["check", "--policy", &policy], &shell_request(command));
         let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
