@@ -105,6 +105,32 @@ Agent-native payload fields may change over time. Treat each adapter as a versio
 
 ---
 
+## Stateful and result-containment security
+
+Phase 14 owns the shared sensitivity taxonomy, metadata-only session taint,
+source/sink classification, and exfiltration controls. Phase 15 must reuse that
+exact taxonomy for result scanning and containment.
+
+- Never log or persist raw sensitive tool results.
+- Never copy matched secrets or PII into errors, snapshots, tracing, audit
+  records, or test failure messages.
+- Keep raw scanner input ephemeral and in memory where practical.
+- Never treat an observe-only post hook as an output-containment boundary.
+- Never silently downgrade a supported safe integration path to `observe_only`.
+- Sanitization or scanner failure for protected content must fail closed.
+- Redaction does not justify weakening pre-tool deny rules; prefer preventing
+  unnecessary sensitive access over reading and then redacting.
+- Treat adapter interception and result-delivery semantic changes as
+  security-critical compatibility changes.
+- Use only deterministic fake canaries in leakage tests; never use real
+  credentials or personal data.
+- Result-scanner changes require leakage tests for normal, error, audit, and
+  tracing paths.
+- Never claim a stronger guarantee than the tested agent/tool integration can
+  enforce.
+
+---
+
 ## Policy semantics
 
 Policy evaluation must be deterministic and explainable.
@@ -485,4 +511,3 @@ A task is done only when:
 - documentation is updated where needed;
 - relevant `PLAN.md` checkbox(es) are checked;
 - no real secret or sensitive customer/developer data was added to source, tests, logs, or fixtures.
-

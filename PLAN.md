@@ -881,37 +881,541 @@ must retain endpoint-management ACL verification.
 
 # Phase 14 — Session taint tracking and exfiltration controls
 
-This phase is intentionally deferred until stateless enforcement is stable.
+This phase introduces session-level sensitivity state and prevents information
+obtained from sensitive resources from later being exfiltrated through
+outbound-capable tools. It intentionally remains useful independently from
+Phase 15.
 
-## 14.1 Post-tool integration
+## 14.1 Canonical post-tool event model
 
-- [ ] Identify supported post-tool hooks per agent.
-- [ ] Define canonical post-tool event model.
-- [ ] Record resource sensitivity metadata without recording returned content.
-- [ ] Add adapter fixtures for post-tool events.
+- [ ] Identify available post-tool/result events for each supported agent.
+- [ ] Define an agent-agnostic canonical post-tool event model.
+- [ ] Include agent identifier/type.
+- [ ] Include session ID where available.
+- [ ] Include tool-use/call ID where available.
+- [ ] Include normalized tool/capability category.
+- [ ] Include relevant resource metadata.
+- [ ] Include result metadata such as content type and byte size where available.
+- [ ] Keep raw returned content out of persistent state.
+- [ ] Add fixtures for Codex, Cursor, and OpenCode post-tool/result events.
+- [ ] Add tests for missing or malformed session/call identifiers.
 
-## 14.2 Session state
+The model must remain agent-agnostic and forward-compatible with Phase 15.
 
-- [ ] Define session taint categories.
+## 14.2 Sensitivity taxonomy
+
+Use one canonical taxonomy across static policy, resource classification,
+session taint, sink policy, auditing, and the future Phase 15 scanners:
+
+```text
+credential
+authentication
+personal_data
+financial_data
+customer_data
+private_content
+operational_sensitive
+unknown_sensitive
+```
+
+- [ ] Define canonical sensitivity categories.
+- [ ] Document each category.
+- [ ] Support multiple categories on one resource or session.
+- [ ] Define deterministic category merging.
+- [ ] Define severity/priority semantics where needed.
+- [ ] Ensure classifications store metadata only, not sensitive values.
+- [ ] Ensure Phase 15 scanners reuse this exact taxonomy.
+
+## 14.3 Sensitive source classification
+
+Known sensitive resources are taint sources without inspecting returned
+content. Filesystem sources include `.env`, Drupal `settings.php` variants,
+Composer/auth credential files, private keys or certificates containing private
+material, and project-defined protected files. Drupal/core/contrib SQL sources
+include the existing sensitive-table set, including:
+
+```text
+sessions
+users
+users_field_data
+users_data
+user__*
+
+comment
+comment_field_data
+comment__*
+
+webform_submission
+webform_submission_data
+webform_submission_log
+
+commerce_order
+commerce_order__*
+commerce_order_item
+commerce_order_item__*
+
+commerce_payment
+commerce_payment__*
+commerce_payment_method
+commerce_payment_method__*
+
+profile
+profile_field_data
+profile_revision
+profile_field_revision
+profile__*
+profile_revision__*
+
+commerce_shipment
+commerce_shipment__*
+
+watchdog
+flood
+```
+
+- [ ] Define sensitive-source classification independently from sink classification.
+- [ ] Reuse existing path policy.
+- [ ] Reuse existing SQL sensitive-table matching.
+- [ ] Map known sensitive resources to one or more canonical sensitivity categories.
+- [ ] Support project-configured sensitive resources.
+- [ ] Support future Phase 15 dynamic detections as additional taint sources.
+- [ ] Add Drupal/DDEV-oriented fixtures.
+- [ ] Ensure source classification never requires logging raw resource contents.
+
+## 14.4 Session taint state
+
+- [ ] Define canonical session taint representation.
+- [ ] Support multiple simultaneous sensitivity categories.
 - [ ] Define taint lifetime.
-- [ ] Define safe local state storage.
-- [ ] Define cleanup/expiry behavior.
-- [ ] Prevent one user's session state from affecting another user's session.
-- [ ] Test crash/restart behavior.
+- [ ] Define expiry behavior.
+- [ ] Define cleanup behavior.
+- [ ] Define crash/restart behavior.
+- [ ] Define concurrency/locking behavior.
+- [ ] Prevent cross-user or cross-session contamination.
+- [ ] Define behavior when an agent does not provide a stable session ID.
+- [ ] Define behavior when sessions reconnect or reuse identifiers.
+- [ ] Store classifications and metadata only.
+- [ ] Never store raw secret, PII, financial, or customer values.
+- [ ] Add isolation tests.
+- [ ] Add expiry tests.
+- [ ] Add restart tests.
 
-## 14.3 Sink controls
+An acceptable state shape contains category metadata only, for example:
 
+```json
+{
+  "session": "abc123",
+  "taints": ["credential", "personal_data"]
+}
+```
+
+State designs that persist detected values are prohibited.
+
+## 14.5 Sink classification
+
+Outbound sinks include `curl`, `wget`, generic HTTP clients, SSH, SCP, SFTP,
+remote `rsync`, `git push`, `gh api`, other API clients, email tools,
+chat/messaging tools, issue-tracker submission tools, browser upload/network
+tools, outbound MCP tools, and arbitrary network-capable shell execution.
+
+- [ ] Define canonical sink categories.
+- [ ] Distinguish local-only operations from outbound sinks.
 - [ ] Identify network-capable shell commands.
-- [ ] Identify network/MCP sinks.
-- [ ] Block or require policy approval for outbound sinks after sensitive reads.
-- [ ] Prevent raw sensitive data from entering audit records.
-- [ ] Add end-to-end taint/exfiltration scenarios.
+- [ ] Identify outbound MCP capabilities.
+- [ ] Identify git/API submission paths.
+- [ ] Account for common wrappers and command nesting.
+- [ ] Consider DDEV commands that invoke network-capable processes inside containers.
+- [ ] Keep sink detection deterministic and conservative.
+- [ ] Add sink-classification tests.
+
+## 14.6 Source → taint → sink enforcement
+
+```text
+sensitive source
+      ↓
+classification
+      ↓
+session taint
+      ↓
+later outbound sink
+      ↓
+policy decision
+```
+
+- [ ] Mark a session with sensitivity categories after access to known sensitive sources.
+- [ ] Merge new classifications with existing taint state.
+- [ ] Evaluate current session taint before outbound sink execution.
+- [ ] Define policy for block vs explicit approval.
+- [ ] Treat credential/authentication taint more restrictively than ordinary operational metadata.
+- [ ] Define conservative handling of `unknown_sensitive`.
+- [ ] Ensure future Phase 15 sanitization does not automatically clear taint.
+- [ ] Add end-to-end source → taint → sink integration tests.
+
+Representative flows include:
+
+```text
+settings.php
+→ credential/authentication
+→ outbound HTTP
+→ deny
+
+webform_submission_data
+→ personal_data
+→ Slack/email/external HTTP
+→ deny or explicit approval
+
+commerce_order
+→ customer_data/financial_data
+→ outbound upload
+→ deny or explicit approval
+```
+
+## 14.7 Audit safety
+
+- [ ] Never persist raw tool results.
+- [ ] Never persist raw sensitive values.
+- [ ] Never include sensitive values in allow/deny reasons.
+- [ ] Never include raw sensitive data in panic/error output.
+- [ ] Never include raw sensitive data in debug/tracing output.
+- [ ] Audit only classification, rule/source IDs, decisions, sizes, timestamps, and safe metadata.
+- [ ] Add fake-canary tests for audit leakage.
+- [ ] Test malformed/error paths for accidental raw payload serialization.
+
+## 14.8 Adapter security capability model
+
+Use these canonical interception-capability categories:
+
+```text
+native_replace
+guarded_execution
+mcp_proxy
+observe_only
+unsupported
+```
+
+- [ ] Define canonical interception-capability categories.
+- [ ] Model capabilities per agent and tool category.
+- [ ] Do not assume every tool in one agent has the same behavior.
+- [ ] Document what `observe_only` means.
+- [ ] Explicitly state that `observe_only` cannot provide pre-context containment.
+- [ ] Add adapter capability fixtures/tests when Phase 14 is implemented.
+- [ ] Keep security capability separate from ordinary policy decisions.
 
 ### Phase 14 exit criteria
 
-- [ ] Stateless v1 remains usable independently.
-- [ ] Taint tracking has a documented threat model and persistence model.
-- [ ] Sensitive-source to outbound-sink flows are covered by integration tests.
+- [ ] Stateless enforcement remains independently usable.
+- [ ] Session taint has a documented threat model.
+- [ ] Persistence/lifetime/cleanup semantics are documented and tested.
+- [ ] Sensitive-source → outbound-sink scenarios are covered.
+- [ ] Raw sensitive content is never stored in session state.
+- [ ] Audit logs cannot contain raw sensitive content.
+- [ ] Canonical sensitivity categories are established for reuse by Phase 15.
+- [ ] Adapter/tool interception capabilities are explicitly represented.
+- [ ] Phase 14 remains useful on `observe_only` integrations.
+
+---
+
+# Phase 15 — Sensitive-output containment and pre-context redaction
+
+This phase prevents protected raw tool output from reaching model context when
+technically enforceable. It builds on the taxonomy and state model from Phase
+14.
+
+## 15.1 Pre-context security boundary
+
+- [ ] Define `pre-context interception` formally.
+- [ ] Document the difference between post-tool observation and safe pre-context replacement.
+- [ ] Verify actual behavior for every supported agent/tool combination before claiming support.
+- [ ] Classify each path as `native_replace`, `guarded_execution`, `mcp_proxy`, `observe_only`, or `unsupported`.
+- [ ] Never claim containment for `observe_only`.
+- [ ] Fail closed for policy-designated sensitive operations when no safe interception path exists.
+- [ ] Pin or document minimum tested agent versions.
+- [ ] Treat upstream hook-semantics changes as security-critical compatibility changes.
+
+Required architecture:
+
+```text
+tool
+  ↓
+raw result
+  ↓
+daguard interception
+  ├── ALLOW
+  ├── SANITIZE
+  └── BLOCK
+  ↓
+safe result only
+  ↓
+agent/model
+```
+
+This observe-only sequence is insufficient:
+
+```text
+tool
+→ raw result
+→ model
+→ post-tool observer
+```
+
+## 15.2 Result decision model
+
+- [ ] Define canonical `ALLOW`, `SANITIZE`, and `BLOCK` result-decision types.
+- [ ] `ALLOW` forwards raw output only when policy permits.
+- [ ] `SANITIZE` forwards transformed output only.
+- [ ] `BLOCK` discards raw output and emits a safe synthetic result.
+- [ ] Make sanitization failure become `BLOCK`.
+- [ ] Make scanner/parser failures fail closed for protected operations.
+- [ ] Never return original and sanitized content together.
+- [ ] Never include matched sensitive values in reasons or errors.
+
+## 15.3 Secret detection engine
+
+- [ ] Detect PEM/private key blocks.
+- [ ] Detect JWTs.
+- [ ] Detect Bearer/Authorization credentials.
+- [ ] Detect database URLs with embedded credentials.
+- [ ] Detect password/secret/token assignments.
+- [ ] Detect common API-token formats.
+- [ ] Detect GitHub/GitLab tokens.
+- [ ] Detect major cloud-provider credentials where safely recognizable.
+- [ ] Detect Stripe/payment-provider token formats.
+- [ ] Detect Slack-style tokens.
+- [ ] Detect OAuth access/refresh-token patterns.
+- [ ] Detect cookie/session values where structured context supports classification.
+- [ ] Detect Drupal password/hash fields where schema context makes detection reliable.
+- [ ] Support organization/project-specific secret patterns.
+- [ ] Consider optional conservative entropy-based detection.
+- [ ] Support multiline matching.
+- [ ] Handle split/chunk boundaries.
+- [ ] Enforce strict runtime and memory bounds.
+- [ ] Complete a regex safety review.
+
+Detector findings contain category, detector ID, offsets, and confidence, but
+must not duplicate matched values into persistent objects or logs.
+
+## 15.4 Personal and sensitive-data detection
+
+- [ ] Detect email addresses.
+- [ ] Detect phone numbers.
+- [ ] Detect IP addresses where configured as personal data.
+- [ ] Detect payment card numbers with Luhn validation.
+- [ ] Detect IBANs with checksum validation.
+- [ ] Detect dates of birth only with adequate context.
+- [ ] Detect structured postal-address data.
+- [ ] Classify configured sensitive field/column names.
+- [ ] Classify Drupal user/account output.
+- [ ] Classify Webform submission output.
+- [ ] Classify Commerce order/customer/profile output.
+- [ ] Classify Commerce payment/payment-method output.
+- [ ] Classify comment author metadata.
+- [ ] Support site-specific/custom field classifications.
+
+Prefer structured evidence such as a `mail` column plus an email-shaped value,
+or a `pass` column, over loose matching of arbitrary values.
+
+```text
+column "mail" + email-shaped value
+→ high confidence personal_data
+
+column "pass"
+→ credential
+
+column "billing_address"
+→ personal_data/customer_data
+```
+
+## 15.5 Structured sanitization
+
+- [ ] Support plain text.
+- [ ] Support JSON.
+- [ ] Support nested JSON.
+- [ ] Support SQL/table-formatted output.
+- [ ] Support key/value output.
+- [ ] Support dotenv-like output.
+- [ ] Support common CLI table output.
+- [ ] Preserve safe structural context.
+- [ ] Preserve keys and column names when safe.
+- [ ] Redact values rather than dropping whole records where practical.
+- [ ] Define canonical placeholders.
+- [ ] Merge overlapping detections safely.
+- [ ] Preserve valid UTF-8.
+- [ ] Preserve valid JSON when input JSON is valid.
+- [ ] Define malformed-input fallback behavior.
+
+Canonical placeholders should include:
+
+```text
+[REDACTED:CREDENTIAL]
+[REDACTED:PERSONAL_DATA]
+[REDACTED:FINANCIAL_DATA]
+[REDACTED:CUSTOMER_DATA]
+```
+
+## 15.6 Guarded shell execution
+
+Plan a guarded path for agents that cannot replace native output:
+
+```text
+agent
+  ↓
+daguard exec -- command args...
+  ↓
+child process
+  ↓
+private stdout/stderr capture
+  ↓
+scan / sanitize / block
+  ↓
+safe output only
+  ↓
+agent
+```
+
+- [ ] Define `daguard exec -- ...` behavior.
+- [ ] Avoid shell interpolation unless explicitly required.
+- [ ] Capture stdout and stderr privately.
+- [ ] Scan both streams before release.
+- [ ] Preserve exit status semantics where practical.
+- [ ] Handle signals.
+- [ ] Handle timeouts.
+- [ ] Bound output size.
+- [ ] Define large-output behavior.
+- [ ] Avoid raw-output temporary files.
+- [ ] Define streaming behavior that cannot leak early chunks before a verdict.
+- [ ] Plan DDEV-specific tests.
+- [ ] Plan Drush SQL-result tests.
+- [ ] Plan stderr-secret leakage tests.
+- [ ] Plan Composer/Git diagnostic leakage tests.
+
+## 15.7 Sensitive-file containment
+
+- [ ] Keep direct `deny_read` protections for known secret files.
+- [ ] Do not weaken pre-tool denial merely because redaction exists.
+- [ ] Route any future sanitized file reads through guarded reads.
+- [ ] Scan before exposing content.
+- [ ] Treat redaction as defense in depth, not permission to read unnecessary secrets.
+- [ ] Plan tests for `.env`, Drupal settings files, private keys, and Composer auth files.
+
+## 15.8 SQL result containment
+
+- [ ] Reuse Phase 14 sensitive-table classifications.
+- [ ] Add optional sensitive-column classification.
+- [ ] Prefer pre-execution deny where results should never be exposed.
+- [ ] Route permitted sensitive SQL queries through guarded execution/result inspection.
+- [ ] Apply structured column-level redaction where possible.
+- [ ] Handle aliases.
+- [ ] Handle joins.
+- [ ] Handle Drupal table prefixes.
+- [ ] Handle DDEV/Drush SQL commands.
+- [ ] Block when safe sanitization cannot be established.
+- [ ] Plan tests covering `users` and `users_field_data`.
+- [ ] Plan tests covering `sessions`.
+- [ ] Plan tests covering Webform submissions and comments.
+- [ ] Plan tests covering Commerce orders, payments, and payment methods.
+- [ ] Plan tests covering profiles.
+- [ ] Plan tests covering ordinary nonsensitive node queries.
+
+## 15.9 MCP response gateway
+
+```text
+agent
+→ daguard MCP gateway
+→ upstream MCP server
+→ raw MCP response
+→ daguard scan/sanitize/block
+→ safe MCP result
+→ agent
+```
+
+- [ ] Intercept MCP requests.
+- [ ] Apply existing pre-tool policy.
+- [ ] Forward approved requests.
+- [ ] Capture responses before returning them.
+- [ ] Recursively inspect textual and structured content.
+- [ ] Sanitize supported result types.
+- [ ] Block unsupported sensitive binary/attachment output.
+- [ ] Preserve MCP protocol correctness.
+- [ ] Never return raw and sanitized content together.
+- [ ] Feed detected classifications into Phase 14 taint state.
+- [ ] Add planned end-to-end tests.
+
+## 15.10 Integration with Phase 14
+
+- [ ] Map detected credentials to `credential` taint.
+- [ ] Map authentication material to `authentication` taint.
+- [ ] Map detected PII to `personal_data` taint.
+- [ ] Map Commerce/customer output to appropriate customer/financial taints.
+- [ ] Ensure sanitization does not implicitly remove taint.
+- [ ] Allow a blocked result to taint the session when the operation accessed protected data.
+- [ ] Reuse the exact Phase 14 taxonomy without duplicate classification concepts.
+
+## 15.11 Canary leakage tests
+
+- [ ] Add deterministic fake credential canaries.
+- [ ] Add deterministic fake personal-data canaries.
+- [ ] Use reserved/example domains for test emails.
+- [ ] Cover direct sensitive-file paths.
+- [ ] Cover guarded-shell paths.
+- [ ] Cover SQL-result paths.
+- [ ] Cover MCP-response paths.
+- [ ] Cover stderr paths.
+- [ ] Cover audit-log paths.
+- [ ] Cover error-message paths.
+- [ ] Cover chunk/split-secret cases.
+- [ ] Cover ANSI escapes.
+- [ ] Cover JSON escaping.
+- [ ] Cover Unicode.
+- [ ] Cover overlapping matches.
+- [ ] Cover oversized/truncated output.
+- [ ] Verify model context/transcripts where technically testable.
+
+## 15.12 Resource and performance limits
+
+- [ ] Define maximum scan size.
+- [ ] Define scan time budget.
+- [ ] Define memory budget.
+- [ ] Define oversized-result behavior.
+- [ ] Fail closed for protected operations when full scanning cannot complete.
+- [ ] Avoid catastrophic regular expressions.
+- [ ] Benchmark common DDEV/Drupal commands.
+- [ ] Benchmark large SQL results.
+- [ ] Plan fuzzing of scanners.
+- [ ] Plan fuzzing of redaction-range merging.
+- [ ] Plan fuzzing of structured sanitizers.
+
+## 15.13 Agent/tool capability matrix
+
+Model these fields per agent and tool class: pre-call deny, input rewrite,
+pre-context output replacement, guarded-execution support, security mode, and
+minimum tested version. Cover Codex, Cursor, and OpenCode shell, file-read, MCP,
+native edit/patch, and custom/plugin tool families as applicable.
+
+```text
+Codex: shell, file read, MCP, patch/edit, custom/local tools
+Cursor: shell, file read, MCP, native tools
+OpenCode: shell, file read, MCP, plugin/custom tools
+```
+
+- [ ] Populate capability assumptions only from tested/documented behavior.
+- [ ] Treat upstream behavior changes as security-relevant.
+- [ ] Never silently downgrade to `observe_only`.
+- [ ] Plan compatibility tests for agent updates.
+
+### Phase 15 exit criteria
+
+- [ ] Every supported agent/tool path has an explicit interception classification.
+- [ ] Integrations claiming containment prove raw canaries do not reach model context.
+- [ ] Secret scanning is deterministic and bounded.
+- [ ] PII scanning has documented confidence/false-positive behavior.
+- [ ] Structured sanitization preserves safe useful context.
+- [ ] Protected-result scanner failure fails closed.
+- [ ] Oversized protected output fails closed.
+- [ ] Audit/error paths cannot leak canary values.
+- [ ] Sensitive SQL output can be denied or safely contained.
+- [ ] MCP responses can be sanitized or blocked before agent delivery.
+- [ ] Phase 15 detections feed Phase 14 taint state.
+- [ ] Existing stateless and Phase 14 features remain independently usable.
 
 ---
 
