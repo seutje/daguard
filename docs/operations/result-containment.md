@@ -98,6 +98,12 @@ financial formats, and recognizable credential formats are high confidence.
 Unknown representations can still evade detection, so sensitive source denials
 remain the primary control.
 
+The shipped schema-3 policy enables personal-IP handling and adds common npm,
+PyPI, DigitalOcean, HashiCorp Vault, and Hugging Face token prefixes. It also
+classifies common identity, customer, account, order, and case-reference fields.
+Organizations should review these defaults for their data model and add local
+prefixes or field names rather than placing actual sensitive values in policy.
+
 The optimized Phase 15 smoke benchmark on the 2026-10-04 WSL2 development host
 measured a 4.1 µs P95 common JSON result scan and an 8.5 ms P95 scan/sanitize of
 a 512 KiB synthetic SQL table (three recorded samples after 20 warmups). These

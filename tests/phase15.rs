@@ -76,6 +76,66 @@ fn inspect_result_sanitizes_structured_and_configured_sensitive_values() {
 }
 
 #[test]
+fn shipped_policy_enables_common_result_detectors() {
+    let policy = format!("{}/policy/default-policy.json", env!("CARGO_MANIFEST_DIR"));
+    let input = br#"{
+        "username":"username-canary",
+        "display_name":"display-canary",
+        "first_name":"first-canary",
+        "last_name":"last-canary",
+        "given_name":"given-canary",
+        "family_name":"family-canary",
+        "account_number":"account-canary",
+        "customer_id":"customer-canary",
+        "order_id":"order-canary",
+        "case_reference":"case-canary",
+        "tokens":[
+            "npm_abcdefghijklmnopqrstuvwxyz123456",
+            "pypi-abcdefghijklmnopqrstuvwxyz",
+            "dop_v1_abcdefghijklmnopqrstuvwxyz",
+            "hvs.abcdefghijklmnopqrstuvwxyz",
+            "hvb.abcdefghijklmnopqrstuvwxyz",
+            "hf_abcdefghijklmnopqrstuvwxyz"
+        ],
+        "ip":"192.0.2.44",
+        "safe":"kept"
+    }"#;
+    let output = run(&["inspect-result", "--policy", &policy, "-"], input);
+    assert!(output.status.success());
+
+    let decision: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(decision["decision"], "sanitize");
+    let content = decision["content"].as_str().unwrap();
+    for canary in [
+        "username-canary",
+        "display-canary",
+        "first-canary",
+        "last-canary",
+        "given-canary",
+        "family-canary",
+        "account-canary",
+        "customer-canary",
+        "order-canary",
+        "case-canary",
+        "npm_abcdefghijklmnopqrstuvwxyz123456",
+        "pypi-abcdefghijklmnopqrstuvwxyz",
+        "dop_v1_abcdefghijklmnopqrstuvwxyz",
+        "hvs.abcdefghijklmnopqrstuvwxyz",
+        "hvb.abcdefghijklmnopqrstuvwxyz",
+        "hf_abcdefghijklmnopqrstuvwxyz",
+        "192.0.2.44",
+    ] {
+        assert!(!content.contains(canary));
+    }
+    assert!(content.contains("kept"));
+
+    let sanitized: Value = serde_json::from_str(content).unwrap();
+    assert_eq!(sanitized["username"], "[REDACTED:PERSONAL_DATA]");
+    assert_eq!(sanitized["customer_id"], "[REDACTED:CUSTOMER_DATA]");
+    assert_eq!(sanitized["account_number"], "[REDACTED:FINANCIAL_DATA]");
+}
+
+#[test]
 fn guarded_execution_buffers_and_sanitizes_stdout_stderr_and_tables() {
     let stdout_canary = "phase15-stdout@example.test";
     let stderr_canary = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";

@@ -22,6 +22,9 @@ once releases begin.
   explicitly `observe_only`.
 - A direct, pinned `libc` dependency supports WSL/Linux process-group cleanup
   and signal forwarding in guarded execution without an external runtime.
+- The shipped organization policy now uses schema 3 and configures common npm,
+  PyPI, DigitalOcean, HashiCorp Vault, and Hugging Face token prefixes; common
+  sensitive result fields; and personal-IP handling.
 
 - Phase 14 canonical post-tool metadata for Codex, Cursor, and OpenCode;
   canonical sensitivity and interception-capability taxonomies; metadata-only

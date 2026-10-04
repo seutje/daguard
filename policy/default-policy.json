@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 3,
   "defaults": {
     "unknown_tool": "deny_if_sensitive_otherwise_allow"
   },
@@ -68,6 +68,29 @@
       "commerce_shipment",
       "commerce_shipment__*"
     ]
+  },
+  "result": {
+    "secret_prefixes": [
+      "npm_",
+      "pypi-",
+      "dop_v1_",
+      "hvs.",
+      "hvb.",
+      "hf_"
+    ],
+    "sensitive_fields": {
+      "username": "personal_data",
+      "display_name": "personal_data",
+      "first_name": "personal_data",
+      "last_name": "personal_data",
+      "given_name": "personal_data",
+      "family_name": "personal_data",
+      "account_number": "financial_data",
+      "customer_id": "customer_data",
+      "order_id": "customer_data",
+      "case_reference": "private_content"
+    },
+    "ip_addresses_are_personal": true
   },
   "rules": []
 }
