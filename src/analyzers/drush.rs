@@ -16,8 +16,11 @@ pub(crate) fn analyze(args: &[&str], sensitive_tables: &[&str]) -> Option<Decisi
             Severity::Critical,
         ));
     }
-    let position = args.iter().position(|arg| !arg.starts_with('-'))?;
-    let command = args[position];
+    let Ok(args) = command_args(args) else {
+        return Some(sql::uninspectable());
+    };
+    let (command, rest) = args.split_first()?;
+    let command = *command;
     match command {
         "php:eval" | "php-eval" | "ev" => Some(decision(
             DecisionEffect::Deny,
@@ -47,10 +50,39 @@ pub(crate) fn analyze(args: &[&str], sensitive_tables: &[&str]) -> Option<Decisi
             "This state-changing Drush operation requires approval.",
             Severity::Medium,
         )),
-        "sql:query" | "sql-query" | "sqlq" => args[position + 1..]
-            .iter()
-            .find(|argument| !argument.starts_with('-'))
-            .and_then(|query| sql::analyze(query, sensitive_tables)),
+        "sql:query" | "sql-query" | "sqlq" => match rest {
+            [query] if !query.is_empty() && !query.starts_with('-') => {
+                sql::analyze(query, sensitive_tables)
+            }
+            _ => Some(sql::uninspectable()),
+        },
         _ => None,
     }
+}
+
+pub(crate) fn command_args<'a>(args: &'a [&'a str]) -> Result<&'a [&'a str], ()> {
+    super::argv::command(
+        args,
+        &[
+            "-y",
+            "--yes",
+            "-n",
+            "--no",
+            "-v",
+            "--verbose",
+            "-q",
+            "--quiet",
+            "--no-interaction",
+            "--debug",
+        ],
+        &[
+            "--root",
+            "-r",
+            "--uri",
+            "-l",
+            "--config",
+            "-c",
+            "--alias-path",
+        ],
+    )
 }

@@ -37,14 +37,10 @@ pub(crate) fn unwrap<'a>(args: &'a [&'a str]) -> Target<'a> {
             "Database import and export are prohibited for agents.",
             Severity::High,
         )),
-        "mysql" if rest.is_empty() => Target::Decision(decision(
-            DecisionEffect::Deny,
-            "ddev.sql.interactive",
-            "sql",
-            "Interactive SQL cannot be inspected safely.",
-            Severity::High,
-        )),
-        "mysql" => Target::Sql(rest.last().copied().unwrap_or_default()),
+        "mysql" => match super::sql::client_query(rest, true) {
+            Ok(query) => Target::Sql(query),
+            Err(()) => Target::Decision(super::sql::uninspectable()),
+        },
         "delete" | "snapshot" | "restore" => blocked("ddev.database_mutation"),
         "stop" if rest.iter().any(|arg| arg.starts_with("--remove-data")) => {
             blocked("ddev.database_mutation")

@@ -10,6 +10,8 @@ once releases begin.
 
 ### Fixed
 
+- Normalize Drush/Composer global options and SQL client query options.
+
 - Require protected-file exclusions for bulk searches and inspect Git object paths.
 
 - Check mutation endpoints, protected ancestors and explicit download outputs.

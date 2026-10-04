@@ -4,11 +4,11 @@ use crate::analyzers::decision;
 use crate::model::{Decision, DecisionEffect, Severity};
 
 pub(crate) fn analyze(sql: &str, configured_sensitive_tables: &[&str]) -> Option<Decision> {
-    if sql.len() > 16 * 1024 || sql.contains('\0') {
-        return Some(ambiguous());
+    if sql.trim().is_empty() || sql.len() > 16 * 1024 || sql.contains('\0') {
+        return Some(uninspectable());
     }
     let Some(words) = lexical_words(sql) else {
-        return Some(ambiguous());
+        return Some(uninspectable());
     };
     for statement in words.split(|word| word == ";") {
         for keyword in [
@@ -30,7 +30,7 @@ pub(crate) fn analyze(sql: &str, configured_sensitive_tables: &[&str]) -> Option
                 matches!(word.as_str(), "SELECT" | "SHOW" | "EXPLAIN" | "DESCRIBE")
             })
         {
-            return Some(ambiguous());
+            return Some(uninspectable());
         }
         if statement
             .first()
@@ -77,7 +77,7 @@ pub(crate) fn referenced_sensitive_tables(
     Some(tables)
 }
 
-fn ambiguous() -> Decision {
+pub(crate) fn uninspectable() -> Decision {
     decision(
         DecisionEffect::Deny,
         "sql.ambiguous",
@@ -279,6 +279,86 @@ fn push(result: &mut Vec<String>, word: &mut String) {
     if !word.is_empty() {
         result.push(std::mem::take(word));
     }
+}
+
+/// Direct clients and DDEV share attached/separated execution parsing.
+pub(crate) fn client_query<'a>(args: &'a [&'a str], positional_query: bool) -> Result<&'a str, ()> {
+    let mut query = None;
+    let mut index = 0;
+    while let Some(arg) = args.get(index) {
+        let value = if matches!(*arg, "-e" | "--execute") {
+            index += 1;
+            Some(*args.get(index).ok_or(())?)
+        } else {
+            arg.strip_prefix("--execute=")
+                .or_else(|| arg.strip_prefix("-e").filter(|value| !value.is_empty()))
+        };
+        if let Some(value) = value {
+            if query.replace(value).is_some() || value.is_empty() {
+                return Err(());
+            }
+        } else if arg.starts_with("--init-command") || matches!(*arg, "--binary-mode" | "--force") {
+            return Err(());
+        } else if positional_query && args.len() == 1 && !arg.starts_with('-') {
+            query = Some(*arg);
+        } else if matches!(
+            *arg,
+            "-h" | "--host"
+                | "-u"
+                | "--user"
+                | "-P"
+                | "--port"
+                | "-S"
+                | "--socket"
+                | "-D"
+                | "--database"
+        ) {
+            index += 1;
+            if args.get(index).is_none() {
+                return Err(());
+            }
+        }
+        if arg.starts_with('-')
+            && value.is_none()
+            && !matches!(
+                *arg,
+                "-h" | "--host"
+                    | "-u"
+                    | "--user"
+                    | "-P"
+                    | "--port"
+                    | "-S"
+                    | "--socket"
+                    | "-D"
+                    | "--database"
+                    | "-B"
+                    | "--batch"
+                    | "-N"
+                    | "--skip-column-names"
+                    | "-t"
+                    | "--table"
+                    | "--no-defaults"
+            )
+            && ![
+                "--host=",
+                "--user=",
+                "--port=",
+                "--socket=",
+                "--database=",
+                "-h",
+                "-u",
+                "-P",
+                "-S",
+                "-D",
+            ]
+            .iter()
+            .any(|flag| arg.starts_with(flag) && arg.len() > flag.len())
+        {
+            return Err(());
+        }
+        index += 1;
+    }
+    query.ok_or(())
 }
 
 #[cfg(test)]

@@ -3333,3 +3333,9 @@ these exclusions because protected files may exist anywhere in the subtree.
 Git show/cat-file path selectors are checked, including -C and index selectors;
 opaque object reads and alternate Git work-tree contexts are denied. This is
 lexical operand enforcement, not complete Git history/diff content containment.
+
+Drush/Composer global value-taking options are parsed before subcommands.
+Unknown options fail closed. SQL clients accept a single inspectable query in
+separated or attached -e/--execute form; DDEV also accepts its single positional
+query form. Repeated, missing, empty and interactive query inputs are denied.
+The same parser feeds source classification.

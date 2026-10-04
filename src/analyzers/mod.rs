@@ -1,5 +1,6 @@
 //! Shared semantic analyzers.
 
+pub(crate) mod argv;
 pub(crate) mod composer;
 pub(crate) mod ddev;
 pub(crate) mod drush;

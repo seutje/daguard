@@ -787,10 +787,10 @@ fn analyze_argv(
         "drush" => analyzers::drush::analyze(args, context.sensitive_tables),
         "composer" => analyzers::composer::analyze(args),
         "git" => analyzers::git::analyze(args),
-        "mysql" => args
-            .windows(2)
-            .find(|pair| pair[0] == "-e" || pair[0] == "--execute")
-            .and_then(|pair| analyzers::sql::analyze(pair[1], context.sensitive_tables)),
+        "mysql" => match analyzers::sql::client_query(args, false) {
+            Ok(query) => analyzers::sql::analyze(query, context.sensitive_tables),
+            Err(()) => Some(analyzers::sql::uninspectable()),
+        },
         _ => None,
     };
     if semantic.is_some() {

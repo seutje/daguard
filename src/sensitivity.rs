@@ -286,11 +286,8 @@ fn collect_argv_sources(
         return;
     }
     if program == "mysql" {
-        if let Some(pair) = args
-            .windows(2)
-            .find(|pair| pair[0] == "-e" || pair[0] == "--execute")
-        {
-            queries.push(pair[1].to_owned());
+        if let Ok(query) = sql::client_query(args, false) {
+            queries.push(query.to_owned());
         }
         return;
     }
@@ -309,13 +306,11 @@ fn collect_argv_sources(
 }
 
 fn collect_drush_query(args: &[&str], queries: &mut Vec<String>) {
-    let Some(position) = args.iter().position(|arg| !arg.starts_with('-')) else {
+    let Ok(args) = crate::analyzers::drush::command_args(args) else {
         return;
     };
-    if matches!(args[position], "sql:query" | "sql-query" | "sqlq")
-        && let Some(query) = args[position + 1..]
-            .iter()
-            .find(|argument| !argument.starts_with('-'))
+    if let [command, query] = args
+        && matches!(*command, "sql:query" | "sql-query" | "sqlq")
     {
         queries.push((*query).to_owned());
     }

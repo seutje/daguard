@@ -162,3 +162,22 @@ fn a06_filtered_search_preserves_protections() {
     assert_eq!(check(&format!("rg secret .{flags} -g '*.php'")), "deny");
     assert_eq!(check(&format!("rg -L secret .{flags}")), "deny");
 }
+
+#[test]
+fn a07_command_options() {
+    cases(&[
+        ("drush --root web sql:query 'DELETE FROM node'", "deny"),
+        ("ddev drush --root web sql:query 'DELETE FROM node'", "deny"),
+        ("composer --working-dir . install", "ask"),
+        ("ddev composer -d . install", "ask"),
+        ("mysql --execute='DELETE FROM node'", "deny"),
+        ("mysql -e'DELETE FROM node'", "deny"),
+        ("mysql -e 'SELECT 1' -e 'DELETE FROM node'", "deny"),
+        ("mysql", "deny"),
+        ("drush sql:query", "deny"),
+        ("drush --root web sql:query 'SELECT nid FROM node'", "allow"),
+        ("mysql --execute='SELECT 1'", "allow"),
+        ("ddev mysql -e'SELECT 1'", "allow"),
+        ("composer --working-dir . validate", "allow"),
+    ]);
+}
