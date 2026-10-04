@@ -130,6 +130,7 @@ pub(crate) fn execute(options: &ExecutionOptions<'_>) -> io::Result<ExecutionRes
     };
     Ok(ExecutionResult {
         exit_code: match termination {
+            #[cfg(unix)]
             Termination::Signaled(signal) => 128 + signal,
             Termination::Exited | Termination::TimedOut => status_code(status),
         },
@@ -196,6 +197,7 @@ fn blocked_execution(exit_code: i32, rule_id: &str) -> ExecutionResult {
 #[derive(Clone, Copy)]
 enum Termination {
     Exited,
+    #[cfg(unix)]
     Signaled(i32),
     TimedOut,
 }
@@ -241,6 +243,8 @@ impl ChildGuard {
     }
 
     fn terminate_group(&mut self, signal: i32) -> io::Result<()> {
+        #[cfg(not(unix))]
+        let _ = signal;
         #[cfg(unix)]
         if self.process_group {
             let process_group = i32::try_from(self.child.id())
