@@ -1518,3 +1518,28 @@ Keep these unchecked unless the scope is intentionally expanded.
 - [ ] Native GUI.
 - [ ] MSI/PKG installers unless operationally justified.
 - [ ] Support for additional agents beyond Codex, Cursor, and OpenCode.
+
+# Audit remediation (2026-10-04)
+
+- [x] A01: Paths use the initial working directory after execution context changes.
+- [ ] A02: Unsupported shell expansion and grouping are accepted as literal words.
+- [ ] A03: Common wrappers bypass both command and sink analysis.
+- [ ] A04: DDEV aliases and options lose the nested execution target.
+- [ ] A05: Filesystem mutation analysis misses destinations and affected descendants.
+- [ ] A06: Bulk reads and alternate representations bypass sensitive file rules.
+- [ ] A07: Value-taking and attached command options bypass semantic rules.
+- [ ] A08: SQL lexical assumptions differ from the target database grammar.
+- [ ] A09: SELECT is treated as read only even when it has filesystem effects.
+- [ ] A10: Structured MCP SQL bypasses pre execution SQL protection.
+- [ ] A11: Codex loses MCP transport identity for file named tools.
+- [ ] A12: Guarded execution and MCP use separate taint namespaces from the agent.
+- [ ] A13: Classified JSON objects can retain sensitive keys.
+- [ ] A14: Incomplete private keys and multiline assignments are released.
+- [ ] A15: MCP blob resources bypass binary blocking when MIME metadata is absent or textual.
+- [ ] A16: Scanner runtime is measured after work rather than bounded during work.
+- [ ] A17: Guarded execution timeout does not bound pipe draining.
+- [ ] A18: MCP scanning does not preserve protocol metadata or full lifecycle behavior.
+- [ ] A19: Release publication is independent of required security checks.
+- [ ] A20: The architectural policy example cannot be loaded and writable is inert.
+- [ ] A21: Fuzzing mostly checks crashes rather than security properties.
+- [ ] A22: State directory permissions change before symlink validation.

@@ -636,16 +636,28 @@ fn evaluate_shell(
         )));
     };
     let mut decisions = Vec::new();
-    for target in shell::redirect_targets(&tokens)
-        .map_err(|_| PolicyError::Invalid("invalid shell redirection"))?
-    {
-        if let Some(decision) = evaluate_shell_path(context, target, RuleOperation::Write)? {
-            decisions.push(decision);
+    let Ok(segments) = shell::contextual_segments(&tokens, context.cwd) else {
+        return Ok(Some(command_decision(
+            DecisionEffect::Deny,
+            "shell.ambiguous",
+            "The shell execution directory cannot be established safely.",
+            Severity::High,
+        )));
+    };
+    for (cwd, segment) in segments {
+        let context = ShellContext {
+            cwd: &cwd,
+            ..*context
+        };
+        for target in shell::redirect_targets(segment)
+            .map_err(|_| PolicyError::Invalid("invalid shell redirection"))?
+        {
+            if let Some(decision) = evaluate_shell_path(&context, target, RuleOperation::Write)? {
+                decisions.push(decision);
+            }
         }
-    }
-    for segment in shell::segments(&tokens) {
         let words = shell::words(segment);
-        if let Some(decision) = analyze_argv(&words, context, depth)? {
+        if let Some(decision) = analyze_argv(&words, &context, depth)? {
             decisions.push(decision);
         }
     }
@@ -682,6 +694,14 @@ fn analyze_argv(
         return Ok(None);
     };
     let program = command_name(program);
+    if matches!(program, "cd" | "pushd" | "popd") {
+        return Ok(Some(command_decision(
+            DecisionEffect::Deny,
+            "shell.ambiguous",
+            "Unsupported directory-changing command.",
+            Severity::High,
+        )));
+    }
     if program == "sudo" || program == "su" {
         return Ok(Some(command_decision(
             DecisionEffect::Deny,
@@ -726,21 +746,7 @@ fn analyze_argv(
         )));
     }
     if program == "ddev" {
-        return match analyzers::ddev::unwrap(args) {
-            analyzers::ddev::Target::Safe => Ok(None),
-            analyzers::ddev::Target::Decision(decision) => Ok(Some(decision)),
-            analyzers::ddev::Target::Drush(inner) => {
-                Ok(analyzers::drush::analyze(inner, context.sensitive_tables))
-            }
-            analyzers::ddev::Target::Composer(inner) => Ok(analyzers::composer::analyze(inner)),
-            analyzers::ddev::Target::Sql(sql) => {
-                Ok(analyzers::sql::analyze(sql, context.sensitive_tables))
-            }
-            analyzers::ddev::Target::Nested(inner) if inner.len() == 1 => {
-                evaluate_shell(inner[0], context, depth + 1)
-            }
-            analyzers::ddev::Target::Nested(inner) => analyze_argv(inner, context, depth + 1),
-        };
+        return analyze_ddev(args, context, depth);
     }
     let semantic = match program {
         "drush" => analyzers::drush::analyze(args, context.sensitive_tables),
@@ -756,6 +762,28 @@ fn analyze_argv(
         return Ok(semantic);
     }
     analyze_path_argv(program, args, context)
+}
+
+fn analyze_ddev(
+    args: &[&str],
+    context: &ShellContext<'_>,
+    depth: usize,
+) -> Result<Option<Decision>, PolicyError> {
+    match analyzers::ddev::unwrap(args) {
+        analyzers::ddev::Target::Safe => Ok(None),
+        analyzers::ddev::Target::Decision(decision) => Ok(Some(decision)),
+        analyzers::ddev::Target::Drush(inner) => {
+            Ok(analyzers::drush::analyze(inner, context.sensitive_tables))
+        }
+        analyzers::ddev::Target::Composer(inner) => Ok(analyzers::composer::analyze(inner)),
+        analyzers::ddev::Target::Sql(sql) => {
+            Ok(analyzers::sql::analyze(sql, context.sensitive_tables))
+        }
+        analyzers::ddev::Target::Nested(inner) if inner.len() == 1 => {
+            evaluate_shell(inner[0], context, depth + 1)
+        }
+        analyzers::ddev::Target::Nested(inner) => analyze_argv(inner, context, depth + 1),
+    }
 }
 
 fn analyze_path_argv(

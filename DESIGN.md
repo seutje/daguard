@@ -3286,3 +3286,11 @@ The following upstream materials should be re-verified during implementation and
 
 9. Cargo dependency locking (`Cargo.lock`):
     https://doc.rust-lang.org/cargo/guide/cargo-toml-vs-cargo-lock.html
+
+## Bounded execution context
+
+Shell analysis supports literal `cd DIR && ...` chains and uses the resulting
+lexical cwd for each operation and source classification. Mixed sequence, pipe,
+or alternative branches involving `cd`, and unsupported directory changes,
+are denied. Cursor tool `working_directory` overrides the envelope cwd, with
+relative overrides resolved against that envelope; invalid overrides fail closed.

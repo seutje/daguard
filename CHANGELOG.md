@@ -8,6 +8,10 @@ once releases begin.
 
 ## [Unreleased]
 
+### Fixed
+
+- Apply effective shell and Cursor tool working directories to protected paths.
+
 ### Changed
 
 - Refocus the main README on installation, agent configuration, and product

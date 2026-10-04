@@ -40,7 +40,7 @@ pub(crate) fn normalize(input: &[u8]) -> Result<CanonicalRequest, CursorError> {
         event: "pre_tool_use".to_owned(),
         session_id: input.session_id,
         call_id: Some(input.tool_use_id),
-        cwd: input.cwd,
+        cwd: effective_cwd(&input.cwd, &input.tool_input)?,
         tool: Tool {
             native_name: input.tool_name,
             capability,
@@ -62,7 +62,7 @@ pub(crate) fn normalize_post(input: &[u8]) -> Result<CanonicalPostToolEvent, Cur
         event: "post_tool_use".to_owned(),
         session_id: input.session_id,
         call_id: Some(input.tool_use_id),
-        cwd: input.cwd,
+        cwd: effective_cwd(&input.cwd, &input.tool_input)?,
         tool: Tool {
             native_name: input.tool_name,
             capability,
@@ -85,6 +85,15 @@ pub(crate) fn post_response() -> Value {
 
 pub(crate) fn post_error_response() -> Value {
     serde_json::json!({"additional_context":"daguard could not update security state"})
+}
+
+fn effective_cwd(envelope: &str, input: &Value) -> Result<String, CursorError> {
+    match input.get("working_directory") {
+        None => Ok(envelope.to_owned()),
+        Some(Value::String(directory)) => crate::paths::normalize(envelope, directory)
+            .map_err(|_| CursorError::Invalid("invalid tool working directory")),
+        Some(_) => Err(CursorError::Invalid("invalid tool working directory")),
+    }
 }
 
 fn normalize_tool(tool_name: &str, input: &Value) -> Result<(Capability, Facts), CursorError> {
@@ -296,6 +305,25 @@ mod tests {
         include_bytes!("../../tests/fixtures/cursor/pre_tool_use/file_write.json");
     const MCP: &[u8] = include_bytes!("../../tests/fixtures/cursor/pre_tool_use/mcp.json");
     const POST: &[u8] = include_bytes!("../../tests/fixtures/cursor/post_tool_use/file_read.json");
+
+    #[test]
+    fn tool_directory_override_is_applied_to_pre_and_post() {
+        for directory in ["web/sites/default", "/workspace/project/web/sites/default"] {
+            let input = serde_json::json!({"tool_name":"Shell","tool_input":{
+                "command":"cat settings.php","working_directory":directory},
+                "tool_use_id":"synthetic","cwd":"/workspace/project"});
+            let request = normalize(&serde_json::to_vec(&input).unwrap()).unwrap();
+            assert_eq!(request.cwd, "/workspace/project/web/sites/default");
+            assert_eq!(
+                policy::evaluate(&request, None, None).unwrap().effect,
+                DecisionEffect::Deny
+            );
+        }
+        let input = serde_json::json!({"tool_name":"Shell","tool_input":{
+            "command":"git status","working_directory":null},
+            "tool_use_id":"synthetic","cwd":"/workspace/project"});
+        assert!(normalize(&serde_json::to_vec(&input).unwrap()).is_err());
+    }
 
     #[test]
     fn normalizes_golden_fixtures() {

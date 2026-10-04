@@ -57,7 +57,7 @@ pub(crate) fn classify_request(
         .collect::<Vec<_>>();
     let mut sql_queries = Vec::new();
     for command in request.candidate_commands() {
-        collect_shell_sources(command, 0, &mut paths, &mut sql_queries);
+        collect_shell_sources(command, &request.cwd, 0, &mut paths, &mut sql_queries);
     }
     if matches!(
         request.tool.capability,
@@ -223,6 +223,7 @@ fn collect_query_values(value: &Value, key: Option<&str>, queries: &mut Vec<Stri
 
 fn collect_shell_sources(
     command: &str,
+    cwd: &str,
     depth: usize,
     paths: &mut Vec<String>,
     queries: &mut Vec<String>,
@@ -233,14 +234,18 @@ fn collect_shell_sources(
     let Ok(tokens) = shell::tokenize(command) else {
         return;
     };
-    for segment in shell::segments(&tokens) {
+    let Ok(segments) = shell::contextual_segments(&tokens, cwd) else {
+        return;
+    };
+    for (cwd, segment) in segments {
         let words = shell::words(segment);
-        collect_argv_sources(&words, depth, paths, queries);
+        collect_argv_sources(&words, &cwd, depth, paths, queries);
     }
 }
 
 fn collect_argv_sources(
     words: &[&str],
+    cwd: &str,
     depth: usize,
     paths: &mut Vec<String>,
     queries: &mut Vec<String>,
@@ -266,17 +271,17 @@ fn collect_argv_sources(
             .position(|arg| arg.starts_with('-') && arg.contains('c'))
             && let Some(inner) = args.get(position + 1)
         {
-            collect_shell_sources(inner, depth + 1, paths, queries);
+            collect_shell_sources(inner, cwd, depth + 1, paths, queries);
         }
         return;
     }
     if program == "ddev" {
         match ddev::unwrap(args) {
             ddev::Target::Nested(inner) if inner.len() == 1 => {
-                collect_shell_sources(inner[0], depth + 1, paths, queries);
+                collect_shell_sources(inner[0], cwd, depth + 1, paths, queries);
             }
             ddev::Target::Nested(inner) => {
-                collect_argv_sources(inner, depth + 1, paths, queries);
+                collect_argv_sources(inner, cwd, depth + 1, paths, queries);
             }
             ddev::Target::Drush(inner) => collect_drush_query(inner, queries),
             ddev::Target::Sql(query) => queries.push(query.to_owned()),
@@ -307,7 +312,7 @@ fn collect_argv_sources(
             .iter()
             .copied()
             .filter(|arg| !arg.starts_with('-'))
-            .map(str::to_owned),
+            .filter_map(|path| crate::paths::normalize(cwd, path).ok()),
     );
 }
 

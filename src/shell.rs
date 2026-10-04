@@ -171,6 +171,45 @@ pub(crate) fn segments(tokens: &[Token]) -> Vec<&[Token]> {
     result
 }
 
+/// Literal `cd DIR && ...` is the only supported directory-changing form.
+/// Other connectors can execute later commands in multiple possible directories.
+pub(crate) fn contextual_segments<'a>(
+    tokens: &'a [Token],
+    cwd: &str,
+) -> Result<Vec<(String, &'a [Token])>, ShellError> {
+    let parts = segments(tokens);
+    let changes_directory = parts.iter().any(|part| words(part).first() == Some(&"cd"));
+    if changes_directory
+        && tokens.iter().any(|token| {
+            matches!(
+                token,
+                Token::Operator(Operator::Sequence | Operator::Or | Operator::Pipe)
+            )
+        })
+    {
+        return Err(ShellError::Unsupported("conditional directory context"));
+    }
+    let mut current = cwd.to_owned();
+    let mut result = Vec::new();
+    for part in parts {
+        let argv = words(part);
+        if argv.first() == Some(&"cd") {
+            if argv.len() != 2
+                || argv[1].starts_with('-')
+                || argv[1].is_empty()
+                || part.iter().any(|token| matches!(token, Token::Operator(_)))
+            {
+                return Err(ShellError::Unsupported("directory change"));
+            }
+            current = crate::paths::normalize(&current, argv[1])
+                .map_err(|_| ShellError::Unsupported("directory path"))?;
+        } else {
+            result.push((current.clone(), part));
+        }
+    }
+    Ok(result)
+}
+
 pub(crate) fn words(segment: &[Token]) -> Vec<&str> {
     segment
         .iter()
