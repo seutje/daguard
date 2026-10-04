@@ -10,6 +10,8 @@ once releases begin.
 
 ### Fixed
 
+- Contain truncated private keys and multiline sensitive assignments.
+
 - Redact classified JSON keys and reject trust in input-shaped redaction markers.
 
 - Bind session-containing routes to the trusted native agent taint namespace.

@@ -529,17 +529,23 @@ fn detect_private_keys(text: &str, ranges: &mut Vec<Range>) {
     let mut from = 0;
     while let Some(relative) = text[from..].find("-----BEGIN ") {
         let start = from + relative;
-        let Some(header_end) = text[start..].find('\n').map(|value| start + value + 1) else {
-            break;
-        };
+        let header_end = text[start..]
+            .find('\n')
+            .map_or(text.len(), |value| start + value + 1);
         let header = &text[start..header_end];
-        if header.contains("PRIVATE KEY")
-            && let Some(relative_end) = text[header_end..].find("-----END ")
-        {
-            let footer = header_end + relative_end;
-            let end = text[footer + 5..]
-                .find("-----")
-                .map_or(text.len(), |value| footer + 5 + value + 5);
+        if header.contains("PRIVATE KEY") {
+            let label = header
+                .trim()
+                .strip_prefix("-----BEGIN ")
+                .and_then(|value| value.strip_suffix("-----"));
+            let end = label
+                .and_then(|label| {
+                    let footer = format!("-----END {label}-----");
+                    text[header_end..]
+                        .find(&footer)
+                        .map(|offset| header_end + offset + footer.len())
+                })
+                .unwrap_or(text.len());
             push_range(
                 ranges,
                 start,
@@ -569,6 +575,24 @@ fn detect_assignments(text: &str, config: &ScanConfig, ranges: &mut Vec<Range>) 
                         .len()
                         .saturating_sub(trimmed[separator + 1..].trim_start().len());
                 let value_end = trimmed.trim_end_matches(['\r', '\n']).len();
+                let value = trimmed[separator + 1..].trim();
+                let multiline = value.is_empty()
+                    || matches!(value, "|" | ">" | "|-" | ">-" | "|+" | ">+")
+                    || value.ends_with('\\')
+                    || ((value.starts_with('\"') || value.starts_with('\''))
+                        && (value.len() < 2
+                            || !value.ends_with(value.chars().next().unwrap_or('\"'))));
+                if multiline {
+                    push_range(
+                        ranges,
+                        offset + leading + separator + 1,
+                        text.len(),
+                        detector_id,
+                        category,
+                        Confidence::High,
+                    );
+                    return; // Remaining continuation content has no proven safe boundary.
+                }
                 if value_start < value_end {
                     push_range(
                         ranges,
@@ -1125,6 +1149,35 @@ fn redact(text: &str, ranges: &[Range]) -> String {
 mod tests {
     use super::{ScanConfig, inspect, inspect_sensitive_source};
     use crate::model::ResultEffect;
+
+    #[test]
+    fn a14_incomplete_envelopes_and_multiline_assignments() {
+        for input in [
+            "-----BEGIN PRIVATE KEY-----\nSYNTHETIC_AUDIT_KEY_BODY\n",
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nSYNTHETIC_AUDIT_KEY_BODY",
+            "password=\nSYNTHETIC_AUDIT_KEY_BODY\n",
+            "password: |\n  SYNTHETIC_AUDIT_KEY_BODY\n",
+            "password=\\\nSYNTHETIC_AUDIT_KEY_BODY\n",
+        ] {
+            let decision = inspect(input.as_bytes(), &ScanConfig::default());
+            assert!(
+                !serde_json::to_string(&decision)
+                    .unwrap()
+                    .contains("SYNTHETIC_AUDIT_KEY_BODY")
+            );
+            let json = serde_json::json!({"message": input});
+            let decision = inspect(&serde_json::to_vec(&json).unwrap(), &ScanConfig::default());
+            assert!(
+                !serde_json::to_string(&decision)
+                    .unwrap()
+                    .contains("SYNTHETIC_AUDIT_KEY_BODY")
+            );
+        }
+        assert_eq!(
+            inspect(b"title=\nordinary text\n", &ScanConfig::default()).decision,
+            ResultEffect::Allow
+        );
+    }
 
     #[test]
     fn a13_classified_keys_and_forged_placeholders_do_not_leak() {

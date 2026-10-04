@@ -3380,3 +3380,9 @@ ordinals, checked for collisions. Complete sensitive-source JSON traversal
 also covers keys and never trusts placeholder-shaped input strings. Classified
 object property names therefore change; consumers must accept that sanitized
 shape or treat the result as unavailable.
+
+Recognized private-key headers protect their remaining body even when a matching
+footer is absent. Empty sensitive assignments, YAML literal/folded indicators,
+backslash continuations and incomplete quoted values redact the remainder of
+the complete result because a safe continuation boundary cannot be established.
+This can redact later non-sensitive lines, favoring containment under truncation.

@@ -1534,7 +1534,7 @@ Keep these unchecked unless the scope is intentionally expanded.
 - [x] A11: Codex loses MCP transport identity for file named tools.
 - [x] A12: Guarded execution and MCP use separate taint namespaces from the agent.
 - [x] A13: Classified JSON objects can retain sensitive keys.
-- [ ] A14: Incomplete private keys and multiline assignments are released.
+- [x] A14: Incomplete private keys and multiline assignments are released.
 - [ ] A15: MCP blob resources bypass binary blocking when MIME metadata is absent or textual.
 - [ ] A16: Scanner runtime is measured after work rather than bounded during work.
 - [ ] A17: Guarded execution timeout does not bound pipe draining.

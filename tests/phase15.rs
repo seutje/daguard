@@ -591,3 +591,31 @@ fn a13_classified_key_is_absent_from_output_errors_and_metadata() {
     }
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn a14_truncated_secrets_are_contained_on_error_streams() {
+    let root = temporary_directory("truncated-key");
+    let script = root.join("synthetic-producer");
+    fs::write(&script, b"#!/bin/sh\nprintf 'password=\nSYNTHETIC_AUDIT_KEY_BODY\n'\nprintf '%s\n' '-----BEGIN PRIVATE KEY-----' 'SYNTHETIC_AUDIT_KEY_BODY' >&2\nexit 7\n").unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+    let audit = root.join("audit.jsonl");
+    let output = run(
+        &[
+            "exec",
+            "--audit-log",
+            audit.to_str().unwrap(),
+            "--",
+            script.to_str().unwrap(),
+        ],
+        b"",
+    );
+    assert_eq!(output.status.code(), Some(7));
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("SYNTHETIC_AUDIT_KEY_BODY"));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("SYNTHETIC_AUDIT_KEY_BODY"));
+    assert!(
+        !fs::read_to_string(audit)
+            .unwrap()
+            .contains("SYNTHETIC_AUDIT_KEY_BODY")
+    );
+    fs::remove_dir_all(root).unwrap();
+}
