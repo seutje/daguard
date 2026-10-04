@@ -217,6 +217,16 @@ pub(crate) fn normalize_argv<'a>(mut words: &'a [&'a str]) -> Result<&'a [&'a st
                 &["-i", "-o", "-e", "--input", "--output", "--error"],
             )?,
             "busybox" => 0,
+            "daguard"
+                if args
+                    .first()
+                    .is_some_and(|arg| matches!(*arg, "exec" | "mcp-proxy")) =>
+            {
+                args.iter()
+                    .position(|arg| *arg == "--")
+                    .ok_or(ShellError::Unsupported("guarded route"))?
+                    + 1
+            }
             "xargs" | "eval" | "exec" => {
                 return Err(ShellError::Unsupported("opaque execution wrapper"));
             }

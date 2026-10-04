@@ -169,7 +169,10 @@ fn guarded_exec(args: &[String]) -> Result<i32, CliError> {
     let command_text = shell_join(command);
     let request = CanonicalRequest {
         protocol: PROTOCOL_VERSION,
-        agent: "guarded_execution".to_owned(),
+        agent: options
+            .integration_agent
+            .clone()
+            .unwrap_or_else(|| "guarded_execution".to_owned()),
         event: "pre_tool_use".to_owned(),
         session_id: options.session_id.clone(),
         call_id: None,
@@ -231,15 +234,13 @@ fn guarded_exec(args: &[String]) -> Result<i32, CliError> {
         && !execution.classifications.is_empty()
     {
         StateStore::open(options.state_dir.as_deref())
-            .and_then(|store| {
-                store.merge("guarded_execution", session_id, &execution.classifications)
-            })
+            .and_then(|store| store.merge(&request.agent, session_id, &execution.classifications))
             .map_err(|error| CliError::evaluation(error.to_string()))?;
     }
     if let Some(path) = options.audit_log.as_deref() {
         audit::append_result(
             path,
-            "guarded_execution",
+            &request.agent,
             options.session_id.as_deref(),
             &execution.classifications,
             execution.effect,
@@ -273,7 +274,10 @@ fn mcp_proxy(args: &[String]) -> Result<i32, CliError> {
     };
     let upstream_request = CanonicalRequest {
         protocol: PROTOCOL_VERSION,
-        agent: "mcp_proxy".to_owned(),
+        agent: options
+            .integration_agent
+            .clone()
+            .unwrap_or_else(|| "mcp_proxy".to_owned()),
         event: "pre_tool_use".to_owned(),
         session_id: options.session_id.clone(),
         call_id: None,
@@ -305,6 +309,7 @@ fn mcp_proxy(args: &[String]) -> Result<i32, CliError> {
             command,
             cwd: &cwd_path,
             config: &scan_config,
+            agent: options.integration_agent.as_deref().unwrap_or("mcp_proxy"),
             state_dir: options.state_dir.as_deref(),
             session_id: options.session_id.as_deref(),
             audit_log: options.audit_log.as_deref(),
@@ -320,7 +325,10 @@ fn mcp_proxy(args: &[String]) -> Result<i32, CliError> {
                 .unwrap_or(method);
             let request = CanonicalRequest {
                 protocol: PROTOCOL_VERSION,
-                agent: "mcp_proxy".to_owned(),
+                agent: options
+                    .integration_agent
+                    .clone()
+                    .unwrap_or_else(|| "mcp_proxy".to_owned()),
                 event: "pre_tool_use".to_owned(),
                 session_id: options.session_id.clone(),
                 call_id: value.get("id").map(ToString::to_string),
@@ -351,6 +359,7 @@ struct CommandOptions {
     audit_log: Option<PathBuf>,
     state_dir: Option<PathBuf>,
     session_id: Option<String>,
+    integration_agent: Option<String>,
     cwd: Option<PathBuf>,
     timeout: Duration,
 }
@@ -364,6 +373,7 @@ fn execution_options<'a>(
     let mut audit_log = None;
     let mut state_dir = None;
     let mut session_id = None;
+    let mut integration_agent = None;
     let mut cwd = None;
     let mut timeout = Duration::from_secs(30);
     let mut managed = false;
@@ -382,6 +392,18 @@ fn execution_options<'a>(
             "--audit-log" => audit_log = Some(required_path(args, index, flag)?),
             "--state-dir" => state_dir = Some(required_path(args, index, flag)?),
             "--cwd" => cwd = Some(required_path(args, index, flag)?),
+            "--integration-agent" => {
+                integration_agent = Some(
+                    args.get(index)
+                        .filter(|value| matches!(value.as_str(), "codex" | "cursor" | "opencode"))
+                        .cloned()
+                        .ok_or_else(|| {
+                            CliError::usage(
+                                "--integration-agent requires codex, cursor or opencode",
+                            )
+                        })?,
+                );
+            }
             "--session-id" => {
                 session_id = Some(
                     args.get(index)
@@ -414,6 +436,11 @@ fn execution_options<'a>(
             "usage: daguard {command_name} [OPTIONS] -- COMMAND [ARG ...]"
         )));
     }
+    if session_id.is_some() != integration_agent.is_some() {
+        return Err(CliError::usage(
+            "session-bound routes require both --session-id and --integration-agent from the trusted host",
+        ));
+    }
     validate_managed(managed, organization_path.as_deref())?;
     let organization = organization_path
         .as_deref()
@@ -432,6 +459,7 @@ fn execution_options<'a>(
             audit_log,
             state_dir,
             session_id,
+            integration_agent,
             cwd,
             timeout,
         },
@@ -993,7 +1021,7 @@ fn doctor(args: &[String]) -> Result<(), CliError> {
 }
 
 fn help() -> &'static str {
-    "Usage:\n  daguard version\n  daguard capabilities\n  daguard check [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [FILE|-]\n  daguard inspect-result [--policy PATH] [--project-policy PATH] [-]\n  daguard exec [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--session-id ID] [--cwd PATH] [--timeout-seconds N] -- COMMAND [ARG ...]\n  daguard mcp-proxy [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--session-id ID] [--cwd PATH] -- SERVER [ARG ...]\n  daguard explain <rule-id>\n  daguard policy lint [--layer organization|project] <path>\n  daguard doctor [--managed] [--integrity-manifest PATH] [--policy PATH] [--audit-log PATH] [--codex-hooks PATH] [--cursor-hooks PATH] [--opencode-config PATH]\n  daguard doctor <codex|cursor|opencode> <config.json>\n  daguard --adapter <codex|cursor|opencode> --event <pre-tool|post-tool> [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--no-session-state]\n\nPolicy precedence: built-in invariants, organization policy, project tightening, default.\nA lower layer can never override a higher-layer deny."
+    "Usage:\n  daguard version\n  daguard capabilities\n  daguard check [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [FILE|-]\n  daguard inspect-result [--policy PATH] [--project-policy PATH] [-]\n  daguard exec [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--integration-agent codex|cursor|opencode --session-id ID] [--cwd PATH] [--timeout-seconds N] -- COMMAND [ARG ...]\n  daguard mcp-proxy [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--integration-agent codex|cursor|opencode --session-id ID] [--cwd PATH] -- SERVER [ARG ...]\n  daguard explain <rule-id>\n  daguard policy lint [--layer organization|project] <path>\n  daguard doctor [--managed] [--integrity-manifest PATH] [--policy PATH] [--audit-log PATH] [--codex-hooks PATH] [--cursor-hooks PATH] [--opencode-config PATH]\n  daguard doctor <codex|cursor|opencode> <config.json>\n  daguard --adapter <codex|cursor|opencode> --event <pre-tool|post-tool> [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--no-session-state]\n\nPolicy precedence: built-in invariants, organization policy, project tightening, default.\nA lower layer can never override a higher-layer deny."
 }
 
 struct CliError {

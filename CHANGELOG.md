@@ -10,6 +10,8 @@ once releases begin.
 
 ### Fixed
 
+- Bind session-containing routes to the trusted native agent taint namespace.
+
 - Preserve outbound MCP identity for tools with file-operation names.
 
 - Apply shared SQL policy to structured MCP query arguments before execution.

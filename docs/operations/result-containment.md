@@ -123,3 +123,12 @@ Before declaring an agent/version supported, run a live guarded-shell and MCP
 canary test and inspect the actual model transcript. Repository tests prove the
 guard process and proxy output do not contain raw canaries; they cannot prove a
 host route was configured or that a vendor did not bypass it.
+
+Session-bound exec/MCP routes require a trusted host-provided pair:
+`--integration-agent codex|cursor|opencode --session-id ID`. The state and audit
+identity matches native hooks, preserving isolation between unrelated agents.
+Supplying only one flag fails closed. Host tool definitions must pin the agent,
+session, state directory and policy outside model-controlled arguments; a model
+must never choose these values. Without the pair a route is standalone and makes
+no conversation-wide taint claim. Native shell analysis unwraps daguard exec
+commands so wrapping a transfer does not hide its sink from pre-tool checks.

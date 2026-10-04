@@ -3364,3 +3364,12 @@ MCP prefixes and canonical mcp_call. A native MCP read/write/delete suffix may
 retain its file capability, but always remains an outbound MCP sink and receives
 universal MCP path, command and SQL checks. Existing canonical fields retain
 their meanings; no protocol schema change is required.
+
+Session-bound exec/MCP routes require a trusted host-provided pair:
+`--integration-agent codex|cursor|opencode --session-id ID`. The state and audit
+identity matches native hooks, preserving isolation between unrelated agents.
+Supplying only one flag fails closed. Host tool definitions must pin the agent,
+session, state directory and policy outside model-controlled arguments; a model
+must never choose these values. Without the pair a route is standalone and makes
+no conversation-wide taint claim. Native shell analysis unwraps daguard exec
+commands so wrapping a transfer does not hide its sink from pre-tool checks.

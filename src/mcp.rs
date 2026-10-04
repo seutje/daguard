@@ -117,6 +117,7 @@ pub(crate) struct ProxyOptions<'a> {
     pub(crate) config: &'a ScanConfig,
     pub(crate) state_dir: Option<&'a Path>,
     pub(crate) session_id: Option<&'a str>,
+    pub(crate) agent: &'a str,
     pub(crate) audit_log: Option<&'a Path>,
 }
 
@@ -152,6 +153,7 @@ pub(crate) fn proxy(
         Arc::clone(&output),
         upstream_output,
         options.config.clone(),
+        options.agent.to_owned(),
         options.state_dir.map(Path::to_path_buf),
         options.session_id.map(str::to_owned),
         options.audit_log.map(Path::to_path_buf),
@@ -200,6 +202,7 @@ pub(crate) fn proxy(
     let diagnostic = join_diagnostic(error_thread)?;
     persist_result_metadata(
         &diagnostic,
+        options.agent,
         options.state_dir,
         options.session_id,
         options.audit_log,
@@ -219,6 +222,7 @@ fn response_worker(
     output: Arc<Mutex<io::Stdout>>,
     upstream: ChildStdout,
     config: ScanConfig,
+    agent: String,
     state_dir: Option<PathBuf>,
     session_id: Option<String>,
     audit_log: Option<PathBuf>,
@@ -241,6 +245,7 @@ fn response_worker(
             };
             persist_result_metadata(
                 &decision,
+                &agent,
                 state_dir.as_deref(),
                 session_id.as_deref(),
                 audit_log.as_deref(),
@@ -285,6 +290,7 @@ fn safe_response_id(message: &[u8], config: &ScanConfig) -> Value {
 
 fn persist_result_metadata(
     decision: &ResultDecision,
+    agent: &str,
     state_dir: Option<&Path>,
     session_id: Option<&str>,
     audit_log: Option<&Path>,
@@ -294,13 +300,13 @@ fn persist_result_metadata(
         && !classifications.is_empty()
     {
         StateStore::open(state_dir)
-            .and_then(|store| store.merge("mcp_proxy", session, &classifications))
+            .and_then(|store| store.merge(agent, session, &classifications))
             .map_err(|error| io::Error::other(error.to_string()))?;
     }
     if let Some(path) = audit_log {
         crate::audit::append_result(
             path,
-            "mcp_proxy",
+            agent,
             session_id,
             &classifications,
             decision.decision,

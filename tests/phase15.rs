@@ -278,6 +278,42 @@ fn guarded_execution_preserves_exit_status_and_blocks_before_sensitive_read() {
     fs::remove_dir_all(root).unwrap();
 }
 
+fn assert_native_bridge(state: &std::path::Path, request: &Value) {
+    let native = json!({"session_id":"phase15-session", "tool_use_id":"synthetic",
+        "cwd":"/workspace/project", "hook_event_name":"PreToolUse", "tool_name":"mcp__remote__read_file",
+        "tool_input":{"path":"README.md"}});
+    let native_output = run(
+        &[
+            "--adapter",
+            "codex",
+            "--event",
+            "pre-tool",
+            "--state-dir",
+            state.to_str().unwrap(),
+        ],
+        &serde_json::to_vec(&native).unwrap(),
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&native_output.stdout).unwrap()["hookSpecificOutput"]["permissionDecision"],
+        "deny"
+    );
+    let isolated = serde_json::to_vec(&request).unwrap();
+    let isolated = String::from_utf8(isolated)
+        .unwrap()
+        .replace("\"codex\"", "\"cursor\"");
+    assert_eq!(
+        serde_json::from_slice::<Value>(
+            &run(
+                &["check", "--state-dir", state.to_str().unwrap(), "-"],
+                isolated.as_bytes()
+            )
+            .stdout
+        )
+        .unwrap()["decision"],
+        "allow"
+    );
+}
+
 #[test]
 fn guarded_detection_taints_session_without_persisting_the_canary() {
     let root = temporary_directory("taint");
@@ -293,6 +329,8 @@ fn guarded_detection_taints_session_without_persisting_the_canary() {
             audit.to_str().unwrap(),
             "--session-id",
             "phase15-session",
+            "--integration-agent",
+            "codex",
             "--",
             "/usr/bin/printf",
             "%s",
@@ -305,7 +343,7 @@ fn guarded_detection_taints_session_without_persisting_the_canary() {
 
     let request = json!({
         "protocol":1,
-        "agent":"guarded_execution",
+        "agent":"codex",
         "event":"pre_tool_use",
         "session_id":"phase15-session",
         "cwd":"/workspace/project",
@@ -319,6 +357,7 @@ fn guarded_detection_taints_session_without_persisting_the_canary() {
     );
     let decision: Value = serde_json::from_slice(&blocked.stdout).unwrap();
     assert_eq!(decision["rule_id"], "exfiltration.tainted_session");
+    assert_native_bridge(&state, &request);
     let result_event = fs::read_to_string(&audit)
         .unwrap()
         .lines()
@@ -481,4 +520,31 @@ fn mcp_gateway_sanitizes_responses_and_applies_pre_tool_policy() {
     assert_eq!(response["id"], 8);
     assert_eq!(response["error"]["data"]["rule_id"], "drupal.secret.env");
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a12_session_binding_requires_complete_host_identity() {
+    for args in [
+        vec!["exec", "--session-id", "synthetic", "--", "/usr/bin/true"],
+        vec![
+            "exec",
+            "--integration-agent",
+            "codex",
+            "--",
+            "/usr/bin/true",
+        ],
+        vec![
+            "exec",
+            "--integration-agent",
+            "untrusted",
+            "--session-id",
+            "synthetic",
+            "--",
+            "/usr/bin/true",
+        ],
+    ] {
+        let output = run(&args, b"");
+        assert!(!output.status.success());
+        assert_eq!(output.stdout, [] as [u8; 0]);
+    }
 }
