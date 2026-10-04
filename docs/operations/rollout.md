@@ -111,10 +111,11 @@ daguard doctor --managed --policy /etc/daguard/policy.json
 ```
 
 For adapter failures, run the adapter-specific `doctor` check and compare the
-installed agent version with the tested versions in the main README. Confirm
-that the hook covers all tools, uses absolute managed paths, and is fail closed
-where supported. For integrity failures, compare fingerprints with the trusted
-deployment record; do not regenerate a manifest merely to silence the error.
+installed agent version with the versioned records from `daguard capabilities`.
+Confirm that the hook covers all tools, uses absolute managed paths, and is fail
+closed where supported. For integrity failures, compare fingerprints with the
+trusted deployment record; do not regenerate a manifest merely to silence the
+error.
 
 For a suspected false positive, capture only the rule ID, guard/agent versions,
 capability, and a minimal synthetic reproduction. Never collect the protected

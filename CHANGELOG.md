@@ -8,6 +8,12 @@ once releases begin.
 
 ## [Unreleased]
 
+### Changed
+
+- Refocus the main README on installation, agent configuration, and product
+  behavior, with contributor guidance moved to `DEVELOPMENT.md` and user-owned
+  WSL setup kept in `PILOT.md`.
+
 ## [0.1.1] - 2026-10-04
 
 ### Fixed
