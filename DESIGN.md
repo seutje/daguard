@@ -3546,3 +3546,19 @@ but cannot validate an OpenCode bridge. Full diagnostics are advisory and still
 cannot prove host activation, managed host configuration immutability, callback
 failure semantics or result delivery. Structural `doctor <adapter>` checks retain
 their narrower role; use full diagnostics plus versioned live allow/deny tests.
+
+### Bundle and installer parity (audit risk R09)
+
+Unix bundles include SECURITY.md and the result-containment runbook. Before
+executing bundled code, the installer rejects symlinks/special entries, escaping
+or duplicate manifest labels, and inventories that omit or add any regular file.
+Only the root SHA256SUMS is excluded from its own inventory. Negative installation
+tests prove rejection before replacing an installed executable. Checksums still
+require an externally authenticated release/provenance source.
+Windows installation stages and validates the preserved/replacement policy and
+all assets before mutation, snapshots existing destinations, then restores them
+and their root ACLs on ordinary replacement/diagnostic failure. Native release
+tests inject a mid-replacement failure and compare the complete previous file set.
+This transaction does not promise power-loss recovery, bypass active executable
+locks, or certify Windows ACL enforcement from Linux cross-compilation. Native
+Windows execution is required release evidence.

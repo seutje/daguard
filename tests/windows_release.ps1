@@ -22,6 +22,42 @@ try {
     $policy = Join-Path $root 'config\policy.json'
     if (-not (Test-Path -LiteralPath $binary)) { throw 'Installer did not place the binary.' }
 
+    # An invalid preserved policy is rejected before any installed replacement.
+    $before = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash
+    $savedPolicy = Get-Content -LiteralPath $policy -Raw
+    Set-Content -LiteralPath $policy -Value '{"schema":99}'
+    $invalidRejected = $false
+    try { & (Join-Path $bundle 'install.ps1') -Bundle $bundle -DestinationRoot $root } catch { $invalidRejected = $true }
+    if (-not $invalidRejected -or (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash -ne $before) {
+        throw 'Invalid preserved policy changed the installation.'
+    }
+    Set-Content -LiteralPath $policy -Value $savedPolicy
+    & (Join-Path $bundle 'install.ps1') -Bundle $bundle -DestinationRoot $root
+
+    # Inject an ordinary replacement failure after staging/snapshots to verify
+    # complete rollback. This test-only copy never changes shipped installer code.
+    $rollbackScript = Join-Path $root 'rollback-test.ps1'
+    $installer = Get-Content -LiteralPath (Join-Path $bundle 'install.ps1') -Raw
+    $installer = $installer.Replace('$mutated = $true', '$mutated = $true; Remove-Item -LiteralPath $stageRelease -Force')
+    Set-Content -LiteralPath $rollbackScript -Value $installer
+    $inventoryBefore = @{}
+    foreach ($file in Get-ChildItem -LiteralPath $root -File -Recurse) {
+        if ($file.FullName -eq $rollbackScript) { continue }
+        $inventoryBefore[$file.FullName] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+    }
+    $rollbackRejected = $false
+    try { & $rollbackScript -Bundle $bundle -DestinationRoot $root -ReplacePolicy } catch { $rollbackRejected = $true }
+    if (-not $rollbackRejected) { throw 'Injected replacement failure did not fail.' }
+    foreach ($path in $inventoryBefore.Keys) {
+        if (-not (Test-Path -LiteralPath $path) -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $inventoryBefore[$path]) {
+            throw 'Replacement failure did not restore every previous installed file.'
+        }
+    }
+    if (Get-ChildItem -LiteralPath (Join-Path $root 'config') -Directory -Filter '.install-*') {
+        throw 'Installer left transaction staging behind.'
+    }
+    Remove-Item -LiteralPath $rollbackScript
+
     $deny = @{
         protocol = 1; agent = 'windows-smoke'; event = 'pre_tool_use'
         cwd = 'C:\Users\Developer\Sites\drupal'

@@ -1565,3 +1565,6 @@ Additional audit risk remediation:
 
 - [x] R08: Verify effective binary/policy/mode/state bindings and installed bridge hashes in full diagnostics.
 - [ ] R08 assurance: Live activation and host-controlled immutable integration configuration.
+
+- [x] R09: Require complete Unix inventories and bundle security/containment guidance; verify negative installs.
+- [ ] R09 Windows validation: Run staged-install rollback and policy-preservation tests on native Windows CI.

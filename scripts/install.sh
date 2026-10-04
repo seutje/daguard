@@ -15,11 +15,37 @@ hash_file() {
 }
 
 verify_checksums() {
+    manifest_work=$(mktemp -d)
+    trap 'rm -rf "$manifest_work"' EXIT HUP INT TERM
+    # Bundle manifests must name every regular file exactly once. Never follow
+    # archive symlinks or allow a listed path to escape the verified directory.
+    find . ! -type f ! -type d -print > "$manifest_work/special"
+    [ ! -s "$manifest_work/special" ] || { echo "daguard: unsupported bundle entry" >&2; exit 1; }
+    awk '
+        {
+            hash = substr($0, 1, 64)
+            path = substr($0, 67)
+            if (length(hash) != 64 || hash ~ /[^0-9a-fA-F]/ || substr($0,65,2) != "  " ||
+                path !~ /^\.\/[A-Za-z0-9_.\/-]+$/ || length(path) > 4096 || seen[path]++) exit 1
+            count = split(path, parts, "/")
+            for (i = 2; i <= count; i++) if (parts[i] == ".." || parts[i] == "." || parts[i] == "") exit 1
+            if (path == "./SHA256SUMS") exit 1
+            print path
+        }
+    ' SHA256SUMS > "$manifest_work/listed" || { echo "daguard: unsafe or duplicate checksum entry" >&2; exit 1; }
+    LC_ALL=C sort "$manifest_work/listed" > "$manifest_work/expected"
+    find . -type f ! -path ./SHA256SUMS -print | LC_ALL=C sort > "$manifest_work/actual"
+    cmp -s "$manifest_work/expected" "$manifest_work/actual" || {
+        echo "daguard: bundle checksum manifest does not cover the complete file set" >&2
+        exit 1
+    }
     if command -v sha256sum >/dev/null 2>&1; then
         sha256sum --check --strict SHA256SUMS
     else
         shasum -a 256 --check SHA256SUMS
     fi
+    rm -rf "$manifest_work"
+    trap - EXIT HUP INT TERM
 }
 
 mode=user

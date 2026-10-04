@@ -14,6 +14,9 @@ once releases begin.
 
 ### Fixed
 
+- Require complete safe Unix bundle inventories, ship security/containment
+  guidance, and stage Windows installs with rollback on ordinary failure.
+
 - Diagnose effective hook bindings and session settings, inventory and verify
   installed OpenCode bridge files, and support persistent bridge `stateDir`.
 

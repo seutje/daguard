@@ -120,30 +120,75 @@ $policyDestination = Join-Path $layout.Config 'policy.json'
 $releaseDestination = Join-Path $layout.Config 'release.json'
 $manifestDestination = Join-Path $layout.Config 'SHA256SUMS'
 $pluginDestination = Join-Path $layout.Share 'opencode'
-New-Item -ItemType Directory -Path $pluginDestination -Force | Out-Null
-
-Copy-Item -LiteralPath $binarySource -Destination $binaryDestination -Force
-Copy-Item -LiteralPath (Join-Path $Bundle 'release.json') -Destination $releaseDestination -Force
-Copy-Item -LiteralPath (Join-Path $Bundle 'integrations\opencode\index.js') -Destination $pluginDestination -Force
-Copy-Item -LiteralPath (Join-Path $Bundle 'integrations\opencode\package.json') -Destination $pluginDestination -Force
-if ($ReplacePolicy -or -not (Test-Path -LiteralPath $policyDestination)) {
-    Copy-Item -LiteralPath $policySource -Destination $policyDestination -Force
-}
-
-$binaryHash = (Get-FileHash -LiteralPath $binaryDestination -Algorithm SHA256).Hash.ToLowerInvariant()
-$policyHash = (Get-FileHash -LiteralPath $policyDestination -Algorithm SHA256).Hash.ToLowerInvariant()
-$bridgeHash = (Get-FileHash -LiteralPath (Join-Path $pluginDestination 'index.js') -Algorithm SHA256).Hash.ToLowerInvariant()
-$packageHash = (Get-FileHash -LiteralPath (Join-Path $pluginDestination 'package.json') -Algorithm SHA256).Hash.ToLowerInvariant()
-@("$binaryHash  daguard", "$policyHash  policy.json", "$bridgeHash  opencode/index.js", "$packageHash  opencode/package.json") | Set-Content -LiteralPath $manifestDestination -Encoding ascii
-
-if ($Scope -eq 'Machine' -and -not $DestinationRoot) {
-    Set-MachineAcl $layout.Bin
-    Set-MachineAcl $layout.Config
-}
-
-& $binaryDestination doctor --policy $policyDestination --integrity-manifest $manifestDestination | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    throw 'Installed guard diagnostics failed.'
+# Prepare everything and snapshot the existing installation before replacement.
+$transaction = Join-Path $layout.Config ('.install-' + [Guid]::NewGuid().ToString('N'))
+$stage = Join-Path $transaction 'stage'
+$backups = Join-Path $transaction 'backups'
+$destinations = @($binaryDestination, $policyDestination, $releaseDestination, $manifestDestination, $pluginDestination)
+$snapshots = @()
+$mutated = $false
+$committed = $false
+try {
+    New-Item -ItemType Directory -Path $stage, $backups -Force | Out-Null
+    $stageBinary = Join-Path $stage 'daguard.exe'
+    $stagePolicy = Join-Path $stage 'policy.json'
+    $stageRelease = Join-Path $stage 'release.json'
+    $stageManifest = Join-Path $stage 'SHA256SUMS'
+    $stagePlugin = Join-Path $stage 'opencode'
+    Copy-Item -LiteralPath $binarySource -Destination $stageBinary
+    Copy-Item -LiteralPath (Join-Path $Bundle 'release.json') -Destination $stageRelease
+    Copy-Item -LiteralPath (Join-Path $Bundle 'integrations\opencode') -Destination $stagePlugin -Recurse
+    if (-not $ReplacePolicy -and (Test-Path -LiteralPath $policyDestination)) {
+        Copy-Item -LiteralPath $policyDestination -Destination $stagePolicy
+    } else {
+        Copy-Item -LiteralPath $policySource -Destination $stagePolicy
+    }
+    & $stageBinary policy lint $stagePolicy | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Preserved or replacement policy is invalid.' }
+    $binaryHash = (Get-FileHash -LiteralPath $stageBinary -Algorithm SHA256).Hash.ToLowerInvariant()
+    $policyHash = (Get-FileHash -LiteralPath $stagePolicy -Algorithm SHA256).Hash.ToLowerInvariant()
+    $bridgeHash = (Get-FileHash -LiteralPath (Join-Path $stagePlugin 'index.js') -Algorithm SHA256).Hash.ToLowerInvariant()
+    $packageHash = (Get-FileHash -LiteralPath (Join-Path $stagePlugin 'package.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+    @("$binaryHash  daguard", "$policyHash  policy.json", "$bridgeHash  opencode/index.js", "$packageHash  opencode/package.json") | Set-Content -LiteralPath $stageManifest -Encoding ascii
+    for ($index = 0; $index -lt $destinations.Count; $index++) {
+        $destination = $destinations[$index]
+        $backup = Join-Path $backups $index
+        $exists = Test-Path -LiteralPath $destination
+        $acl = $null
+        if ($exists) {
+            $acl = Get-Acl -LiteralPath $destination
+            Copy-Item -LiteralPath $destination -Destination $backup -Recurse
+        }
+        $snapshots += @{ Destination = $destination; Backup = $backup; Exists = $exists; Acl = $acl }
+    }
+    $mutated = $true
+    $sources = @($stageBinary, $stagePolicy, $stageRelease, $stageManifest, $stagePlugin)
+    for ($index = 0; $index -lt $destinations.Count; $index++) {
+        $destination = $destinations[$index]
+        if (Test-Path -LiteralPath $destination) { Remove-Item -LiteralPath $destination -Recurse -Force }
+        Copy-Item -LiteralPath $sources[$index] -Destination $destination -Recurse
+    }
+    if ($Scope -eq 'Machine' -and -not $DestinationRoot) {
+        Set-MachineAcl $layout.Bin
+        Set-MachineAcl $layout.Config
+        Set-MachineAcl $layout.Share
+    }
+    & $binaryDestination doctor --policy $policyDestination --integrity-manifest $manifestDestination | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Installed guard diagnostics failed.' }
+    $committed = $true
+} finally {
+    if ($mutated -and -not $committed) {
+        foreach ($snapshot in $snapshots) {
+            if (Test-Path -LiteralPath $snapshot.Destination) {
+                Remove-Item -LiteralPath $snapshot.Destination -Recurse -Force
+            }
+            if ($snapshot.Exists) {
+                Copy-Item -LiteralPath $snapshot.Backup -Destination $snapshot.Destination -Recurse
+                Set-Acl -LiteralPath $snapshot.Destination -AclObject $snapshot.Acl
+            }
+        }
+    }
+    Remove-Item -LiteralPath $transaction -Recurse -Force -ErrorAction SilentlyContinue
 }
 Write-Output "Installed daguard to $binaryDestination"
 if ($Scope -eq 'CurrentUser') {

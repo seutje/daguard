@@ -78,11 +78,13 @@ install -m 0644 "$sbom" "$bundle/inventory/sbom.cdx.json"
 install -m 0644 "$dependencies" "$bundle/inventory/dependencies.json"
 install -m 0644 "$licenses" "$bundle/inventory/licenses.json"
 install -m 0644 LICENSE "$bundle/LICENSE"
+install -m 0644 SECURITY.md "$bundle/SECURITY.md"
+install -m 0644 docs/operations/result-containment.md "$bundle/docs/operations/result-containment.md"
 printf '{"schema":1,"version":"%s","target":"%s"}\n' "$version" "$target" > "$bundle/release.json"
 
 (
     cd "$bundle"
-    find . -type f ! -name SHA256SUMS | LC_ALL=C sort | while IFS= read -r path; do
+    find . -type f ! -path ./SHA256SUMS | LC_ALL=C sort | while IFS= read -r path; do
         printf '%s  %s\n' "$(hash_file "$path")" "$path"
     done > SHA256SUMS
 )

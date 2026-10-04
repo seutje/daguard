@@ -35,6 +35,8 @@ policy=$prefix/config/daguard/policy.json
 [ -f "$prefix/share/daguard/opencode/index.js" ]
 [ -f "$bundle/docs/operations/rollout.md" ]
 [ -f "$bundle/docs/operations/rules.md" ]
+[ -f "$bundle/docs/operations/result-containment.md" ]
+[ -f "$bundle/SECURITY.md" ]
 [ "$(file_mode "$binary")" = 755 ]
 [ "$(file_mode "$policy")" = 600 ]
 expected_target=$(sed -n 's/.*"target":"\([^"]*\)".*/\1/p' "$bundle/release.json")
@@ -137,6 +139,25 @@ if "$tampered/install.sh" --user --bundle "$tampered" --user-prefix "$prefix"; t
 fi
 after=$(hash_file "$binary")
 [ "$before" = "$after" ]
+
+# Incomplete inventories, injected files, path escapes and symlinks are rejected
+# before replacement, even when every listed checksum itself is valid.
+for variant in omitted injected escaped symlink; do
+    candidate=$work/$variant
+    cp -R "$bundle" "$candidate"
+    case "$variant" in
+        omitted) awk '$NF != "./integrations/opencode/index.js"' "$candidate/SHA256SUMS" > "$work/manifest"; mv "$work/manifest" "$candidate/SHA256SUMS" ;;
+        injected) printf 'unlisted' > "$candidate/unlisted.js" ;;
+        escaped) printf '%s  ../outside\n' "$(hash_file "$bundle/daguard")" >> "$candidate/SHA256SUMS" ;;
+        symlink) ln -s "$bundle/daguard" "$candidate/alias" ;;
+    esac
+    if "$candidate/install.sh" --user --bundle "$candidate" --user-prefix "$prefix" > "$work/rejected.log" 2>&1; then
+        echo "incomplete/unsafe release inventory unexpectedly installed" >&2
+        exit 1
+    fi
+    [ "$before" = "$(hash_file "$binary")" ]
+    [ -z "$(find "$prefix" -name '.rollback.*' -print)" ]
+done
 
 # A normal upgrade preserves the installed organization policy by default.
 policy_before=$(hash_file "$policy")
