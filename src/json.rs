@@ -20,7 +20,7 @@ pub(crate) fn preflight(bytes: &[u8], max_bytes: usize) -> Result<(), serde_json
     BoundedValue {
         depth: 0,
         nodes: &mut nodes,
-        max_nodes: max_bytes / 16,
+        max_nodes: (max_bytes / 16).min(8192),
     }
     .deserialize(&mut parser)?;
     parser.end()

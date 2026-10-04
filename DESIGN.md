@@ -3391,3 +3391,14 @@ MCP blob-bearing objects, including embedded resource.blob and resource/read
 contents, are blocked regardless of absent, textual or JSON MIME claims. Text
 resources remain scanable. No base64 decoding or binary content guarantee is
 claimed by the v1 text scanner.
+
+Scanner resource enforcement uses single-pass table traversal, stops detector
+passes on overflow, propagates one cooperative deadline across nested JSON, and
+checks long financial/prefix loops during scanning. Before allocation it bounds
+lines to 16,384, delimiters per line to 4,096 and JSON values to 8,192. Token-prefix
+scans advance beyond consumed tokens instead of rescanning their suffixes.
+The 32 MiB working-memory target is supported by bounded structures, not an OS
+allocation sandbox. Optimized local synthetic probes measured 3,772 KiB RSS for
+15,000 repeated table rows, 8,104 KiB for a 1 MiB ANSI-heavy result and 4,812 KiB
+for 7,000 JSON fields, all within 0.02 seconds. These measurements are host
+evidence, not a universal hardware guarantee; deadlines remain cooperative.

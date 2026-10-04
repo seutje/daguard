@@ -1536,7 +1536,7 @@ Keep these unchecked unless the scope is intentionally expanded.
 - [x] A13: Classified JSON objects can retain sensitive keys.
 - [x] A14: Incomplete private keys and multiline assignments are released.
 - [x] A15: MCP blob resources bypass binary blocking when MIME metadata is absent or textual.
-- [ ] A16: Scanner runtime is measured after work rather than bounded during work.
+- [x] A16: Scanner runtime is measured after work rather than bounded during work.
 - [ ] A17: Guarded execution timeout does not bound pipe draining.
 - [ ] A18: MCP scanning does not preserve protocol metadata or full lifecycle behavior.
 - [ ] A19: Release publication is independent of required security checks.

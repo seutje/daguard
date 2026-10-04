@@ -10,6 +10,8 @@ once releases begin.
 
 ### Fixed
 
+- Bound scanner work during processing and remove quadratic table/token scans.
+
 - Block MCP blob resources regardless of MIME metadata.
 
 - Contain truncated private keys and multiline sensitive assignments.

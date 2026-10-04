@@ -45,8 +45,27 @@ pub(crate) fn inspect(bytes: &[u8], config: &ScanConfig) -> ResultDecision {
             "The protected result was not valid UTF-8 and could not be inspected safely.",
         );
     };
+    if text
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .take(16_385)
+        .count()
+        > 16_384
+        || text.lines().any(|line| {
+            line.bytes()
+                .filter(|byte| matches!(byte, b'|' | b'\t'))
+                .take(4097)
+                .count()
+                > 4096
+        })
+    {
+        return ResultDecision::block(
+            "result.structure_limit",
+            "The protected result exceeded structural work limits.",
+        );
+    }
     if looks_like_json(text) {
-        match sanitize_json(text, config) {
+        match sanitize_json(text, config, started) {
             Ok(Some((sanitized, findings))) => {
                 return within_budget(started, ResultDecision::sanitize(sanitized, findings));
             }
@@ -59,11 +78,13 @@ pub(crate) fn inspect(bytes: &[u8], config: &ScanConfig) -> ResultDecision {
             }
         }
     }
-    let ranges = detect(text, config);
+    let ranges = detect(text, config, started);
     if finding_limit_exceeded(&ranges) {
         return ResultDecision::block(
-            "result.finding_limit",
-            "The protected result exceeded the maximum finding count.",
+            ranges
+                .first()
+                .map_or("result.finding_limit", |range| range.detector_id),
+            "The protected result exceeded scanner work limits.",
         );
     }
     if ranges.is_empty() {
@@ -95,13 +116,32 @@ pub(crate) fn inspect_sensitive_source(bytes: &[u8], config: &ScanConfig) -> Res
             "The protected result was not valid UTF-8 and could not be inspected safely.",
         );
     };
+    if text
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .take(16_385)
+        .count()
+        > 16_384
+        || text.lines().any(|line| {
+            line.bytes()
+                .filter(|byte| matches!(byte, b'|' | b'\t'))
+                .take(4097)
+                .count()
+                > 4096
+        })
+    {
+        return ResultDecision::block(
+            "result.structure_limit",
+            "The protected result exceeded structural work limits.",
+        );
+    }
     if text.trim().is_empty() {
         return ResultDecision::allow(text.to_owned());
     }
     let result = if looks_like_json(text) {
-        sanitize_sensitive_json(text, config)
+        sanitize_sensitive_json(text, config, started)
     } else {
-        sanitize_sensitive_table(text, config)
+        sanitize_sensitive_table(text, config, started)
     };
     match result {
         Ok(Some((content, findings))) => {
@@ -118,12 +158,13 @@ pub(crate) fn inspect_sensitive_source(bytes: &[u8], config: &ScanConfig) -> Res
 fn sanitize_sensitive_json(
     text: &str,
     config: &ScanConfig,
+    started: Instant,
 ) -> Result<Option<(String, Vec<Finding>)>, ()> {
     crate::json::preflight(text.as_bytes(), MAX_SCAN_BYTES).map_err(|_| ())?;
     let mut value: Value = serde_json::from_str(text).map_err(|_| ())?;
     let mut findings = Vec::new();
-    sanitize_value(&mut value, None, config, &mut findings)?;
-    sanitize_all_values(&mut value, &mut findings)?;
+    sanitize_value(&mut value, None, config, &mut findings, started)?;
+    sanitize_all_values(&mut value, &mut findings, started)?;
     if findings.is_empty() {
         return Ok(None);
     }
@@ -133,18 +174,24 @@ fn sanitize_sensitive_json(
     )))
 }
 
-fn sanitize_all_values(value: &mut Value, findings: &mut Vec<Finding>) -> Result<(), ()> {
+fn sanitize_all_values(
+    value: &mut Value,
+    findings: &mut Vec<Finding>,
+    started: Instant,
+) -> Result<(), ()> {
     sanitize_classified_value(
         value,
         SensitivityCategory::UnknownSensitive,
         "source.sensitive_value",
         findings,
+        started,
     )
 }
 
 fn sanitize_sensitive_table(
     text: &str,
     config: &ScanConfig,
+    started: Instant,
 ) -> Result<Option<(String, Vec<Finding>)>, ()> {
     let lines = lines_with_offsets(text);
     let Some((header_index, delimiter)) =
@@ -168,7 +215,7 @@ fn sanitize_sensitive_table(
     if !has_header_separator {
         return Err(());
     }
-    let mut ranges = detect(text, config);
+    let mut ranges = detect(text, config, started);
     for (index, (offset, line)) in lines.iter().copied().enumerate() {
         if index == header_index || line.trim().is_empty() || table_separator(line) {
             continue;
@@ -224,11 +271,15 @@ fn looks_like_json(text: &str) -> bool {
     matches!(text.trim_start().as_bytes().first(), Some(b'{' | b'['))
 }
 
-fn sanitize_json(text: &str, config: &ScanConfig) -> Result<Option<(String, Vec<Finding>)>, ()> {
+fn sanitize_json(
+    text: &str,
+    config: &ScanConfig,
+    started: Instant,
+) -> Result<Option<(String, Vec<Finding>)>, ()> {
     crate::json::preflight(text.as_bytes(), MAX_SCAN_BYTES).map_err(|_| ())?;
     let mut value: Value = serde_json::from_str(text).map_err(|_| ())?;
     let mut findings = Vec::new();
-    sanitize_value(&mut value, None, config, &mut findings)?;
+    sanitize_value(&mut value, None, config, &mut findings, started)?;
     if findings.is_empty() {
         return Ok(None);
     }
@@ -241,16 +292,17 @@ fn sanitize_value(
     key: Option<&str>,
     config: &ScanConfig,
     findings: &mut Vec<Finding>,
+    started: Instant,
 ) -> Result<(), ()> {
-    if findings.len() > MAX_FINDINGS {
+    if findings.len() > MAX_FINDINGS || started.elapsed() > MAX_SCAN_DURATION {
         return Err(());
     }
     if let Some((category, detector_id)) = key.and_then(|key| field_category(key, config)) {
-        return sanitize_classified_value(value, category, detector_id, findings);
+        return sanitize_classified_value(value, category, detector_id, findings, started);
     }
     match value {
         Value::String(text) => {
-            let ranges = merge_ranges(detect(text, config));
+            let ranges = merge_ranges(detect(text, config, started));
             if finding_limit_exceeded(&ranges) {
                 return Err(());
             }
@@ -264,13 +316,13 @@ fn sanitize_value(
         }
         Value::Array(values) => {
             for value in values {
-                sanitize_value(value, key, config, findings)?;
+                sanitize_value(value, key, config, findings, started)?;
             }
         }
         Value::Object(values) => {
             let original = std::mem::take(values);
             for (key, mut value) in original {
-                let key_ranges = merge_ranges(detect(&key, config));
+                let key_ranges = merge_ranges(detect(&key, config, started));
                 if finding_limit_exceeded(&key_ranges) {
                     return Err(());
                 }
@@ -279,7 +331,7 @@ fn sanitize_value(
                     return Err(());
                 }
                 let safe_key = redact(&key, &key_ranges);
-                sanitize_value(&mut value, Some(&key), config, findings)?;
+                sanitize_value(&mut value, Some(&key), config, findings, started)?;
                 if values.insert(safe_key, value).is_some() {
                     return Err(());
                 }
@@ -295,11 +347,15 @@ fn sanitize_classified_value(
     category: SensitivityCategory,
     detector_id: &'static str,
     findings: &mut Vec<Finding>,
+    started: Instant,
 ) -> Result<(), ()> {
+    if started.elapsed() > MAX_SCAN_DURATION {
+        return Err(());
+    }
     match value {
         Value::Array(values) => {
             for value in values {
-                sanitize_classified_value(value, category, detector_id, findings)?;
+                sanitize_classified_value(value, category, detector_id, findings, started)?;
             }
         }
         Value::Object(values) => {
@@ -316,7 +372,7 @@ fn sanitize_classified_value(
                     confidence: Confidence::High,
                 });
                 let safe_key = format!("{}:key{index}", placeholder(category));
-                sanitize_classified_value(&mut value, category, detector_id, findings)?;
+                sanitize_classified_value(&mut value, category, detector_id, findings, started)?;
                 if values.insert(safe_key, value).is_some() {
                     return Err(());
                 }
@@ -343,7 +399,7 @@ fn sanitize_classified_value(
 fn finding_limit_exceeded(ranges: &[Range]) -> bool {
     ranges
         .iter()
-        .any(|range| range.detector_id == "result.finding_limit")
+        .any(|range| range.detector_id.starts_with("result."))
 }
 
 fn value_length(value: &Value) -> usize {
@@ -453,21 +509,54 @@ fn contains_word(value: &str, words: &[&str]) -> bool {
     })
 }
 
-fn detect(text: &str, config: &ScanConfig) -> Vec<Range> {
+fn detect(text: &str, config: &ScanConfig, started: Instant) -> Vec<Range> {
     let (plain, offsets) = without_ansi(text);
     let mut ranges = Vec::new();
     detect_private_keys(&plain, &mut ranges);
+    if finding_limit_exceeded(&ranges) || scan_stopped(&mut ranges, started, text.len()) {
+        return ranges;
+    }
     detect_assignments(&plain, config, &mut ranges);
-    detect_tables(&plain, config, &mut ranges);
+    if finding_limit_exceeded(&ranges) || scan_stopped(&mut ranges, started, text.len()) {
+        return ranges;
+    }
+    detect_tables(&plain, config, &mut ranges, started);
+    if finding_limit_exceeded(&ranges) || scan_stopped(&mut ranges, started, text.len()) {
+        return ranges;
+    }
     detect_authorization(&plain, &mut ranges);
+    if finding_limit_exceeded(&ranges) || scan_stopped(&mut ranges, started, text.len()) {
+        return ranges;
+    }
     detect_database_urls(&plain, &mut ranges);
-    detect_prefixed_tokens(&plain, config, &mut ranges);
+    if finding_limit_exceeded(&ranges) || scan_stopped(&mut ranges, started, text.len()) {
+        return ranges;
+    }
+    detect_prefixed_tokens(&plain, config, &mut ranges, started);
+    if finding_limit_exceeded(&ranges) || scan_stopped(&mut ranges, started, text.len()) {
+        return ranges;
+    }
     detect_jwts(&plain, &mut ranges);
+    if finding_limit_exceeded(&ranges) || scan_stopped(&mut ranges, started, text.len()) {
+        return ranges;
+    }
     detect_emails(&plain, &mut ranges);
+    if finding_limit_exceeded(&ranges) || scan_stopped(&mut ranges, started, text.len()) {
+        return ranges;
+    }
     detect_context_values(&plain, &mut ranges);
-    detect_cards_and_ibans(&plain, &mut ranges);
+    if finding_limit_exceeded(&ranges) || scan_stopped(&mut ranges, started, text.len()) {
+        return ranges;
+    }
+    detect_cards_and_ibans(&plain, &mut ranges, started);
+    if finding_limit_exceeded(&ranges) || scan_stopped(&mut ranges, started, text.len()) {
+        return ranges;
+    }
     if config.ip_addresses_are_personal {
         detect_ip_addresses(&plain, &mut ranges);
+        if finding_limit_exceeded(&ranges) || scan_stopped(&mut ranges, started, text.len()) {
+            return ranges;
+        }
     }
     ranges.truncate(MAX_FINDINGS + 1);
     if ranges.len() > MAX_FINDINGS {
@@ -478,6 +567,9 @@ fn detect(text: &str, config: &ScanConfig) -> Vec<Range> {
             category: SensitivityCategory::UnknownSensitive,
             confidence: Confidence::High,
         }];
+    }
+    if offsets.is_empty() {
+        return ranges;
     }
     for range in &mut ranges {
         range.start = offsets.get(range.start).copied().unwrap_or(range.start);
@@ -493,6 +585,9 @@ fn detect(text: &str, config: &ScanConfig) -> Vec<Range> {
 }
 
 fn without_ansi(text: &str) -> (String, Vec<usize>) {
+    if !text.contains('\u{1b}') {
+        return (text.to_owned(), Vec::new());
+    }
     let bytes = text.as_bytes();
     let mut plain = Vec::with_capacity(bytes.len());
     let mut offsets = Vec::with_capacity(bytes.len());
@@ -609,9 +704,15 @@ fn detect_assignments(text: &str, config: &ScanConfig, ranges: &mut Vec<Range>) 
     }
 }
 
-fn detect_tables(text: &str, config: &ScanConfig, ranges: &mut Vec<Range>) {
+fn detect_tables(text: &str, config: &ScanConfig, ranges: &mut Vec<Range>, started: Instant) {
     let lines = lines_with_offsets(text);
-    for (header_index, (header_offset, header)) in lines.iter().copied().enumerate() {
+    let mut index = 0;
+    while index < lines.len() {
+        if scan_stopped(ranges, started, text.len()) {
+            return;
+        }
+        let (offset, header) = lines[index];
+        index += 1;
         let delimiter = if header.contains('|') {
             b'|'
         } else if header.contains('\t') {
@@ -619,7 +720,7 @@ fn detect_tables(text: &str, config: &ScanConfig, ranges: &mut Vec<Range>) {
         } else {
             continue;
         };
-        let headers = delimited_cells(header_offset, header, delimiter);
+        let headers = delimited_cells(offset, header, delimiter);
         if headers.len() < 2 {
             continue;
         }
@@ -630,8 +731,13 @@ fn detect_tables(text: &str, config: &ScanConfig, ranges: &mut Vec<Range>) {
         if sensitive.iter().all(Option::is_none) {
             continue;
         }
-        for (row_offset, row) in lines.iter().copied().skip(header_index + 1) {
+        while index < lines.len() {
+            if scan_stopped(ranges, started, text.len()) {
+                return;
+            }
+            let (row_offset, row) = lines[index];
             if table_separator(row) {
+                index += 1;
                 continue;
             }
             if !row.as_bytes().contains(&delimiter) {
@@ -641,26 +747,42 @@ fn detect_tables(text: &str, config: &ScanConfig, ranges: &mut Vec<Range>) {
             if headers.len() != values.len() {
                 break;
             }
+            index += 1;
             for ((start, end, value), classification) in values.into_iter().zip(&sensitive) {
-                let Some((category, detector_id)) = classification else {
-                    continue;
-                };
-                if value.trim().is_empty() {
-                    continue;
+                if let Some((category, detector_id)) = classification {
+                    let leading = value.len() - value.trim_start().len();
+                    let trailing = value.trim_end().len();
+                    push_range(
+                        ranges,
+                        start + leading,
+                        start + trailing.min(end - start),
+                        detector_id,
+                        *category,
+                        Confidence::High,
+                    );
                 }
-                let leading = value.len() - value.trim_start().len();
-                let trailing = value.trim_end().len();
-                push_range(
-                    ranges,
-                    start + leading,
-                    start + trailing.min(end - start),
-                    detector_id,
-                    *category,
-                    Confidence::High,
-                );
             }
         }
     }
+}
+
+fn scan_stopped(ranges: &mut Vec<Range>, started: Instant, length: usize) -> bool {
+    let rule = if ranges.len() > MAX_FINDINGS {
+        "result.finding_limit"
+    } else if started.elapsed() > MAX_SCAN_DURATION {
+        "result.scan_timeout"
+    } else {
+        return false;
+    };
+    ranges.clear();
+    ranges.push(Range {
+        start: 0,
+        end: length,
+        detector_id: rule,
+        category: SensitivityCategory::UnknownSensitive,
+        confidence: Confidence::High,
+    });
+    true
 }
 
 fn table_separator(line: &str) -> bool {
@@ -731,7 +853,7 @@ fn case_insensitive_values(text: &str, keys: &[&str]) -> Vec<(usize, usize)> {
                     return values;
                 }
             }
-            from = key_start + key.len();
+            from = end.max(key_start + key.len());
         }
     }
     values
@@ -764,7 +886,12 @@ fn detect_database_urls(text: &str, ranges: &mut Vec<Range>) {
     }
 }
 
-fn detect_prefixed_tokens(text: &str, config: &ScanConfig, ranges: &mut Vec<Range>) {
+fn detect_prefixed_tokens(
+    text: &str,
+    config: &ScanConfig,
+    ranges: &mut Vec<Range>,
+    started: Instant,
+) {
     let built_in = [
         ("ghp_", 36, "secret.github_token"),
         ("gho_", 36, "secret.github_token"),
@@ -787,9 +914,15 @@ fn detect_prefixed_tokens(text: &str, config: &ScanConfig, ranges: &mut Vec<Rang
         ("ya29.", 20, "secret.oauth_token"),
     ];
     for (prefix, minimum, detector) in built_in {
+        if scan_stopped(ranges, started, text.len()) {
+            return;
+        }
         find_prefixed(text, prefix, minimum, detector, ranges);
     }
     for prefix in &config.secret_prefixes {
+        if scan_stopped(ranges, started, text.len()) {
+            return;
+        }
         find_prefixed(
             text,
             prefix,
@@ -821,7 +954,7 @@ fn find_prefixed(
                 Confidence::High,
             );
         }
-        from = start + prefix.len();
+        from = end.max(start + prefix.len());
     }
 }
 
@@ -914,7 +1047,7 @@ fn detect_context_values(text: &str, ranges: &mut Vec<Range>) {
     }
 }
 
-fn detect_cards_and_ibans(text: &str, ranges: &mut Vec<Range>) {
+fn detect_cards_and_ibans(text: &str, ranges: &mut Vec<Range>, started: Instant) {
     for (start, end) in span_tokens(text, |byte| {
         byte.is_ascii_digit() || matches!(byte, b' ' | b'-')
     }) {
@@ -941,6 +1074,9 @@ fn detect_cards_and_ibans(text: &str, ranges: &mut Vec<Range>) {
     }
     let bytes = text.as_bytes();
     for start in 0..bytes.len().saturating_sub(3) {
+        if start % 1024 == 0 && scan_stopped(ranges, started, text.len()) {
+            return;
+        }
         if start > 0 && bytes[start - 1].is_ascii_alphanumeric() {
             continue;
         }
@@ -1149,6 +1285,37 @@ fn redact(text: &str, ranges: &[Range]) -> String {
 mod tests {
     use super::{ScanConfig, inspect, inspect_sensitive_source};
     use crate::model::ResultEffect;
+
+    #[test]
+    fn a16_deadline_and_structure_fail_closed() {
+        let expired = std::time::Instant::now()
+            .checked_sub(super::MAX_SCAN_DURATION + std::time::Duration::from_millis(1))
+            .unwrap();
+        assert!(
+            super::sanitize_json(r#"{"safe":"ordinary"}"#, &ScanConfig::default(), expired)
+                .is_err()
+        );
+        for input in [
+            "safe\n".repeat(16_385),
+            "|".repeat(4097),
+            format!("[{}0]", "0,".repeat(8192)),
+        ] {
+            assert_eq!(
+                inspect(input.as_bytes(), &ScanConfig::default()).decision,
+                ResultEffect::Block
+            );
+        }
+    }
+
+    #[test]
+    fn a16_repeated_sensitive_headers_have_bounded_work() {
+        let input = "password|safe\n".repeat(15_000);
+        let started = std::time::Instant::now();
+        let decision = inspect(input.as_bytes(), &ScanConfig::default());
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        assert_eq!(decision.decision, ResultEffect::Block);
+        assert!(decision.content.is_none());
+    }
 
     #[test]
     fn a14_incomplete_envelopes_and_multiline_assignments() {
