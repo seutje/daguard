@@ -10,6 +10,8 @@ once releases begin.
 
 ### Fixed
 
+- Share transparent execution-wrapper analysis across policy and taint controls.
+
 - Reject unsupported shell expansion and grouping; retain empty arguments.
 
 - Apply effective shell and Cursor tool working directories to protected paths.

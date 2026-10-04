@@ -250,17 +250,9 @@ fn collect_argv_sources(
     paths: &mut Vec<String>,
     queries: &mut Vec<String>,
 ) {
-    let mut words = words;
-    while let Some((first, rest)) = words.split_first() {
-        let name = first.rsplit('/').next().unwrap_or(first);
-        if matches!(name, "env" | "command")
-            || (words.len() > 1 && (first.starts_with('-') || first.contains('=')))
-        {
-            words = rest;
-        } else {
-            break;
-        }
-    }
+    let Ok(words) = shell::normalize_argv(words) else {
+        return;
+    };
     let Some((program, args)) = words.split_first() else {
         return;
     };

@@ -54,3 +54,17 @@ fn a02_shell_uncertainty() {
         ("echo 'literal $text * [x]'", "allow"),
     ]);
 }
+
+#[test]
+fn a03_transparent_wrappers() {
+    cases(&[
+        ("timeout 5 cat .env", "deny"),
+        ("busybox cat .env", "deny"),
+        ("env -C web/sites/default cat settings.php", "deny"),
+        ("env --split-string='cat .env'", "deny"),
+        ("nice -n 5 timeout --signal TERM 5 cat .env", "deny"),
+        ("timeout 5 git status", "allow"),
+        ("env -i NAME=value command git diff", "allow"),
+        ("busybox cat web/modules/custom/example.php", "allow"),
+    ]);
+}

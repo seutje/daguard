@@ -3299,3 +3299,9 @@ The accepted shell subset retains empty quoted arguments and literal quoted
 metacharacters. Unquoted variable, wildcard, tilde, brace and grouping syntax,
 and shell control programs, are denied rather than interpreted as literal paths.
 Quote wildcard search expressions when they are intended as literal tool input.
+
+Transparent `env`, `command`, `timeout`, `nice`, `nohup`, `setsid`, `stdbuf`
+and BusyBox wrappers share bounded option normalization across policy, source
+and sink analysis. Unsupported wrapper options (including env cwd/split-string)
+and opaque eval/xargs/exec wrappers fail closed. Ordinary project executables
+remain trusted opaque code: lexical analysis cannot establish their behavior.

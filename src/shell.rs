@@ -185,6 +185,85 @@ pub(crate) fn segments(tokens: &[Token]) -> Vec<&[Token]> {
     result
 }
 
+/// Normalize transparent execution wrappers without executing them.
+pub(crate) fn normalize_argv<'a>(mut words: &'a [&'a str]) -> Result<&'a [&'a str], ShellError> {
+    for _ in 0..8 {
+        while words.first().is_some_and(|word| is_assignment(word)) {
+            words = &words[1..];
+        }
+        let Some((program, args)) = words.split_first() else {
+            return Ok(words);
+        };
+        let program = program.rsplit('/').next().unwrap_or(program);
+        let skip = match program {
+            "env" => wrapper_options(
+                args,
+                &["-i", "--ignore-environment", "-0", "--null"],
+                &["-u", "--unset"],
+            )?,
+            "command" => wrapper_options(args, &["-p"], &[])?,
+            "timeout" => {
+                wrapper_options(
+                    args,
+                    &["--foreground", "--preserve-status", "-v", "--verbose"],
+                    &["-s", "--signal", "-k", "--kill-after"],
+                )? + 1
+            }
+            "nice" => wrapper_options(args, &[], &["-n", "--adjustment"])?,
+            "nohup" | "setsid" => wrapper_options(args, &["-f", "--fork", "-w", "--wait"], &[])?,
+            "stdbuf" => wrapper_options(
+                args,
+                &[],
+                &["-i", "-o", "-e", "--input", "--output", "--error"],
+            )?,
+            "busybox" => 0,
+            "xargs" | "eval" | "exec" => {
+                return Err(ShellError::Unsupported("opaque execution wrapper"));
+            }
+            _ => return Ok(words),
+        };
+        words = args
+            .get(skip..)
+            .filter(|rest| !rest.is_empty())
+            .ok_or(ShellError::Unsupported("missing wrapped command"))?;
+    }
+    Err(ShellError::Limit)
+}
+
+fn is_assignment(word: &str) -> bool {
+    word.split_once('=').is_some_and(|(name, _)| {
+        !name.is_empty()
+            && name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    })
+}
+
+fn wrapper_options(args: &[&str], flags: &[&str], values: &[&str]) -> Result<usize, ShellError> {
+    let mut index = 0;
+    while let Some(arg) = args.get(index) {
+        if *arg == "--" {
+            return Ok(index + 1);
+        }
+        if !arg.starts_with('-') {
+            return Ok(index);
+        }
+        if flags.contains(arg) {
+            index += 1;
+        } else if values.contains(arg) && args.get(index + 1).is_some() {
+            index += 2;
+        } else if values.iter().any(|flag| {
+            arg.starts_with(&format!("{flag}="))
+                || (flag.len() == 2 && arg.starts_with(flag) && arg.len() > 2)
+        }) {
+            index += 1;
+        } else {
+            return Err(ShellError::Unsupported("wrapper option"));
+        }
+    }
+    Ok(index)
+}
+
 /// Literal `cd DIR && ...` is the only supported directory-changing form.
 /// Other connectors can execute later commands in multiple possible directories.
 pub(crate) fn contextual_segments<'a>(

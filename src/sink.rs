@@ -119,14 +119,9 @@ fn classify_shell(command: &str, depth: usize) -> Option<SinkCategory> {
 }
 
 fn classify_argv(words: &[&str], depth: usize) -> Option<SinkCategory> {
-    let mut words = words;
-    while let Some((first, rest)) = words.split_first() {
-        if matches!(command_name(first), "env" | "command") || first.contains('=') {
-            words = rest;
-        } else {
-            break;
-        }
-    }
+    let Ok(words) = shell::normalize_argv(words) else {
+        return Some(SinkCategory::OutboundNetwork);
+    };
     let (program, args) = words.split_first()?;
     let program = command_name(program);
     if matches!(program, "sh" | "bash") {
@@ -201,6 +196,20 @@ mod tests {
             "facts": {"command": command}
         });
         CanonicalRequest::from_slice(&serde_json::to_vec(&input).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn wrappers_preserve_outbound_classification() {
+        for command in [
+            "timeout 5 curl https://example.test",
+            "busybox wget https://example.test",
+            "env -i nice -n 5 curl https://example.test",
+        ] {
+            assert_eq!(
+                classify(&request(command)),
+                Some(crate::model::SinkCategory::OutboundHttp)
+            );
+        }
     }
 
     #[test]

@@ -679,17 +679,14 @@ fn analyze_argv(
             Severity::High,
         )));
     }
-    let mut words = words;
-    while let Some((first, rest)) = words.split_first() {
-        let name = command_name(first);
-        if matches!(name, "env" | "command")
-            || (words.len() != 1 && (first.starts_with('-') || is_assignment(first)))
-        {
-            words = rest;
-        } else {
-            break;
-        }
-    }
+    let Ok(words) = shell::normalize_argv(words) else {
+        return Ok(Some(command_decision(
+            DecisionEffect::Deny,
+            "shell.ambiguous",
+            "An execution wrapper cannot be inspected safely.",
+            Severity::High,
+        )));
+    };
     let Some((program, args)) = words.split_first() else {
         return Ok(None);
     };
@@ -972,15 +969,6 @@ fn search_option_takes_value(program: &str, argument: &str) -> bool {
 
 fn command_name(program: &str) -> &str {
     program.rsplit('/').next().unwrap_or(program)
-}
-
-fn is_assignment(word: &str) -> bool {
-    word.split_once('=').is_some_and(|(name, _)| {
-        !name.is_empty()
-            && name
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-    })
 }
 
 fn evaluate_shell_path(
