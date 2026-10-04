@@ -29,6 +29,11 @@ The guard uses shared analyzers for shell, DDEV, Drush, SQL, Composer, Git,
 filesystem, network, and MCP operations. Agent adapters only translate native
 payloads, so the same operation receives the same policy decision everywhere.
 
+Filesystem checks are lexical. The supported WSL checkout is on a case-sensitive
+Linux filesystem with reviewed mounts; links and alternate filesystem identities
+need OS isolation. Native Windows rejects recognized ambiguous aliases but is
+still a preview. See [DESIGN.md](DESIGN.md) for the enforcement limits.
+
 ## Install on WSL
 
 The recommended team deployment uses the verified

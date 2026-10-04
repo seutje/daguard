@@ -3592,3 +3592,22 @@ redaction must not remove a JSON delimiter or leave encoded continuations
 uninspected. Quoted but invalid JSON blocks conservatively. Unit regressions
 and the enforcement fuzz oracle require valid delivered JSON and absence of
 synthetic private-key/assignment canaries; ordinary root strings remain allowed.
+
+### Filesystem identity and Windows aliases (audit risk R05)
+
+Native Windows path parsing rejects device/extended namespaces, reserved DOS
+device names (including extensions and superscript port digits), alternate data
+streams, trailing spaces/dots and tilde components that could be short aliases.
+Validation precedes lexical dot-segment reduction, including cwd ancestors.
+Ordinary drive/UNC paths and custom-code navigation remain supported; Linux
+names are not subjected to Win32 filename rules. See [Microsoft naming rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file).
+
+Lexical matching does not establish inode identity. Symlinks, hard links,
+bind mounts, junctions/reparse points and short aliases without recognizable
+syntax remain outside this guarantee. POSIX paths on case-insensitive mounts
+(including some WSL `/mnt` paths and macOS volumes) cannot inherit Linux
+case-sensitive enforcement claims. The supported WSL enforcement deployment
+uses a case-sensitive Linux checkout with reviewed mounts and no alternate
+links to protected content; stronger isolation requires OS controls that deny
+access by identity. Native Windows/macOS filesystem enforcement and mounted
+volume variants still require separate live release evidence.

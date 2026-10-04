@@ -70,6 +70,12 @@ matches policy paths case-insensitively. UNC access through
 `\\wsl.localhost\Distribution\...` and legacy `\\wsl$\Distribution\...` is
 treated as ordinary UNC syntax.
 
+Device/extended namespaces, reserved DOS devices, alternate data streams,
+trailing-dot/space components and tilde names are rejected conservatively.
+This includes cwd components before resolving `..`. Junctions, hard links and
+mount aliases are not resolved by lexical matching. Native filesystem evidence
+and endpoint isolation remain required before claiming an OS access boundary.
+
 The guard deliberately does not translate between Windows and WSL namespaces.
 `/mnt/c/...` remains a POSIX path when the guard runs in WSL; `C:\...` remains a
 Windows path in the native build. Use the binary that runs in the same host

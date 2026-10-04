@@ -14,6 +14,8 @@ once releases begin.
 
 ### Fixed
 
+- Reject ambiguous native Windows device, stream, trailing-dot/space and short-alias paths.
+
 - Preserve valid top-level JSON strings when sanitizing sensitive contents,
   with synthetic leakage regressions and the scanner fuzz validity oracle.
 

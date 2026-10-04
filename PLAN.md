@@ -1571,3 +1571,6 @@ Additional audit risk remediation:
 - [ ] R09 Windows validation: Run staged-install rollback and policy-preservation tests on native Windows CI.
 
 - [x] R10: Compare real WSL/DDEV alias, raw/quoting, flag and cwd behavior with guard decisions; remove implicit cwd assumptions.
+
+- [x] R05: Reject ambiguous Windows lexical aliases and define filesystem-identity support limits.
+- [ ] R05 assurance: Validate native filesystem aliases/mounts and enforce stronger OS identity confinement.

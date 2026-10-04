@@ -109,6 +109,7 @@ fn normalize_windows(cwd: &str, candidate: &str) -> Result<String, PathError> {
             candidate.split('/').map(str::to_owned).collect(),
         )
     };
+    validate_windows_parts(tail.iter().map(String::as_str))?;
     normalize_parts(&mut parts, tail.iter().map(String::as_str));
     let suffix = parts.join("/");
     let normalized = match root {
@@ -137,6 +138,7 @@ fn parse_windows_absolute(path: &str) -> Result<(WindowsRoot, Vec<String>), Path
     let normalized = path.replace('\\', "/");
     let bytes = normalized.as_bytes();
     if bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'/' {
+        validate_windows_parts(normalized[3..].split('/'))?;
         let mut parts = Vec::new();
         normalize_parts(&mut parts, normalized[3..].split('/'));
         return Ok((WindowsRoot::Drive(bytes[0]), parts));
@@ -152,8 +154,11 @@ fn parse_windows_absolute(path: &str) -> Result<(WindowsRoot, Vec<String>), Path
         if matches!(server, "." | "..") || matches!(share, "." | "..") {
             return Err(PathError::Invalid("UNC path has an invalid root"));
         }
+        validate_windows_parts(std::iter::once(server).chain(std::iter::once(share)))?;
+        let components = components.collect::<Vec<_>>();
+        validate_windows_parts(components.iter().copied())?;
         let mut parts = Vec::new();
-        normalize_parts(&mut parts, components);
+        normalize_parts(&mut parts, components.into_iter());
         return Ok((
             WindowsRoot::Unc {
                 server: server.to_owned(),
@@ -163,6 +168,41 @@ fn parse_windows_absolute(path: &str) -> Result<(WindowsRoot, Vec<String>), Path
         ));
     }
     Err(PathError::Invalid("request cwd must be absolute"))
+}
+
+fn validate_windows_parts<'a>(parts: impl Iterator<Item = &'a str>) -> Result<(), PathError> {
+    for part in parts {
+        if matches!(part, "" | "." | "..") {
+            continue;
+        }
+        let stem = part
+            .split('.')
+            .next()
+            .unwrap_or_default()
+            .to_ascii_uppercase();
+        let device = matches!(
+            stem.as_str(),
+            "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+        ) || stem
+            .strip_prefix("COM")
+            .or_else(|| stem.strip_prefix("LPT"))
+            .is_some_and(|suffix| {
+                matches!(
+                    suffix,
+                    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                )
+            });
+        if device
+            || part.ends_with(['.', ' '])
+            || part.contains([':', '<', '>', '"', '|', '?', '*', '~'])
+            || part.chars().any(char::is_control)
+        {
+            return Err(PathError::Invalid(
+                "Windows alias, device or ambiguous component is unsupported",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn normalize_parts<'a>(parts: &mut Vec<String>, source: impl Iterator<Item = &'a str>) {
@@ -375,6 +415,38 @@ mod tests {
         assert!(pattern.matches("C:/Projects/Drupal/WEB/CORE/lib/file.php"));
         assert!(pattern.matches("//SERVER/Share/Drupal/Web/Core/lib/file.php"));
         assert!(!pattern.matches("/srv/drupal/WEB/CORE/lib/file.php"));
+    }
+
+    #[test]
+    fn r05_windows_aliases_and_namespaces_are_rejected() {
+        for candidate in [
+            r"web\sites\default\settings.php.",
+            r"web\sites\default\settings.php ",
+            r"web\sites\default\settings.php::$DATA",
+            r"web\core.\index.php",
+            r"WEB\CORE \index.php",
+            r"\\?\C:\project\web\sites\default\settings.php",
+            r"\\.\C:\project\web\core\index.php",
+            r"web\modules\custom\NUL.txt",
+            r"web\modules\custom\com1.log",
+            r"web\modules\custom\LPT²",
+            r"web\modules\custom\CONOUT$",
+            r"WEB\SITES\DEFAULT\SETTIN~1.PHP",
+        ] {
+            assert!(
+                normalize(r"C:\project", candidate).is_err(),
+                "ambiguous Windows path must fail closed"
+            );
+        }
+        assert!(normalize(r"C:\project.\..\safe", "README.md").is_err());
+        assert_eq!(
+            normalize(r"C:\project", r"web\modules\custom\..\custom\example.php").unwrap(),
+            "C:/project/web/modules/custom/example.php"
+        );
+        assert_eq!(
+            normalize("/workspace/project", "example.php.").unwrap(),
+            "/workspace/project/example.php."
+        );
     }
 
     #[test]
