@@ -619,3 +619,27 @@ fn a14_truncated_secrets_are_contained_on_error_streams() {
     );
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn a17_detached_descendant_cannot_extend_capture_deadline() {
+    let root = temporary_directory("detached-pipe");
+    let script = root.join("synthetic-producer");
+    fs::write(&script, b"#!/bin/sh\nsetsid /bin/sh -c 'printf ready > \"$1/ready\"; /bin/sleep 2' synthetic \"$1\" &\nwhile [ ! -f \"$1/ready\" ]; do /bin/sleep 0.01; done\nexit 0\n").unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+    let started = Instant::now();
+    let output = run(
+        &[
+            "exec",
+            "--timeout-seconds",
+            "1",
+            "--",
+            script.to_str().unwrap(),
+            root.to_str().unwrap(),
+        ],
+        b"",
+    );
+    assert_eq!(output.status.code(), Some(124));
+    assert!(started.elapsed() < Duration::from_millis(1700));
+    assert_eq!(output.stdout, [] as [u8; 0]);
+    fs::remove_dir_all(root).unwrap();
+}

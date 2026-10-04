@@ -10,6 +10,8 @@ once releases begin.
 
 ### Fixed
 
+- Enforce guarded deadlines while draining inherited output pipes.
+
 - Bound scanner work during processing and remove quadratic table/token scans.
 
 - Block MCP blob resources regardless of MIME metadata.

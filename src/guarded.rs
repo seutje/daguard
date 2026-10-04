@@ -78,14 +78,13 @@ pub(crate) fn execute(options: &ExecutionOptions<'_>) -> io::Result<ExecutionRes
         .stderr
         .take()
         .ok_or_else(|| io::Error::other("could not capture child stderr"))?;
-    let stdout_reader = thread::spawn(move || capture(stdout));
-    let stderr_reader = thread::spawn(move || capture(stderr));
-
     let deadline = Instant::now() + options.timeout;
+    let stdout_reader = spawn_capture(stdout, deadline);
+    let stderr_reader = spawn_capture(stderr, deadline);
     let (status, termination) = wait_for_child(&mut child, deadline)?;
-    let stdout = join_capture(stdout_reader)?;
-    let stderr = join_capture(stderr_reader)?;
-    if matches!(termination, Termination::TimedOut) {
+    let stdout = join_capture(&stdout_reader, deadline)?;
+    let stderr = join_capture(&stderr_reader, deadline)?;
+    if matches!(termination, Termination::TimedOut) || stdout.timed_out || stderr.timed_out {
         synthetic_block(
             "result.timeout",
             "Guarded command timed out; output was discarded.",
@@ -106,6 +105,13 @@ pub(crate) fn execute(options: &ExecutionOptions<'_>) -> io::Result<ExecutionRes
         crate::scanner::inspect(&stdout.bytes, options.config)
     };
     let stderr_decision = crate::scanner::inspect(&stderr.bytes, options.config);
+    if Instant::now() >= deadline {
+        synthetic_block(
+            "result.timeout",
+            "Guarded output inspection exceeded the execution deadline.",
+        )?;
+        return Ok(blocked_execution(TIMEOUT_EXIT_CODE, "result.timeout"));
+    }
     let mut classifications = decision_classifications(&stdout_decision);
     classifications.extend(decision_classifications(&stderr_decision));
     if matches!(stdout_decision.decision, ResultEffect::Block)
@@ -171,6 +177,7 @@ fn forward_signal_and_wait(child: &mut ChildGuard, signal: i32) -> io::Result<Ex
     let deadline = Instant::now() + SIGNAL_GRACE;
     loop {
         if let Some(status) = child.try_wait()? {
+            child.terminate_group(libc_signal_kill())?;
             return Ok(status);
         }
         if Instant::now() >= deadline {
@@ -261,7 +268,7 @@ impl ChildGuard {
             }
             return Err(error);
         }
-        self.kill()
+        if self.reaped { Ok(()) } else { self.kill() }
     }
 
     pub(crate) fn wait(&mut self) -> io::Result<ExitStatus> {
@@ -283,14 +290,58 @@ impl Drop for ChildGuard {
 struct Capture {
     bytes: Vec<u8>,
     oversized: bool,
+    timed_out: bool,
 }
 
-fn capture(mut reader: impl Read) -> io::Result<Capture> {
+#[cfg(unix)]
+fn spawn_capture(
+    reader: impl Read + std::os::fd::AsRawFd + Send + 'static,
+    deadline: Instant,
+) -> std::sync::mpsc::Receiver<io::Result<Capture>> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        let fd = reader.as_raw_fd();
+        let _ = sender.send(capture(reader, || {
+            crate::platform::read_ready(fd, deadline)
+        }));
+    });
+    receiver
+}
+
+#[cfg(not(unix))]
+fn spawn_capture(
+    reader: impl Read + Send + 'static,
+    _deadline: Instant,
+) -> std::sync::mpsc::Receiver<io::Result<Capture>> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        let _ = sender.send(capture(reader, || Ok(())));
+    });
+    receiver
+}
+
+fn capture(
+    mut reader: impl Read,
+    mut ready: impl FnMut() -> io::Result<()>,
+) -> io::Result<Capture> {
     let mut bytes = Vec::with_capacity(16 * 1024);
     let mut oversized = false;
     let mut buffer = [0_u8; 8192];
     loop {
-        let count = reader.read(&mut buffer)?;
+        if let Err(error) = ready() {
+            if error.kind() == io::ErrorKind::TimedOut {
+                return Ok(Capture {
+                    bytes: Vec::new(),
+                    oversized,
+                    timed_out: true,
+                });
+            }
+            return Err(error);
+        }
+        let count = match reader.read(&mut buffer) {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            result => result?,
+        };
         if count == 0 {
             break;
         }
@@ -301,14 +352,32 @@ fn capture(mut reader: impl Read) -> io::Result<Capture> {
         } else if !oversized {
             bytes.extend_from_slice(&buffer[..count]);
         }
+        if oversized {
+            break;
+        } // Do not drain unlimited producer output.
     }
-    Ok(Capture { bytes, oversized })
+    Ok(Capture {
+        bytes,
+        oversized,
+        timed_out: false,
+    })
 }
 
-fn join_capture(handle: thread::JoinHandle<io::Result<Capture>>) -> io::Result<Capture> {
-    handle
-        .join()
-        .map_err(|_| io::Error::other("guarded output capture failed"))?
+fn join_capture(
+    receiver: &std::sync::mpsc::Receiver<io::Result<Capture>>,
+    deadline: Instant,
+) -> io::Result<Capture> {
+    match receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        Ok(capture) => capture,
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Ok(Capture {
+            bytes: Vec::new(),
+            oversized: false,
+            timed_out: true,
+        }),
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            Err(io::Error::other("guarded output capture failed"))
+        }
+    }
 }
 
 fn synthetic_block(rule_id: &str, message: &str) -> io::Result<()> {

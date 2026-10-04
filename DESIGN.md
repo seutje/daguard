@@ -3402,3 +3402,12 @@ allocation sandbox. Optimized local synthetic probes measured 3,772 KiB RSS for
 15,000 repeated table rows, 8,104 KiB for a 1 MiB ANSI-heavy result and 4,812 KiB
 for 7,000 JSON fields, all within 0.02 seconds. These measurements are host
 evidence, not a universal hardware guarantee; deadlines remain cooperative.
+
+Guarded execution applies its deadline to direct-child waiting, inherited pipe
+draining and completed scanning. Unix pipe readers poll against that deadline;
+portable result receivers also have bounded waits. Timeout discards both streams
+and returns 124. Overflow stops capture without draining unlimited output. Group
+cleanup also occurs after forwarded-signal exits. Detached setsid descendants
+may escape group termination, but cannot hold result delivery open; containing
+or killing every escaped process requires an OS sandbox/job boundary. Blocking
+OS metadata writes and downstream output backpressure are outside this timer.

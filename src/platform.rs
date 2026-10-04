@@ -67,3 +67,35 @@ mod tests {
         }
     }
 }
+/// Poll a pipe without allowing an inherited writer to extend the deadline.
+#[cfg(unix)]
+pub(crate) fn read_ready(
+    fd: std::os::fd::RawFd,
+    deadline: std::time::Instant,
+) -> std::io::Result<()> {
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            return Err(std::io::ErrorKind::TimedOut.into());
+        }
+        let timeout = i32::try_from(remaining.as_millis().min(100))
+            .unwrap_or(100)
+            .max(1);
+        let mut descriptor = libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: one initialized pollfd remains alive for the duration of poll.
+        let result = unsafe { libc::poll(&raw mut descriptor, 1, timeout) };
+        if result > 0 {
+            return Ok(());
+        }
+        if result < 0 {
+            let error = std::io::Error::last_os_error();
+            if error.kind() != std::io::ErrorKind::Interrupted {
+                return Err(error);
+            }
+        }
+    }
+}
