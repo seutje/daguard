@@ -5,13 +5,25 @@ use serde_json::Value;
 use std::fmt;
 
 use crate::model::{
-    CanonicalRequest, Capability, Decision, DecisionEffect, Facts, PROTOCOL_VERSION, Tool,
+    CanonicalPostToolEvent, CanonicalRequest, Capability, Decision, DecisionEffect, Facts,
+    PROTOCOL_VERSION, ResultMetadata, ResultStatus, Tool,
 };
 
 #[derive(Debug, Deserialize)]
 struct PreToolUseInput {
     tool_name: String,
     tool_input: Value,
+    tool_use_id: String,
+    cwd: String,
+    #[serde(default, alias = "conversation_id")]
+    session_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PostToolUseInput {
+    tool_name: String,
+    tool_input: Value,
+    tool_output: String,
     tool_use_id: String,
     cwd: String,
     #[serde(default, alias = "conversation_id")]
@@ -38,6 +50,41 @@ pub(crate) fn normalize(input: &[u8]) -> Result<CanonicalRequest, CursorError> {
     };
     request.validate().map_err(CursorError::Model)?;
     Ok(request)
+}
+
+pub(crate) fn normalize_post(input: &[u8]) -> Result<CanonicalPostToolEvent, CursorError> {
+    crate::json::preflight(input, crate::json::MAX_REQUEST_BYTES).map_err(CursorError::Json)?;
+    let input: PostToolUseInput = serde_json::from_slice(input).map_err(CursorError::Json)?;
+    let (capability, facts) = normalize_tool(&input.tool_name, &input.tool_input)?;
+    let event = CanonicalPostToolEvent {
+        protocol: PROTOCOL_VERSION,
+        agent: "cursor".to_owned(),
+        event: "post_tool_use".to_owned(),
+        session_id: input.session_id,
+        call_id: Some(input.tool_use_id),
+        cwd: input.cwd,
+        tool: Tool {
+            native_name: input.tool_name,
+            capability,
+        },
+        input: input.tool_input,
+        facts,
+        result: ResultMetadata {
+            status: ResultStatus::Completed,
+            content_type: Some("application/json".to_owned()),
+            byte_size: Some(input.tool_output.len() as u64),
+        },
+    };
+    event.validate().map_err(CursorError::Model)?;
+    Ok(event)
+}
+
+pub(crate) fn post_response() -> Value {
+    serde_json::json!({})
+}
+
+pub(crate) fn post_error_response() -> Value {
+    serde_json::json!({"additional_context":"daguard could not update security state"})
 }
 
 fn normalize_tool(tool_name: &str, input: &Value) -> Result<(Capability, Facts), CursorError> {
@@ -158,33 +205,39 @@ pub(crate) fn validate_hooks_config(input: &[u8]) -> Result<(), CursorError> {
     if root.get("version").and_then(Value::as_u64) != Some(1) {
         return Err(CursorError::Invalid("hooks.json must use version 1"));
     }
-    let hooks = root
-        .pointer("/hooks/preToolUse")
-        .and_then(Value::as_array)
-        .ok_or(CursorError::Invalid(
-            "hooks.json must define hooks.preToolUse as an array",
-        ))?;
-    let configured = hooks.iter().any(|hook| {
-        let matcher_covers_all = hook
-            .get("matcher")
-            .and_then(Value::as_str)
-            .is_none_or(|matcher| matcher.is_empty() || matcher == "*");
-        matcher_covers_all
-            && hook.get("failClosed").and_then(Value::as_bool) == Some(true)
-            && hook
-                .get("command")
-                .and_then(Value::as_str)
-                .is_some_and(valid_guard_command)
-    });
-    if !configured {
+    if !configured_event(&root, "preToolUse", "pre-tool") {
         return Err(CursorError::Invalid(
             "no all-tools fail-closed preToolUse hook uses absolute guard and policy paths",
+        ));
+    }
+    if !configured_event(&root, "postToolUse", "post-tool") {
+        return Err(CursorError::Invalid(
+            "no all-tools fail-closed postToolUse hook records session taint",
         ));
     }
     Ok(())
 }
 
-fn valid_guard_command(command: &str) -> bool {
+fn configured_event(root: &Value, hook_name: &str, event: &str) -> bool {
+    root.pointer(&format!("/hooks/{hook_name}"))
+        .and_then(Value::as_array)
+        .is_some_and(|hooks| {
+            hooks.iter().any(|hook| {
+                let matcher_covers_all = hook
+                    .get("matcher")
+                    .and_then(Value::as_str)
+                    .is_none_or(|matcher| matcher.is_empty() || matcher == "*");
+                matcher_covers_all
+                    && hook.get("failClosed").and_then(Value::as_bool) == Some(true)
+                    && hook
+                        .get("command")
+                        .and_then(Value::as_str)
+                        .is_some_and(|command| valid_guard_command(command, event))
+            })
+        })
+}
+
+fn valid_guard_command(command: &str, event: &str) -> bool {
     let Some(tokens) = super::command_tokens(command) else {
         return false;
     };
@@ -194,7 +247,7 @@ fn valid_guard_command(command: &str) -> bool {
         .is_some_and(|executable| super::is_daguard_executable(executable));
     executable_is_absolute
         && has_pair(&tokens, "--adapter", "cursor")
-        && has_pair(&tokens, "--event", "pre-tool")
+        && has_pair(&tokens, "--event", event)
         && tokens
             .windows(2)
             .any(|pair| pair[0] == "--policy" && crate::paths::is_absolute(pair[1]))
@@ -228,7 +281,7 @@ impl fmt::Display for CursorError {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize, render, validate_hooks_config};
+    use super::{normalize, normalize_post, render, validate_hooks_config};
     use crate::adapters::codex;
     use crate::model::{
         Capability, Decision, DecisionEffect, Evidence, PROTOCOL_VERSION, PolicyLayer, Severity,
@@ -242,6 +295,7 @@ mod tests {
     const FILE_WRITE: &[u8] =
         include_bytes!("../../tests/fixtures/cursor/pre_tool_use/file_write.json");
     const MCP: &[u8] = include_bytes!("../../tests/fixtures/cursor/pre_tool_use/mcp.json");
+    const POST: &[u8] = include_bytes!("../../tests/fixtures/cursor/post_tool_use/file_read.json");
 
     #[test]
     fn normalizes_golden_fixtures() {
@@ -265,6 +319,32 @@ mod tests {
         let mcp = normalize(MCP).unwrap();
         assert_eq!(mcp.tool.capability, Capability::McpCall);
         assert_eq!(mcp.facts.paths, ["README.md"]);
+    }
+
+    #[test]
+    fn normalizes_post_fixture_without_retaining_result() {
+        let event = normalize_post(POST).unwrap();
+        assert_eq!(event.session_id.as_deref(), Some("cursor_phase14"));
+        assert_eq!(event.facts.paths, ["web/sites/default/settings.php"]);
+        assert!(
+            !serde_json::to_string(&event)
+                .unwrap()
+                .contains("SYNTHETIC_PHASE14_SECRET_CANARY")
+        );
+    }
+
+    #[test]
+    fn post_fixture_allows_absent_session_but_rejects_bad_call_id() {
+        let mut value: Value = serde_json::from_slice(POST).unwrap();
+        value.as_object_mut().unwrap().remove("session_id");
+        assert_eq!(
+            normalize_post(&serde_json::to_vec(&value).unwrap())
+                .unwrap()
+                .session_id,
+            None
+        );
+        value["tool_use_id"] = Value::String(String::new());
+        assert!(normalize_post(&serde_json::to_vec(&value).unwrap()).is_err());
     }
 
     #[test]
@@ -342,7 +422,7 @@ mod tests {
         let fail_open = br#"{"version":1,"hooks":{"preToolUse":[{"command":"/usr/local/bin/daguard --adapter cursor --event pre-tool --policy /etc/daguard/policy.json","matcher":"*","failClosed":false}]}}"#;
         assert!(validate_hooks_config(fail_open).is_err());
 
-        let windows = br#"{"version":1,"hooks":{"preToolUse":[{"command":"\"C:\\Program Files\\Daguard\\daguard.exe\" --adapter cursor --event pre-tool --policy \"C:\\ProgramData\\Daguard\\policy.json\"","matcher":"*","failClosed":true}]}}"#;
+        let windows = br#"{"version":1,"hooks":{"preToolUse":[{"command":"\"C:\\Program Files\\Daguard\\daguard.exe\" --adapter cursor --event pre-tool --policy \"C:\\ProgramData\\Daguard\\policy.json\"","matcher":"*","failClosed":true}],"postToolUse":[{"command":"\"C:\\Program Files\\Daguard\\daguard.exe\" --adapter cursor --event post-tool --policy \"C:\\ProgramData\\Daguard\\policy.json\"","matcher":"*","failClosed":true}]}}"#;
         assert!(validate_hooks_config(windows).is_ok());
     }
 

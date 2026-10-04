@@ -1,0 +1,9 @@
+{
+  "session_id": "thr_phase14",
+  "cwd": "/workspace/example",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Read",
+  "tool_use_id": "call_phase14",
+  "tool_input": {"path": "web/sites/default/settings.php"},
+  "tool_response": {"content": "SYNTHETIC_PHASE14_SECRET_CANARY"}
+}

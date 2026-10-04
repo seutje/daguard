@@ -13,3 +13,12 @@ type = "command"
 command = "/usr/local/bin/daguard --adapter codex --event pre-tool --managed --policy /etc/daguard/policy.json"
 timeout = 5
 statusMessage = "Checking organization security policy"
+
+[[hooks.PostToolUse]]
+matcher = "*"
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "/usr/local/bin/daguard --adapter codex --event post-tool --managed --policy /etc/daguard/policy.json"
+timeout = 5
+statusMessage = "Recording security classifications"

@@ -16,6 +16,10 @@ checksum checks, adversarial regression tests, and eight parser fuzz targets.
 Phase 9 adds a dependency-free performance harness, WSL measurements, and
 informational CI reports; team performance acceptance remains pending. See
 [performance methodology](docs/performance/README.md).
+Phase 14 adds metadata-only post-tool observation, the shared sensitivity
+taxonomy, expiring per-session taint, deterministic outbound sink detection,
+and source-to-sink exfiltration decisions. It does not claim Phase 15 result
+containment.
 
 Managed rollout procedures, role ownership, upgrades, rollback, support, and the
 no-break-glass decision are in the [operations runbook](docs/operations/rollout.md).
@@ -135,6 +139,7 @@ Other core commands are:
 
 ```bash
 daguard version
+daguard capabilities
 daguard explain drupal.secret.settings_php
 daguard policy lint policy/default-policy.json
 daguard policy lint --layer project .daguard/project.json
@@ -153,6 +158,20 @@ existing log must be a regular owner-only file. An append failure fails closed.
 Rotate logs with an owner-only OS policy at a bounded size (for example 10 MiB,
 five retained files); rename-and-create rotation works well because each guard
 invocation reopens the configured path.
+
+Native adapter invocations enable session taint by default. They persist only
+category/source metadata under an effective-user-specific owner-only directory
+in the OS temporary directory. Use `--state-dir ABSOLUTE_PATH` to select an
+operator-managed location or `--no-session-state` to retain pre-tool stateless
+behavior. `daguard check` is stateless unless `--state-dir` is supplied. Taint
+expires 24 hours after the latest sensitive-source classification and after
+seven days absolute, survives guard-process
+restart, and is isolated by agent plus pseudonymous session ID. A missing stable
+session ID is classified/audited but never merged into shared fallback state.
+The default temporary directory may be cleared by an OS reboot or cleanup job.
+Because hooks and the agent run as the same OS user, this state is not resistant
+to deliberate same-user deletion/replacement; Phase 14 is not an OS sandbox.
+Use `--no-session-state` only when intentionally retaining stateless operation.
 
 `daguard doctor` reports the executable path and target, organization-policy
 validity and SHA-256, audit-directory status, WSL/DDEV detection, and Codex,
@@ -196,7 +215,7 @@ and tested.
 ## Codex integration
 
 The Codex adapter is tested against Codex CLI 0.160.0 and the official
-`PreToolUse` contract documented on 2026-10-03. Copy and centrally adapt
+`PreToolUse` and `PostToolUse` contracts documented on 2026-10-04. Copy and centrally adapt
 [`config/codex/hooks.json`](config/codex/hooks.json) for user-managed installs,
 or merge [`config/codex/managed-requirements.toml`](config/codex/managed-requirements.toml)
 into managed Codex requirements. Deployment examples deliberately use absolute,
@@ -207,6 +226,12 @@ The adapter maps supported Codex file tools, `apply_patch`, Bash, MCP calls, and
 unknown local tools into the canonical core. It maps the currently unsupported
 canonical `ask` result to `deny`; it never returns Codex's unsupported
 `permissionDecision: "ask"` form.
+
+The shipped configuration also sends every `PostToolUse` event to the metadata-
+only observer. Native result content is discarded after byte-size/content-type
+derivation. This path is declared `observe_only`: it can taint the session and
+block a later sink, but does not claim that the completed result was kept out of
+model context.
 
 Allowed Codex calls now emit `{}`. Release v0.0.0 emitted a bare
 `permissionDecision: "allow"`, which was rejected by a reported VS Code host.
@@ -230,8 +255,8 @@ sandbox. See the [official OpenAI hooks documentation](https://learn.chatgpt.com
 
 ## Cursor integration
 
-The Cursor adapter implements the native `preToolUse` contract documented on
-2026-10-03. Copy and centrally adapt
+The Cursor adapter implements the native `preToolUse` and `postToolUse`
+contracts documented on 2026-10-04. Copy and centrally adapt
 [`config/cursor/hooks.json`](config/cursor/hooks.json); keep the absolute trusted
 binary and organization-policy paths, the all-tools matcher, and
 `failClosed: true`. Use `daguard doctor cursor <hooks.json>` to reject examples
@@ -243,6 +268,11 @@ Cursor does not currently enforce `ask` for `preToolUse`, the adapter maps
 canonical `ask` to `deny`. Invalid native input and evaluation failures emit a
 native deny response whenever stdout remains writable.
 
+Cursor `postToolUse` is an `observe_only` source for metadata-only taint. If the
+host payload omits a stable `session_id`/`conversation_id`, the event may be
+audited but does not create session state, avoiding cross-conversation
+contamination.
+
 The fixture suite is derived from the official
 [Cursor Hooks documentation](https://cursor.com/docs/hooks). Cursor was not
 installed in the Phase 4 development environment, so a live-tested application
@@ -253,7 +283,8 @@ compatibility suite before release or upgrade.
 
 The dependency-free bridge in
 [`integrations/opencode/`](integrations/opencode/) targets OpenCode CLI v2 and
-registers the supported `ctx.tool.hook("execute.before", ...)` hook. Configure
+registers the supported `ctx.tool.hook("execute.before", ...)` and
+`ctx.tool.hook("execute.after", ...)` hooks. Configure
 it using the object form shown in
 [`config/opencode/opencode.json`](config/opencode/opencode.json), replacing the
 example package, guard, and organization-policy paths with absolute trusted
@@ -298,6 +329,11 @@ allows execution only after a valid schema-1 `allow` response. A denial,
 canonical `ask`, timeout, missing executable, non-zero exit, oversized output,
 or malformed response throws from the pre-execution hook and blocks the tool.
 The bridge never rewrites tool arguments and contains no Drupal policy.
+
+After execution, the bridge sends only the original tool metadata plus result
+status, content type, and serialized byte size to the post-tool adapter. It does
+not send raw result/error content to `daguard`. Failure to record the event
+throws from the after hook. This remains `observe_only`, not output containment.
 
 The fixtures, bridge contract, configuration schema, and local-directory
 entrypoint behavior were checked against OpenCode CLI v2.0.22, its tagged
@@ -409,9 +445,11 @@ switch to disable mandatory enforcement. Pilot mode requires `--audit-log PATH`;
 `doctor` and invocation diagnostics identify the mode. Schema-1 policies continue
 to enforce every rule.
 
-Audit events now use schema 2: `decision`/`rule_id` describe evaluated policy,
+Audit events now use schema 3: `decision`/`rule_id` describe evaluated policy,
 while `enforcement_decision`/`enforcement_rule_id` describe the actual canonical
 response decision. `mode` distinguishes enforcing and candidate audit-only
-runs. Native adapter response schemas are unchanged. The
+runs. Schema 3 also adds metadata-only post-tool classification events and
+optional sensitivity/sink fields; raw results and resource values remain
+excluded. Native adapter response schemas are unchanged. The
 [report template](docs/pilot/report-template.md) requires real pilot evidence;
 automated synthetic replay does not establish team acceptance.

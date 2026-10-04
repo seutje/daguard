@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "session_id": "ses_phase14",
+  "call_id": "call_phase14",
+  "cwd": "/workspace/example",
+  "tool_name": "read",
+  "tool_input": {"filePath": "web/sites/default/settings.php"},
+  "status": "completed",
+  "content_type": "application/json",
+  "byte_size": 43
+}

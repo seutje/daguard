@@ -42,12 +42,12 @@ function bridgeConfig(options) {
   }
 }
 
-function invokeGuard(config, payload) {
+function invokeGuard(config, payload, event = "pre-tool") {
   const args = [
     "--adapter",
     "opencode",
     "--event",
-    "pre-tool",
+    event,
     "--policy",
     config.policy,
   ]
@@ -90,6 +90,27 @@ function parseDecision(output) {
   }
 }
 
+function parsePostResponse(output) {
+  let response
+  try {
+    response = JSON.parse(output)
+  } catch {
+    throw new GuardBlockedError()
+  }
+  if (!response || response.schema !== 1 || response.recorded !== true) {
+    throw new GuardBlockedError()
+  }
+}
+
+function resultByteSize(event) {
+  try {
+    const value = event.status === "completed" ? event.result : event.error
+    return new TextEncoder().encode(JSON.stringify(value)).byteLength
+  } catch {
+    return undefined
+  }
+}
+
 export function createToolHook({ options, directory, run = invokeGuard }) {
   return async (event) => {
     const config = bridgeConfig(options)
@@ -118,13 +139,52 @@ export function createToolHook({ options, directory, run = invokeGuard }) {
   }
 }
 
+export function createPostToolHook({ options, directory, run = invokeGuard }) {
+  return async (event) => {
+    const config = bridgeConfig(options)
+    if (
+      !event ||
+      typeof event.tool !== "string" ||
+      typeof event.sessionID !== "string" ||
+      typeof event.id !== "string" ||
+      !event.input ||
+      typeof event.input !== "object" ||
+      Array.isArray(event.input) ||
+      (event.status !== "completed" && event.status !== "error") ||
+      typeof directory !== "string" ||
+      !isAbsolute(directory)
+    ) {
+      throw new GuardBlockedError()
+    }
+    const size = resultByteSize(event)
+    const payload = {
+      schema: 1,
+      session_id: event.sessionID,
+      call_id: event.id,
+      cwd: directory,
+      tool_name: event.tool,
+      tool_input: event.input,
+      status: event.status,
+      content_type: "application/json",
+    }
+    if (size !== undefined) payload.byte_size = size
+    const output = run(config, payload, "post-tool")
+    parsePostResponse(output)
+  }
+}
+
 export default {
   id: "daguard",
   async setup(ctx) {
-    const hook = createToolHook({
+    const before = createToolHook({
       options: ctx.options,
       directory: ctx.location.directory,
     })
-    await ctx.tool.hook("execute.before", hook)
+    const after = createPostToolHook({
+      options: ctx.options,
+      directory: ctx.location.directory,
+    })
+    await ctx.tool.hook("execute.before", before)
+    await ctx.tool.hook("execute.after", after)
   },
 }

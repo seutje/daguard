@@ -1,5 +1,6 @@
 //! Versioned canonical request and decision models.
 
+use std::collections::BTreeSet;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -80,6 +81,150 @@ pub(crate) struct CanonicalRequest {
     pub(crate) input: Value,
     #[serde(default)]
     pub(crate) facts: Facts,
+}
+
+/// Metadata-only representation of a completed tool call. Raw result content
+/// is deliberately absent: adapters may inspect native output long enough to
+/// derive these bounded fields, but the canonical event cannot retain it.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct CanonicalPostToolEvent {
+    pub(crate) protocol: u16,
+    pub(crate) agent: String,
+    pub(crate) event: String,
+    #[serde(default)]
+    pub(crate) session_id: Option<String>,
+    #[serde(default)]
+    pub(crate) call_id: Option<String>,
+    pub(crate) cwd: String,
+    pub(crate) tool: Tool,
+    pub(crate) input: Value,
+    #[serde(default)]
+    pub(crate) facts: Facts,
+    pub(crate) result: ResultMetadata,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct ResultMetadata {
+    pub(crate) status: ResultStatus,
+    #[serde(default)]
+    pub(crate) content_type: Option<String>,
+    #[serde(default)]
+    pub(crate) byte_size: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ResultStatus {
+    Completed,
+    Error,
+}
+
+impl CanonicalPostToolEvent {
+    pub(crate) fn validate(&self) -> Result<(), ModelError> {
+        if self.protocol != PROTOCOL_VERSION {
+            return Err(ModelError::Invalid("unsupported protocol version"));
+        }
+        if self.event != "post_tool_use" {
+            return Err(ModelError::Invalid("expected a post-tool event"));
+        }
+        validate_identifier("agent", &self.agent)?;
+        validate_identifier("event", &self.event)?;
+        validate_identifier("tool.native_name", &self.tool.native_name)?;
+        validate_optional_identifier("session_id", self.session_id.as_deref())?;
+        validate_optional_identifier("call_id", self.call_id.as_deref())?;
+        if !crate::paths::is_absolute(&self.cwd)
+            || self.cwd.len() > MAX_PATH_BYTES
+            || self.cwd.contains('\0')
+        {
+            return Err(ModelError::Invalid("cwd is invalid"));
+        }
+        if self.facts.paths.len() > MAX_PATHS {
+            return Err(ModelError::Limit("too many fact paths"));
+        }
+        for path in &self.facts.paths {
+            if path.is_empty() || path.len() > MAX_PATH_BYTES || path.contains('\0') {
+                return Err(ModelError::Invalid("fact path is invalid"));
+            }
+        }
+        if self
+            .facts
+            .command
+            .as_ref()
+            .is_some_and(|command| command.len() > MAX_STRING_BYTES || command.contains('\0'))
+        {
+            return Err(ModelError::Invalid("fact command is invalid"));
+        }
+        validate_string_collection("fact argv is invalid", &self.facts.argv)?;
+        validate_string_collection("fact URLs are invalid", &self.facts.urls)?;
+        if self
+            .result
+            .content_type
+            .as_ref()
+            .is_some_and(|value| value.is_empty() || value.len() > 128 || value.contains('\0'))
+        {
+            return Err(ModelError::Invalid("result content type is invalid"));
+        }
+        let mut nodes = 0;
+        validate_value(&self.input, 0, &mut nodes)
+    }
+
+    pub(crate) fn as_request(&self) -> CanonicalRequest {
+        CanonicalRequest {
+            protocol: self.protocol,
+            agent: self.agent.clone(),
+            event: self.event.clone(),
+            session_id: self.session_id.clone(),
+            call_id: self.call_id.clone(),
+            cwd: self.cwd.clone(),
+            tool: self.tool.clone(),
+            input: self.input.clone(),
+            facts: self.facts.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SensitivityCategory {
+    Credential,
+    Authentication,
+    PersonalData,
+    FinancialData,
+    CustomerData,
+    PrivateContent,
+    OperationalSensitive,
+    UnknownSensitive,
+}
+
+pub(crate) fn merge_categories(
+    target: &mut BTreeSet<SensitivityCategory>,
+    categories: impl IntoIterator<Item = SensitivityCategory>,
+) {
+    target.extend(categories);
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SinkCategory {
+    OutboundHttp,
+    OutboundNetwork,
+    RemoteShell,
+    RemoteFileTransfer,
+    GitRemoteWrite,
+    ApiSubmission,
+    Messaging,
+    BrowserUpload,
+    OutboundMcp,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum InterceptionCapability {
+    NativeReplace,
+    GuardedExecution,
+    McpProxy,
+    ObserveOnly,
+    Unsupported,
 }
 
 impl CanonicalRequest {

@@ -8,6 +8,14 @@
         "timeout": 5,
         "failClosed": true
       }
+    ],
+    "postToolUse": [
+      {
+        "command": "/usr/local/bin/daguard --adapter cursor --event post-tool --managed --policy /etc/daguard/policy.json",
+        "matcher": "*",
+        "timeout": 5,
+        "failClosed": true
+      }
     ]
   }
 }

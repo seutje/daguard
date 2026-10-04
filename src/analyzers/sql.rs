@@ -51,6 +51,32 @@ pub(crate) fn analyze(sql: &str, configured_sensitive_tables: &[&str]) -> Option
     None
 }
 
+/// Returns normalized sensitive table identifiers referenced by bounded SQL.
+/// Values are schema identifiers only; no query literals or result content are
+/// returned. `None` means the SQL could not be classified safely.
+pub(crate) fn referenced_sensitive_tables(
+    sql: &str,
+    configured_sensitive_tables: &[&str],
+) -> Option<Vec<String>> {
+    if sql.len() > 16 * 1024 || sql.contains('\0') {
+        return None;
+    }
+    let words = lexical_words(sql)?;
+    let mut tables = Vec::new();
+    for word in words {
+        let table = word
+            .trim_matches(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+            .to_ascii_lowercase();
+        if table.is_empty() || tables.contains(&table) {
+            continue;
+        }
+        if sensitive_table_name(&table, configured_sensitive_tables) {
+            tables.push(table);
+        }
+    }
+    Some(tables)
+}
+
 fn ambiguous() -> Decision {
     decision(
         DecisionEffect::Deny,
@@ -65,19 +91,81 @@ fn sensitive_table(word: &str, configured: &[&str]) -> bool {
     let table = word
         .trim_matches(|character: char| !character.is_ascii_alphanumeric() && character != '_')
         .to_ascii_lowercase();
-    [
+    sensitive_table_name(&table, configured)
+}
+
+fn sensitive_table_name(table: &str, configured: &[&str]) -> bool {
+    const BUILT_IN: &[&str] = &[
+        "sessions",
         "users",
         "users_field_data",
-        "sessions",
+        "users_data",
+        "user__*",
         "key_value",
         "key_value_expire",
-    ]
-    .iter()
-    .copied()
-    .chain(configured.iter().copied())
-    .any(|pattern| {
-        table_name_matches(&table, pattern, false) || table_name_matches(&table, pattern, true)
-    })
+        "comment",
+        "comment_field_data",
+        "comment__*",
+        "webform_submission",
+        "webform_submission_data",
+        "webform_submission_log",
+        "commerce_order",
+        "commerce_order__*",
+        "commerce_order_item",
+        "commerce_order_item__*",
+        "commerce_payment",
+        "commerce_payment__*",
+        "commerce_payment_method",
+        "commerce_payment_method__*",
+        "profile",
+        "profile_field_data",
+        "profile_revision",
+        "profile_field_revision",
+        "profile__*",
+        "profile_revision__*",
+        "commerce_shipment",
+        "commerce_shipment__*",
+        "watchdog",
+        "flood",
+    ];
+    const PREFIXABLE_BUILT_IN: &[&str] = &[
+        "sessions",
+        "users",
+        "users_field_data",
+        "users_data",
+        "user__*",
+        "key_value",
+        "key_value_expire",
+        "comment_field_data",
+        "comment__*",
+        "webform_submission",
+        "webform_submission_data",
+        "webform_submission_log",
+        "commerce_order",
+        "commerce_order__*",
+        "commerce_order_item",
+        "commerce_order_item__*",
+        "commerce_payment",
+        "commerce_payment__*",
+        "commerce_payment_method",
+        "commerce_payment_method__*",
+        "profile_field_data",
+        "profile_revision",
+        "profile_field_revision",
+        "profile__*",
+        "profile_revision__*",
+        "commerce_shipment",
+        "commerce_shipment__*",
+    ];
+    BUILT_IN
+        .iter()
+        .any(|pattern| table_name_matches(table, pattern, false))
+        || PREFIXABLE_BUILT_IN
+            .iter()
+            .any(|pattern| table_name_matches(table, pattern, true))
+        || configured.iter().any(|pattern| {
+            table_name_matches(table, pattern, false) || table_name_matches(table, pattern, true)
+        })
 }
 
 /// Match the policy's deliberately small table glob syntax: `*` is the only
@@ -195,7 +283,7 @@ fn push(result: &mut Vec<String>, word: &mut String) {
 
 #[cfg(test)]
 mod tests {
-    use super::analyze;
+    use super::{analyze, referenced_sensitive_tables};
     #[test]
     fn handles_comments_chains_and_quoted_keywords() {
         assert_eq!(
@@ -246,5 +334,13 @@ mod tests {
             );
         }
         assert_eq!(analyze("SELECT * FROM user_profile", &["user__*"]), None);
+        assert_eq!(
+            referenced_sensitive_tables(
+                "SELECT * FROM webform_submission_data JOIN commerce_payment USING (id)",
+                &[]
+            )
+            .unwrap(),
+            ["webform_submission_data", "commerce_payment"]
+        );
     }
 }

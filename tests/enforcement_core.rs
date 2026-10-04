@@ -444,7 +444,7 @@ fn configured_audit_log_appends_redacted_versioned_events() {
     let lines = contents.lines().collect::<Vec<_>>();
     assert_eq!(lines.len(), 2);
     let event: Value = serde_json::from_str(lines[0]).unwrap();
-    assert_eq!(event["schema"], 2);
+    assert_eq!(event["schema"], 3);
     assert_eq!(event["decision"], "deny");
     assert_eq!(event["rule_id"], "drupal.secret.settings_php");
     assert!(event["timestamp_unix_ms"].as_u64().is_some());
@@ -1063,7 +1063,7 @@ fn pilot_candidates_are_observed_while_overlapping_mandatory_rules_still_deny() 
         .collect();
     assert_eq!(events.len(), 4);
     for event in &events[..3] {
-        assert_eq!(event["schema"], 2);
+        assert_eq!(event["schema"], 3);
         assert_eq!(event["mode"], "audit_only");
         assert_eq!(event["decision"], "deny");
         assert_eq!(event["rule_id"], "pilot.candidate.custom_write");

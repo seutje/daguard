@@ -8,6 +8,22 @@ once releases begin.
 
 ## [Unreleased]
 
+### Added
+
+- Phase 14 canonical post-tool metadata for Codex, Cursor, and OpenCode;
+  canonical sensitivity and interception-capability taxonomies; metadata-only
+  expiring session taint with bounded cleanup and concurrency-safe atomic
+  persistence; protected-path and Drupal SQL source classification; and
+  deterministic outbound shell, Git/API, messaging, browser, network, and MCP
+  sink classification.
+- Stateful source-to-sink enforcement through
+  `exfiltration.tainted_session` (deny) and
+  `exfiltration.tainted_session.review` (ask), with isolation, restart, expiry,
+  DDEV nesting, fake-canary leakage, and end-to-end adapter tests.
+- `daguard capabilities`, post-tool deployment hooks, and audit schema 3
+  metadata-only classification/sink fields. All Phase 14 post-result paths are
+  explicitly `observe_only` and do not claim pre-context containment.
+
 ## [0.0.7] - 2026-10-03
 
 ### Fixed

@@ -10,8 +10,9 @@ use serde::Serialize;
 use crate::adapters::{codex, cursor, opencode};
 use crate::audit;
 use crate::doctor::{self, DoctorOptions};
-use crate::model::CanonicalRequest;
+use crate::model::{CanonicalPostToolEvent, CanonicalRequest, DecisionEffect};
 use crate::policy::{self, Policy, PolicyKind};
+use crate::state::StateStore;
 
 const EXIT_OK: i32 = 0;
 const EXIT_USAGE: i32 = 2;
@@ -53,22 +54,20 @@ fn handle_result(
     }
 }
 
-#[derive(Serialize)]
-#[serde(untagged)]
-enum PanicResponse {
-    Codex(codex::Response),
-    Cursor(cursor::Response),
-    OpenCode(opencode::Response),
-}
-
-fn panic_response(args: &[std::ffi::OsString]) -> Option<PanicResponse> {
+fn panic_response(args: &[std::ffi::OsString]) -> Option<serde_json::Value> {
     if args.first().is_none_or(|arg| arg != "--adapter") {
         return None;
     }
+    let post = args.windows(2).any(|pair| {
+        pair[0] == "--event" && pair[1].to_str().is_some_and(|value| value == "post-tool")
+    });
     match args.get(1).and_then(|arg| arg.to_str()) {
-        Some("codex") => Some(PanicResponse::Codex(codex::error_response())),
-        Some("cursor") => Some(PanicResponse::Cursor(cursor::error_response())),
-        Some("opencode") => Some(PanicResponse::OpenCode(opencode::error_response())),
+        Some("codex") if post => Some(codex::post_error_response()),
+        Some("cursor") if post => Some(cursor::post_error_response()),
+        Some("opencode") if post => Some(opencode::post_error_response()),
+        Some("codex") => serde_json::to_value(codex::error_response()).ok(),
+        Some("cursor") => serde_json::to_value(cursor::error_response()).ok(),
+        Some("opencode") => serde_json::to_value(opencode::error_response()).ok(),
         _ => None,
     }
 }
@@ -95,6 +94,7 @@ fn dispatch(args: Vec<std::ffi::OsString>) -> Result<(), CliError> {
             Ok(())
         }
         "check" => check(&args),
+        "capabilities" if args.is_empty() => write_json(crate::capabilities::ADAPTER_CAPABILITIES),
         "explain" => explain(&args),
         "policy" => policy_command(args),
         "doctor" => doctor(&args),
@@ -106,7 +106,7 @@ fn dispatch(args: Vec<std::ffi::OsString>) -> Result<(), CliError> {
 fn adapter_command(mut args: Vec<String>) -> Result<(), CliError> {
     let Some(adapter) = args.first().cloned() else {
         return Err(CliError::usage(
-            "usage: daguard --adapter <codex|cursor|opencode> --event pre-tool [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH]",
+            "usage: daguard --adapter <codex|cursor|opencode> --event <pre-tool|post-tool> [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--no-session-state]",
         ));
     };
     args.remove(0);
@@ -115,60 +115,117 @@ fn adapter_command(mut args: Vec<String>) -> Result<(), CliError> {
             Ok(response) => write_json(&response),
             Err(error) => {
                 eprintln!("daguard: {}", error.message);
-                write_json(&codex::error_response())
+                write_json(&adapter_error_response("codex", &args))
             }
         },
         "cursor" => match evaluate_cursor_hook(&args) {
             Ok(response) => write_json(&response),
             Err(error) => {
                 eprintln!("daguard: {}", error.message);
-                write_json(&cursor::error_response())
+                write_json(&adapter_error_response("cursor", &args))
             }
         },
         "opencode" => match evaluate_opencode_hook(&args) {
             Ok(response) => write_json(&response),
             Err(error) => {
                 eprintln!("daguard: {}", error.message);
-                write_json(&opencode::error_response())
+                write_json(&adapter_error_response("opencode", &args))
             }
         },
         _ => Err(CliError::usage(
-            "usage: daguard --adapter <codex|cursor|opencode> --event pre-tool [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH]",
+            "usage: daguard --adapter <codex|cursor|opencode> --event <pre-tool|post-tool> [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--no-session-state]",
         )),
     }
 }
 
-fn evaluate_opencode_hook(args: &[String]) -> Result<opencode::Response, CliError> {
+fn adapter_error_response(adapter: &str, args: &[String]) -> serde_json::Value {
+    let post = args.windows(2).any(|pair| pair == ["--event", "post-tool"]);
+    match (adapter, post) {
+        ("codex", true) => codex::post_error_response(),
+        ("cursor", true) => cursor::post_error_response(),
+        ("opencode", true) => opencode::post_error_response(),
+        ("codex", false) => serde_json::to_value(codex::error_response()).unwrap_or_default(),
+        ("cursor", false) => serde_json::to_value(cursor::error_response()).unwrap_or_default(),
+        ("opencode", false) => serde_json::to_value(opencode::error_response()).unwrap_or_default(),
+        _ => serde_json::json!({}),
+    }
+}
+
+fn evaluate_opencode_hook(args: &[String]) -> Result<serde_json::Value, CliError> {
     let options = adapter_options(args, "OpenCode")?;
     let bytes = read_bounded(None).map_err(|error| CliError::evaluation(error.to_string()))?;
-    let request = opencode::normalize(&bytes)
-        .map_err(|error| CliError::evaluation(format!("OpenCode adapter error: {error}")))?;
-    let decision = evaluate_and_audit(&options, &request, Some(1))?;
-    Ok(opencode::render(&decision))
+    match options.event {
+        AdapterEvent::PreTool => {
+            let request = opencode::normalize(&bytes).map_err(|error| {
+                CliError::evaluation(format!("OpenCode adapter error: {error}"))
+            })?;
+            let decision = evaluate_and_audit(&options, &request, Some(1))?;
+            serde_json::to_value(opencode::render(&decision))
+                .map_err(|error| CliError::evaluation(error.to_string()))
+        }
+        AdapterEvent::PostTool => {
+            let event = opencode::normalize_post(&bytes).map_err(|error| {
+                CliError::evaluation(format!("OpenCode adapter error: {error}"))
+            })?;
+            observe_and_audit(&options, &event, Some(1))?;
+            Ok(opencode::post_response())
+        }
+    }
 }
 
-fn evaluate_cursor_hook(args: &[String]) -> Result<cursor::Response, CliError> {
+fn evaluate_cursor_hook(args: &[String]) -> Result<serde_json::Value, CliError> {
     let options = adapter_options(args, "Cursor")?;
     let bytes = read_bounded(None).map_err(|error| CliError::evaluation(error.to_string()))?;
-    let request = cursor::normalize(&bytes)
-        .map_err(|error| CliError::evaluation(format!("Cursor adapter error: {error}")))?;
-    let decision = evaluate_and_audit(&options, &request, Some(1))?;
-    Ok(cursor::render(&decision))
+    match options.event {
+        AdapterEvent::PreTool => {
+            let request = cursor::normalize(&bytes)
+                .map_err(|error| CliError::evaluation(format!("Cursor adapter error: {error}")))?;
+            let decision = evaluate_and_audit(&options, &request, Some(1))?;
+            serde_json::to_value(cursor::render(&decision))
+                .map_err(|error| CliError::evaluation(error.to_string()))
+        }
+        AdapterEvent::PostTool => {
+            let event = cursor::normalize_post(&bytes)
+                .map_err(|error| CliError::evaluation(format!("Cursor adapter error: {error}")))?;
+            observe_and_audit(&options, &event, Some(1))?;
+            Ok(cursor::post_response())
+        }
+    }
 }
 
-fn evaluate_codex_hook(args: &[String]) -> Result<codex::Response, CliError> {
+fn evaluate_codex_hook(args: &[String]) -> Result<serde_json::Value, CliError> {
     let options = adapter_options(args, "Codex")?;
     let bytes = read_bounded(None).map_err(|error| CliError::evaluation(error.to_string()))?;
-    let request = codex::normalize(&bytes)
-        .map_err(|error| CliError::evaluation(format!("Codex adapter error: {error}")))?;
-    let decision = evaluate_and_audit(&options, &request, Some(1))?;
-    Ok(codex::render(&decision))
+    match options.event {
+        AdapterEvent::PreTool => {
+            let request = codex::normalize(&bytes)
+                .map_err(|error| CliError::evaluation(format!("Codex adapter error: {error}")))?;
+            let decision = evaluate_and_audit(&options, &request, Some(1))?;
+            serde_json::to_value(codex::render(&decision))
+                .map_err(|error| CliError::evaluation(error.to_string()))
+        }
+        AdapterEvent::PostTool => {
+            let event = codex::normalize_post(&bytes)
+                .map_err(|error| CliError::evaluation(format!("Codex adapter error: {error}")))?;
+            observe_and_audit(&options, &event, Some(1))?;
+            Ok(codex::post_response())
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum AdapterEvent {
+    PreTool,
+    PostTool,
 }
 
 struct EvaluationOptions {
+    event: AdapterEvent,
     organization: Option<Policy>,
     project: Option<Policy>,
     audit_log: Option<PathBuf>,
+    state_dir: Option<PathBuf>,
+    session_state: bool,
 }
 
 fn adapter_options(args: &[String], adapter_name: &str) -> Result<EvaluationOptions, CliError> {
@@ -177,6 +234,8 @@ fn adapter_options(args: &[String], adapter_name: &str) -> Result<EvaluationOpti
     let mut organization = None;
     let mut project = None;
     let mut audit_log = None;
+    let mut state_dir = None;
+    let mut session_state = true;
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
@@ -200,15 +259,24 @@ fn adapter_options(args: &[String], adapter_name: &str) -> Result<EvaluationOpti
                 index += 1;
                 audit_log = Some(required_path(args, index, "--audit-log")?);
             }
+            "--state-dir" => {
+                index += 1;
+                state_dir = Some(required_path(args, index, "--state-dir")?);
+            }
+            "--no-session-state" => session_state = false,
             value => return Err(CliError::usage(format!("unexpected argument: {value}"))),
         }
         index += 1;
     }
-    if event != Some("pre-tool") {
-        return Err(CliError::usage(format!(
-            "{adapter_name} adapter requires --event pre-tool"
-        )));
-    }
+    let event = match event {
+        Some("pre-tool") => AdapterEvent::PreTool,
+        Some("post-tool") => AdapterEvent::PostTool,
+        _ => {
+            return Err(CliError::usage(format!(
+                "{adapter_name} adapter requires --event pre-tool or post-tool"
+            )));
+        }
+    };
 
     validate_managed(managed, organization.as_deref())?;
     let organization = organization
@@ -222,13 +290,16 @@ fn adapter_options(args: &[String], adapter_name: &str) -> Result<EvaluationOpti
         .transpose()
         .map_err(|error| CliError::config(error.to_string()))?;
     Ok(EvaluationOptions {
+        event,
         organization,
         project,
         audit_log,
+        state_dir,
+        session_state,
     })
 }
 
-fn write_json(value: &impl Serialize) -> Result<(), CliError> {
+fn write_json(value: &(impl Serialize + ?Sized)) -> Result<(), CliError> {
     let stdout = io::stdout();
     let mut output = stdout.lock();
     serde_json::to_writer(&mut output, value)
@@ -243,6 +314,7 @@ fn check(args: &[String]) -> Result<(), CliError> {
     let mut project = None;
     let mut input = None;
     let mut audit_log = None;
+    let mut state_dir = None;
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
@@ -258,6 +330,10 @@ fn check(args: &[String]) -> Result<(), CliError> {
             "--audit-log" => {
                 index += 1;
                 audit_log = Some(required_path(args, index, "--audit-log")?);
+            }
+            "--state-dir" => {
+                index += 1;
+                state_dir = Some(required_path(args, index, "--state-dir")?);
             }
             "-" if input.is_none() => input = Some(PathBuf::from("-")),
             value if !value.starts_with('-') && input.is_none() => {
@@ -284,9 +360,12 @@ fn check(args: &[String]) -> Result<(), CliError> {
     let request = CanonicalRequest::from_slice(&bytes)
         .map_err(|error| CliError::evaluation(error.to_string()))?;
     let options = EvaluationOptions {
+        event: AdapterEvent::PreTool,
         organization,
         project,
         audit_log,
+        session_state: state_dir.is_some(),
+        state_dir,
     };
     let decision = evaluate_and_audit(&options, &request, None)?;
     write_json(&decision)
@@ -325,7 +404,7 @@ fn evaluate_and_audit(
         options.project.as_ref(),
     )
     .map_err(|error| CliError::evaluation(error.to_string()))?;
-    let enforced = if audit_only {
+    let mut enforced = if audit_only {
         eprintln!(
             "daguard: audit-only candidate evaluation; mandatory protections remain enforced"
         );
@@ -338,19 +417,76 @@ fn evaluate_and_audit(
     } else {
         evaluated.clone()
     };
+    let mut security_context = None;
+    if options.session_state
+        && let Some(session_id) = request.session_id.as_deref()
+    {
+        let store = StateStore::open(options.state_dir.as_deref())
+            .map_err(|error| CliError::evaluation(error.to_string()))?;
+        if let Some(taint) = store
+            .load(&request.agent, session_id)
+            .map_err(|error| CliError::evaluation(error.to_string()))?
+            && let Some(taint_decision) = crate::sink::enforce(request, &taint)
+        {
+            if effect_rank(taint_decision.decision.effect) >= effect_rank(enforced.effect) {
+                enforced = taint_decision.decision.clone();
+            }
+            security_context = Some(audit::SecurityContext {
+                sensitivity_categories: taint_decision.categories,
+                sink: Some(taint_decision.sink),
+            });
+        }
+    }
     if let Some(path) = options.audit_log.as_deref() {
         audit::append(
             path,
             request,
             &evaluated,
             &enforced,
-            audit_only,
-            None,
-            adapter_schema,
+            &audit::AppendContext {
+                audit_only,
+                agent_version: None,
+                adapter_schema,
+                security: security_context.as_ref(),
+            },
         )
         .map_err(|error| CliError::evaluation(format!("could not append audit log: {error}")))?;
     }
     Ok(enforced)
+}
+
+fn observe_and_audit(
+    options: &EvaluationOptions,
+    event: &CanonicalPostToolEvent,
+    adapter_schema: Option<u16>,
+) -> Result<(), CliError> {
+    let classifications = crate::sensitivity::classify(
+        event,
+        options.organization.as_ref(),
+        options.project.as_ref(),
+    )
+    .map_err(|error| CliError::evaluation(error.to_string()))?;
+    if options.session_state
+        && let Some(session_id) = event.session_id.as_deref()
+    {
+        StateStore::open(options.state_dir.as_deref())
+            .and_then(|store| store.merge(&event.agent, session_id, &classifications))
+            .map_err(|error| CliError::evaluation(error.to_string()))?;
+    }
+    if let Some(path) = options.audit_log.as_deref() {
+        audit::append_post(path, event, &classifications, adapter_schema).map_err(|error| {
+            CliError::evaluation(format!("could not append audit log: {error}"))
+        })?;
+    }
+    Ok(())
+}
+
+const fn effect_rank(effect: DecisionEffect) -> u8 {
+    match effect {
+        DecisionEffect::Allow => 0,
+        DecisionEffect::Ask => 1,
+        DecisionEffect::Deny => 2,
+    }
 }
 
 fn required_path(args: &[String], index: usize, flag: &str) -> Result<PathBuf, CliError> {
@@ -483,7 +619,7 @@ fn doctor(args: &[String]) -> Result<(), CliError> {
 }
 
 fn help() -> &'static str {
-    "Usage:\n  daguard version\n  daguard check [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [FILE|-]\n  daguard explain <rule-id>\n  daguard policy lint [--layer organization|project] <path>\n  daguard doctor [--managed] [--integrity-manifest PATH] [--policy PATH] [--audit-log PATH] [--codex-hooks PATH] [--cursor-hooks PATH] [--opencode-config PATH]\n  daguard doctor <codex|cursor|opencode> <config.json>\n  daguard --adapter <codex|cursor|opencode> --event pre-tool [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH]\n\nPolicy precedence: built-in invariants, organization policy, project tightening, default.\nA lower layer can never override a higher-layer deny."
+    "Usage:\n  daguard version\n  daguard capabilities\n  daguard check [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [FILE|-]\n  daguard explain <rule-id>\n  daguard policy lint [--layer organization|project] <path>\n  daguard doctor [--managed] [--integrity-manifest PATH] [--policy PATH] [--audit-log PATH] [--codex-hooks PATH] [--cursor-hooks PATH] [--opencode-config PATH]\n  daguard doctor <codex|cursor|opencode> <config.json>\n  daguard --adapter <codex|cursor|opencode> --event <pre-tool|post-tool> [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--no-session-state]\n\nPolicy precedence: built-in invariants, organization policy, project tightening, default.\nA lower layer can never override a higher-layer deny."
 }
 
 struct CliError {

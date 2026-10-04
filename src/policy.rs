@@ -304,6 +304,62 @@ impl Policy {
             .as_ref()
             .is_some_and(|rules| !rules.is_empty())
     }
+
+    pub(crate) fn sensitive_tables(&self) -> impl Iterator<Item = &str> {
+        self.sql.sensitive_tables.iter().map(String::as_str)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SensitivePathMatch {
+    pub(crate) source_id: String,
+    pub(crate) layer: PolicyLayer,
+    pub(crate) normalized_path: String,
+}
+
+/// Reuses mandatory and configured read-path policy for metadata-only source
+/// classification. Sink policy intentionally does not participate here.
+pub(crate) fn classify_sensitive_path(
+    cwd: &str,
+    path: &str,
+    organization: Option<&Policy>,
+    project: Option<&Policy>,
+) -> Result<Option<SensitivePathMatch>, PolicyError> {
+    let normalized = paths::normalize(cwd, path).map_err(PolicyError::Path)?;
+    for rule in BUILT_INS
+        .iter()
+        .filter(|rule| matches!(rule.operation, RuleOperation::Read))
+    {
+        if first_matching_path(std::slice::from_ref(&normalized), rule.patterns)?.is_some() {
+            return Ok(Some(SensitivePathMatch {
+                source_id: rule.id.to_owned(),
+                layer: PolicyLayer::BuiltIn,
+                normalized_path: normalized,
+            }));
+        }
+    }
+    for (policy, layer, source_id) in [
+        (
+            organization,
+            PolicyLayer::Organization,
+            "organization.path.deny_read",
+        ),
+        (project, PolicyLayer::Project, "project.path.deny_read"),
+    ] {
+        let Some(policy) = policy else {
+            continue;
+        };
+        if first_matching_owned_path(std::slice::from_ref(&normalized), &policy.paths.deny_read)?
+            .is_some()
+        {
+            return Ok(Some(SensitivePathMatch {
+                source_id: source_id.to_owned(),
+                layer,
+                normalized_path: normalized,
+            }));
+        }
+    }
+    Ok(None)
 }
 
 fn validate_patterns(patterns: &[String]) -> Result<(), PolicyError> {
@@ -1102,6 +1158,22 @@ const RULE_DOCUMENTATION: &[RuleDocumentation] = &[
         "guard",
         "The guard could not safely evaluate or audit the request.",
         "Review the guard diagnostics and installation with `daguard doctor`; do not bypass the failed check."
+    ),
+    rule_doc!(
+        "exfiltration.tainted_session",
+        Deny,
+        Critical,
+        "exfiltration",
+        "The session accessed protected data and then requested an outbound-capable operation.",
+        "Start a new session that has not accessed sensitive sources, or have an authorized human transfer an approved sanitized value."
+    ),
+    rule_doc!(
+        "exfiltration.tainted_session.review",
+        Ask,
+        High,
+        "exfiltration",
+        "The session accessed sensitive operational metadata and then requested an outbound-capable operation.",
+        "Review the exact destination and send only an approved non-sensitive derived value."
     ),
     rule_doc!(
         "organization.path.deny_read",

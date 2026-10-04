@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::model::{
-    CanonicalRequest, Capability, Decision, DecisionEffect, Facts, PROTOCOL_VERSION, Tool,
+    CanonicalPostToolEvent, CanonicalRequest, Capability, Decision, DecisionEffect, Facts,
+    PROTOCOL_VERSION, ResultMetadata, ResultStatus, Tool,
 };
 
 const ADAPTER_SCHEMA_VERSION: u16 = 1;
@@ -21,6 +22,22 @@ struct ToolExecuteBeforeInput {
     cwd: String,
     tool_name: String,
     tool_input: Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ToolExecuteAfterInput {
+    schema: u16,
+    session_id: String,
+    call_id: String,
+    cwd: String,
+    tool_name: String,
+    tool_input: Value,
+    status: ResultStatus,
+    #[serde(default)]
+    content_type: Option<String>,
+    #[serde(default)]
+    byte_size: Option<u64>,
 }
 
 pub(crate) fn normalize(input: &[u8]) -> Result<CanonicalRequest, OpenCodeError> {
@@ -49,6 +66,51 @@ pub(crate) fn normalize(input: &[u8]) -> Result<CanonicalRequest, OpenCodeError>
     };
     request.validate().map_err(OpenCodeError::Model)?;
     Ok(request)
+}
+
+pub(crate) fn normalize_post(input: &[u8]) -> Result<CanonicalPostToolEvent, OpenCodeError> {
+    crate::json::preflight(input, crate::json::MAX_REQUEST_BYTES).map_err(OpenCodeError::Json)?;
+    let input: ToolExecuteAfterInput =
+        serde_json::from_slice(input).map_err(OpenCodeError::Json)?;
+    if input.schema != ADAPTER_SCHEMA_VERSION {
+        return Err(OpenCodeError::Invalid(
+            "unsupported OpenCode adapter schema version",
+        ));
+    }
+    let (capability, facts) = normalize_tool(&input.tool_name, &input.tool_input)?;
+    let event = CanonicalPostToolEvent {
+        protocol: PROTOCOL_VERSION,
+        agent: "opencode".to_owned(),
+        event: "post_tool_use".to_owned(),
+        session_id: Some(input.session_id),
+        call_id: Some(input.call_id),
+        cwd: input.cwd,
+        tool: Tool {
+            native_name: input.tool_name,
+            capability,
+        },
+        input: input.tool_input,
+        facts,
+        result: ResultMetadata {
+            status: input.status,
+            content_type: input.content_type,
+            byte_size: input.byte_size,
+        },
+    };
+    event.validate().map_err(OpenCodeError::Model)?;
+    Ok(event)
+}
+
+pub(crate) fn post_response() -> Value {
+    serde_json::json!({"schema": ADAPTER_SCHEMA_VERSION, "recorded": true})
+}
+
+pub(crate) fn post_error_response() -> Value {
+    serde_json::json!({
+        "schema": ADAPTER_SCHEMA_VERSION,
+        "recorded": false,
+        "rule_id": "guard.evaluation_error"
+    })
 }
 
 fn normalize_tool(tool_name: &str, input: &Value) -> Result<(Capability, Facts), OpenCodeError> {
@@ -290,7 +352,7 @@ impl fmt::Display for OpenCodeError {
 mod tests {
     use serde_json::Value;
 
-    use super::{normalize, render, validate_config};
+    use super::{normalize, normalize_post, render, validate_config};
     use crate::model::{
         Capability, Decision, DecisionEffect, Evidence, PROTOCOL_VERSION, PolicyLayer, Severity,
     };
@@ -303,6 +365,8 @@ mod tests {
         include_bytes!("../../tests/fixtures/opencode/tool_execute_before/apply_patch.json");
     const UNKNOWN: &[u8] =
         include_bytes!("../../tests/fixtures/opencode/tool_execute_before/unknown.json");
+    const POST: &[u8] =
+        include_bytes!("../../tests/fixtures/opencode/tool_execute_after/file_read.json");
 
     #[test]
     fn normalizes_golden_fixtures() {
@@ -327,6 +391,24 @@ mod tests {
         let unknown = normalize(UNKNOWN).unwrap();
         assert_eq!(unknown.tool.capability, Capability::Unknown);
         assert_eq!(unknown.input["path"], "README.md");
+    }
+
+    #[test]
+    fn normalizes_metadata_only_post_fixture() {
+        let event = normalize_post(POST).unwrap();
+        assert_eq!(event.session_id.as_deref(), Some("ses_phase14"));
+        assert_eq!(event.result.byte_size, Some(43));
+        assert_eq!(event.facts.paths, ["web/sites/default/settings.php"]);
+    }
+
+    #[test]
+    fn post_fixture_rejects_missing_or_empty_identifiers() {
+        let mut value: Value = serde_json::from_slice(POST).unwrap();
+        value.as_object_mut().unwrap().remove("call_id");
+        assert!(normalize_post(&serde_json::to_vec(&value).unwrap()).is_err());
+        value["call_id"] = Value::String("call".to_owned());
+        value["session_id"] = Value::String(String::new());
+        assert!(normalize_post(&serde_json::to_vec(&value).unwrap()).is_err());
     }
 
     #[test]

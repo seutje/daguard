@@ -45,6 +45,14 @@ These protections are built in and cannot be placed in organization
 | `git.write.review` | ask | Git commit or ordinary push needs review. |
 | `composer.dependencies.modify` | ask | Composer dependency mutation needs review. |
 | `composer.scripts.execute` | ask | Composer script execution needs review. |
+| `exfiltration.tainted_session` | deny | A session carrying credential, authentication, personal, financial, customer, private, or unknown sensitivity requested an outbound sink. |
+| `exfiltration.tainted_session.review` | ask | A session carrying only operational sensitivity requested an outbound sink. |
+
+Phase 14 sink decisions apply after the ordinary stateless decision. Outbound
+categories include HTTP/network, remote shell/file transfer, Git remote writes,
+API submissions, messaging, browser uploads, and outbound MCP. Local operations
+such as `git status`, `ddev drush cr`, and local file work are not sinks. An
+adapter that cannot represent `ask` safely renders the review rule as deny.
 
 ## Policy and guard rules
 

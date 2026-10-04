@@ -5,7 +5,8 @@ use serde_json::Value;
 use std::fmt;
 
 use crate::model::{
-    CanonicalRequest, Capability, Decision, DecisionEffect, Facts, PROTOCOL_VERSION, Tool,
+    CanonicalPostToolEvent, CanonicalRequest, Capability, Decision, DecisionEffect, Facts,
+    PROTOCOL_VERSION, ResultMetadata, ResultStatus, Tool,
 };
 
 const PRE_TOOL_USE: &str = "PreToolUse";
@@ -18,6 +19,17 @@ struct PreToolUseInput {
     tool_name: String,
     tool_use_id: String,
     tool_input: Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct PostToolUseInput {
+    session_id: String,
+    cwd: String,
+    hook_event_name: String,
+    tool_name: String,
+    tool_use_id: String,
+    tool_input: Value,
+    tool_response: Value,
 }
 
 pub(crate) fn normalize(input: &[u8]) -> Result<CanonicalRequest, CodexError> {
@@ -44,6 +56,50 @@ pub(crate) fn normalize(input: &[u8]) -> Result<CanonicalRequest, CodexError> {
     };
     request.validate().map_err(CodexError::Model)?;
     Ok(request)
+}
+
+pub(crate) fn normalize_post(input: &[u8]) -> Result<CanonicalPostToolEvent, CodexError> {
+    crate::json::preflight(input, crate::json::MAX_REQUEST_BYTES).map_err(CodexError::Json)?;
+    let input: PostToolUseInput = serde_json::from_slice(input).map_err(CodexError::Json)?;
+    if input.hook_event_name != "PostToolUse" {
+        return Err(CodexError::Invalid("expected a PostToolUse event"));
+    }
+    let (capability, facts) = normalize_tool(&input.tool_name, &input.tool_input)?;
+    let byte_size = serde_json::to_vec(&input.tool_response)
+        .map_err(CodexError::Json)?
+        .len() as u64;
+    let event = CanonicalPostToolEvent {
+        protocol: PROTOCOL_VERSION,
+        agent: "codex".to_owned(),
+        event: "post_tool_use".to_owned(),
+        session_id: Some(input.session_id),
+        call_id: Some(input.tool_use_id),
+        cwd: input.cwd,
+        tool: Tool {
+            native_name: input.tool_name,
+            capability,
+        },
+        input: input.tool_input,
+        facts,
+        result: ResultMetadata {
+            status: ResultStatus::Completed,
+            content_type: Some("application/json".to_owned()),
+            byte_size: Some(byte_size),
+        },
+    };
+    event.validate().map_err(CodexError::Model)?;
+    Ok(event)
+}
+
+pub(crate) fn post_response() -> Value {
+    serde_json::json!({})
+}
+
+pub(crate) fn post_error_response() -> Value {
+    serde_json::json!({
+        "decision": "block",
+        "reason": "Blocked by team policy: guard.evaluation_error"
+    })
 }
 
 fn normalize_tool(tool_name: &str, input: &Value) -> Result<(Capability, Facts), CodexError> {
@@ -230,32 +286,42 @@ pub(crate) fn error_response() -> Response {
 /// Performs advisory checks on a Codex `hooks.json` deployment.
 pub(crate) fn validate_hooks_config(input: &[u8]) -> Result<(), CodexError> {
     let root: Value = serde_json::from_slice(input).map_err(CodexError::Json)?;
-    let groups = root
-        .pointer("/hooks/PreToolUse")
-        .and_then(Value::as_array)
-        .ok_or(CodexError::Invalid(
-            "hooks.json must define hooks.PreToolUse as an array",
-        ))?;
-    let configured = groups.iter().any(|group| {
-        let matcher_covers_all = group
-            .get("matcher")
-            .and_then(Value::as_str)
-            .is_none_or(|matcher| matcher.is_empty() || matcher == "*");
-        matcher_covers_all
-            && group
-                .get("hooks")
-                .and_then(Value::as_array)
-                .is_some_and(|hooks| hooks.iter().any(valid_guard_command))
-    });
-    if !configured {
+    if !configured_event(&root, "PreToolUse", "pre-tool") {
         return Err(CodexError::Invalid(
             "no all-tools PreToolUse command uses absolute guard and policy paths",
+        ));
+    }
+    if !configured_event(&root, "PostToolUse", "post-tool") {
+        return Err(CodexError::Invalid(
+            "no all-tools PostToolUse command records session taint",
         ));
     }
     Ok(())
 }
 
-fn valid_guard_command(hook: &Value) -> bool {
+fn configured_event(root: &Value, event: &str, cli_event: &str) -> bool {
+    root.pointer(&format!("/hooks/{event}"))
+        .and_then(Value::as_array)
+        .is_some_and(|groups| {
+            groups.iter().any(|group| {
+                let matcher_covers_all = group
+                    .get("matcher")
+                    .and_then(Value::as_str)
+                    .is_none_or(|matcher| matcher.is_empty() || matcher == "*");
+                matcher_covers_all
+                    && group
+                        .get("hooks")
+                        .and_then(Value::as_array)
+                        .is_some_and(|hooks| {
+                            hooks
+                                .iter()
+                                .any(|hook| valid_guard_command(hook, cli_event))
+                        })
+            })
+        })
+}
+
+fn valid_guard_command(hook: &Value, event: &str) -> bool {
     if hook.get("type").and_then(Value::as_str) != Some("command") {
         return false;
     }
@@ -271,7 +337,7 @@ fn valid_guard_command(hook: &Value) -> bool {
         .is_some_and(|executable| super::is_daguard_executable(executable));
     executable_is_absolute
         && has_pair(&tokens, "--adapter", "codex")
-        && has_pair(&tokens, "--event", "pre-tool")
+        && has_pair(&tokens, "--event", event)
         && tokens
             .windows(2)
             .any(|pair| pair[0] == "--policy" && crate::paths::is_absolute(pair[1]))
@@ -307,7 +373,7 @@ impl fmt::Display for CodexError {
 mod tests {
     use serde_json::Value;
 
-    use super::{normalize, render, validate_hooks_config};
+    use super::{normalize, normalize_post, render, validate_hooks_config};
     use crate::model::{
         Capability, Decision, DecisionEffect, Evidence, PROTOCOL_VERSION, PolicyLayer, Severity,
     };
@@ -318,6 +384,7 @@ mod tests {
     const APPLY_PATCH: &[u8] =
         include_bytes!("../../tests/fixtures/codex/pre_tool_use/apply_patch.json");
     const MCP: &[u8] = include_bytes!("../../tests/fixtures/codex/pre_tool_use/mcp.json");
+    const POST: &[u8] = include_bytes!("../../tests/fixtures/codex/post_tool_use/file_read.json");
 
     #[test]
     fn normalizes_bash_fixture() {
@@ -354,6 +421,26 @@ mod tests {
         let request = normalize(MCP).unwrap();
         assert_eq!(request.tool.capability, Capability::McpCall);
         assert_eq!(request.facts.paths, ["README.md"]);
+    }
+
+    #[test]
+    fn normalizes_post_fixture_without_retaining_result() {
+        let event = normalize_post(POST).unwrap();
+        assert_eq!(event.event, "post_tool_use");
+        assert_eq!(event.session_id.as_deref(), Some("thr_phase14"));
+        assert_eq!(event.facts.paths, ["web/sites/default/settings.php"]);
+        let encoded = serde_json::to_string(&event).unwrap();
+        assert!(!encoded.contains("SYNTHETIC_PHASE14_SECRET_CANARY"));
+    }
+
+    #[test]
+    fn post_fixture_rejects_missing_or_empty_identifiers() {
+        let mut value: Value = serde_json::from_slice(POST).unwrap();
+        value.as_object_mut().unwrap().remove("tool_use_id");
+        assert!(normalize_post(&serde_json::to_vec(&value).unwrap()).is_err());
+        value["tool_use_id"] = Value::String("call".to_owned());
+        value["session_id"] = Value::String(String::new());
+        assert!(normalize_post(&serde_json::to_vec(&value).unwrap()).is_err());
     }
 
     #[test]
@@ -418,13 +505,13 @@ mod tests {
 
     #[test]
     fn validates_secure_hook_configuration() {
-        let valid = br#"{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"/usr/local/bin/daguard --adapter codex --event pre-tool --policy /etc/daguard/policy.json"}]}]}}"#;
+        let valid = include_bytes!("../../config/codex/hooks.json");
         assert!(validate_hooks_config(valid).is_ok());
 
         let relative = br#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"./daguard --adapter codex --event pre-tool --policy ./policy.json"}]}]}}"#;
         assert!(validate_hooks_config(relative).is_err());
 
-        let windows = br#"{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"\"C:\\Program Files\\Daguard\\daguard.exe\" --adapter codex --event pre-tool --policy \"C:\\ProgramData\\Daguard\\policy.json\""}]}]}}"#;
+        let windows = br#"{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"\"C:\\Program Files\\Daguard\\daguard.exe\" --adapter codex --event pre-tool --policy \"C:\\ProgramData\\Daguard\\policy.json\""}]}],"PostToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"\"C:\\Program Files\\Daguard\\daguard.exe\" --adapter codex --event post-tool --policy \"C:\\ProgramData\\Daguard\\policy.json\""}]}]}}"#;
         assert!(validate_hooks_config(windows).is_ok());
     }
 }

@@ -1,5 +1,6 @@
 //! Safe audit-event construction and append-only output.
 
+use std::collections::BTreeSet;
 use std::fs::OpenOptions;
 use std::io::{self, Write};
 use std::path::Path;
@@ -10,9 +11,13 @@ use sha2::{Digest, Sha256};
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 
-use crate::model::{CanonicalRequest, Capability, Decision, DecisionEffect, PolicyLayer, Severity};
+use crate::model::{
+    CanonicalPostToolEvent, CanonicalRequest, Capability, Decision, DecisionEffect, PolicyLayer,
+    ResultStatus, SensitivityCategory, Severity, SinkCategory,
+};
+use crate::sensitivity::SourceClassification;
 
-pub(crate) const AUDIT_SCHEMA_VERSION: u16 = 2;
+pub(crate) const AUDIT_SCHEMA_VERSION: u16 = 3;
 
 /// A deliberately small event that cannot contain raw tool input, commands,
 /// paths, file contents, SQL data, HTTP bodies, or decision evidence.
@@ -40,6 +45,22 @@ pub(crate) struct AuditEvent<'a> {
     mode: &'static str,
     enforcement_decision: DecisionEffect,
     enforcement_rule_id: &'a str,
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    sensitivity_categories: BTreeSet<SensitivityCategory>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sink: Option<SinkCategory>,
+}
+
+pub(crate) struct SecurityContext {
+    pub(crate) sensitivity_categories: BTreeSet<SensitivityCategory>,
+    pub(crate) sink: Option<SinkCategory>,
+}
+
+pub(crate) struct AppendContext<'a> {
+    pub(crate) audit_only: bool,
+    pub(crate) agent_version: Option<&'a str>,
+    pub(crate) adapter_schema: Option<u16>,
+    pub(crate) security: Option<&'a SecurityContext>,
 }
 
 impl<'a> AuditEvent<'a> {
@@ -50,6 +71,7 @@ impl<'a> AuditEvent<'a> {
         audit_only: bool,
         agent_version: Option<&'a str>,
         adapter_schema: Option<u16>,
+        security: Option<&SecurityContext>,
     ) -> io::Result<Self> {
         let timestamp_unix_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -74,6 +96,10 @@ impl<'a> AuditEvent<'a> {
             mode: if audit_only { "audit_only" } else { "enforce" },
             enforcement_decision: enforcement.effect,
             enforcement_rule_id: &enforcement.rule_id,
+            sensitivity_categories: security
+                .map(|context| context.sensitivity_categories.clone())
+                .unwrap_or_default(),
+            sink: security.and_then(|context| context.sink),
         })
     }
 }
@@ -83,19 +109,92 @@ pub(crate) fn append(
     request: &CanonicalRequest,
     decision: &Decision,
     enforcement: &Decision,
-    audit_only: bool,
-    agent_version: Option<&str>,
-    adapter_schema: Option<u16>,
+    context: &AppendContext<'_>,
 ) -> io::Result<()> {
     let event = AuditEvent::new(
         request,
         decision,
         enforcement,
-        audit_only,
-        agent_version,
-        adapter_schema,
+        context.audit_only,
+        context.agent_version,
+        context.adapter_schema,
+        context.security,
     )?;
     let mut line = serde_json::to_vec(&event).map_err(io::Error::other)?;
+    line.push(b'\n');
+
+    let mut options = OpenOptions::new();
+    options.create(true).append(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options.open(path)?;
+    validate_destination(&file)?;
+    file.write_all(&line)
+}
+
+#[derive(Debug, Serialize)]
+struct PostAuditEvent<'a> {
+    schema: u16,
+    timestamp_unix_ms: u128,
+    guard_version: &'static str,
+    agent: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    adapter_schema: Option<u16>,
+    event: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    call: Option<String>,
+    capability: Capability,
+    result_status: ResultStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result_content_type: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result_byte_size: Option<u64>,
+    decision: &'static str,
+    source_ids: Vec<&'a str>,
+    sensitivity_categories: BTreeSet<SensitivityCategory>,
+}
+
+pub(crate) fn append_post(
+    path: &Path,
+    event: &CanonicalPostToolEvent,
+    classifications: &[SourceClassification],
+    adapter_schema: Option<u16>,
+) -> io::Result<()> {
+    let timestamp_unix_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(io::Error::other)?
+        .as_millis();
+    let mut sensitivity_categories = BTreeSet::new();
+    for classification in classifications {
+        sensitivity_categories.extend(classification.categories.iter().copied());
+    }
+    let audit = PostAuditEvent {
+        schema: AUDIT_SCHEMA_VERSION,
+        timestamp_unix_ms,
+        guard_version: env!("CARGO_PKG_VERSION"),
+        agent: known_agent(&event.agent),
+        adapter_schema,
+        event: "post_tool_use",
+        session: event.session_id.as_deref().map(pseudonymize),
+        call: event.call_id.as_deref().map(pseudonymize),
+        capability: event.tool.capability,
+        result_status: event.result.status,
+        result_content_type: event.result.content_type.as_deref().map(known_content_type),
+        result_byte_size: event.result.byte_size,
+        decision: "recorded",
+        source_ids: classifications
+            .iter()
+            .map(|classification| classification.source_id.as_str())
+            .collect(),
+        sensitivity_categories,
+    };
+    write_event(path, &audit)
+}
+
+fn write_event(path: &Path, event: &impl Serialize) -> io::Result<()> {
+    let mut line = serde_json::to_vec(event).map_err(io::Error::other)?;
     line.push(b'\n');
 
     let mut options = OpenOptions::new();
@@ -158,6 +257,16 @@ fn known_event(event: &str) -> &'static str {
     }
 }
 
+fn known_content_type(content_type: &str) -> &'static str {
+    match content_type {
+        "application/json" => "application/json",
+        "text/plain" => "text/plain",
+        "text/markdown" => "text/markdown",
+        "application/octet-stream" => "application/octet-stream",
+        _ => "unknown",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{AUDIT_SCHEMA_VERSION, AuditEvent};
@@ -180,7 +289,8 @@ mod tests {
         });
         let request = CanonicalRequest::from_slice(&serde_json::to_vec(&input).unwrap()).unwrap();
         let decision = policy::evaluate(&request, None, None).unwrap();
-        let event = AuditEvent::new(&request, &decision, &decision, false, None, Some(1)).unwrap();
+        let event =
+            AuditEvent::new(&request, &decision, &decision, false, None, Some(1), None).unwrap();
         let encoded = serde_json::to_string(&event).unwrap();
         let value: Value = serde_json::from_str(&encoded).unwrap();
 

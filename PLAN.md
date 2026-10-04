@@ -888,17 +888,17 @@ Phase 15.
 
 ## 14.1 Canonical post-tool event model
 
-- [ ] Identify available post-tool/result events for each supported agent.
-- [ ] Define an agent-agnostic canonical post-tool event model.
-- [ ] Include agent identifier/type.
-- [ ] Include session ID where available.
-- [ ] Include tool-use/call ID where available.
-- [ ] Include normalized tool/capability category.
-- [ ] Include relevant resource metadata.
-- [ ] Include result metadata such as content type and byte size where available.
-- [ ] Keep raw returned content out of persistent state.
-- [ ] Add fixtures for Codex, Cursor, and OpenCode post-tool/result events.
-- [ ] Add tests for missing or malformed session/call identifiers.
+- [x] Identify available post-tool/result events for each supported agent.
+- [x] Define an agent-agnostic canonical post-tool event model.
+- [x] Include agent identifier/type.
+- [x] Include session ID where available.
+- [x] Include tool-use/call ID where available.
+- [x] Include normalized tool/capability category.
+- [x] Include relevant resource metadata.
+- [x] Include result metadata such as content type and byte size where available.
+- [x] Keep raw returned content out of persistent state.
+- [x] Add fixtures for Codex, Cursor, and OpenCode post-tool/result events.
+- [x] Add tests for missing or malformed session/call identifiers.
 
 The model must remain agent-agnostic and forward-compatible with Phase 15.
 
@@ -918,13 +918,13 @@ operational_sensitive
 unknown_sensitive
 ```
 
-- [ ] Define canonical sensitivity categories.
-- [ ] Document each category.
-- [ ] Support multiple categories on one resource or session.
-- [ ] Define deterministic category merging.
-- [ ] Define severity/priority semantics where needed.
-- [ ] Ensure classifications store metadata only, not sensitive values.
-- [ ] Ensure Phase 15 scanners reuse this exact taxonomy.
+- [x] Define canonical sensitivity categories.
+- [x] Document each category.
+- [x] Support multiple categories on one resource or session.
+- [x] Define deterministic category merging.
+- [x] Define severity/priority semantics where needed.
+- [x] Ensure classifications store metadata only, not sensitive values.
+- [x] Ensure Phase 15 scanners reuse this exact taxonomy.
 
 ## 14.3 Sensitive source classification
 
@@ -973,32 +973,32 @@ watchdog
 flood
 ```
 
-- [ ] Define sensitive-source classification independently from sink classification.
-- [ ] Reuse existing path policy.
-- [ ] Reuse existing SQL sensitive-table matching.
-- [ ] Map known sensitive resources to one or more canonical sensitivity categories.
-- [ ] Support project-configured sensitive resources.
-- [ ] Support future Phase 15 dynamic detections as additional taint sources.
-- [ ] Add Drupal/DDEV-oriented fixtures.
-- [ ] Ensure source classification never requires logging raw resource contents.
+- [x] Define sensitive-source classification independently from sink classification.
+- [x] Reuse existing path policy.
+- [x] Reuse existing SQL sensitive-table matching.
+- [x] Map known sensitive resources to one or more canonical sensitivity categories.
+- [x] Support project-configured sensitive resources.
+- [x] Support future Phase 15 dynamic detections as additional taint sources.
+- [x] Add Drupal/DDEV-oriented fixtures.
+- [x] Ensure source classification never requires logging raw resource contents.
 
 ## 14.4 Session taint state
 
-- [ ] Define canonical session taint representation.
-- [ ] Support multiple simultaneous sensitivity categories.
-- [ ] Define taint lifetime.
-- [ ] Define expiry behavior.
-- [ ] Define cleanup behavior.
-- [ ] Define crash/restart behavior.
-- [ ] Define concurrency/locking behavior.
-- [ ] Prevent cross-user or cross-session contamination.
-- [ ] Define behavior when an agent does not provide a stable session ID.
-- [ ] Define behavior when sessions reconnect or reuse identifiers.
-- [ ] Store classifications and metadata only.
-- [ ] Never store raw secret, PII, financial, or customer values.
-- [ ] Add isolation tests.
-- [ ] Add expiry tests.
-- [ ] Add restart tests.
+- [x] Define canonical session taint representation.
+- [x] Support multiple simultaneous sensitivity categories.
+- [x] Define taint lifetime.
+- [x] Define expiry behavior.
+- [x] Define cleanup behavior.
+- [x] Define crash/restart behavior.
+- [x] Define concurrency/locking behavior.
+- [x] Prevent cross-user or cross-session contamination.
+- [x] Define behavior when an agent does not provide a stable session ID.
+- [x] Define behavior when sessions reconnect or reuse identifiers.
+- [x] Store classifications and metadata only.
+- [x] Never store raw secret, PII, financial, or customer values.
+- [x] Add isolation tests.
+- [x] Add expiry tests.
+- [x] Add restart tests.
 
 An acceptable state shape contains category metadata only, for example:
 
@@ -1018,15 +1018,15 @@ remote `rsync`, `git push`, `gh api`, other API clients, email tools,
 chat/messaging tools, issue-tracker submission tools, browser upload/network
 tools, outbound MCP tools, and arbitrary network-capable shell execution.
 
-- [ ] Define canonical sink categories.
-- [ ] Distinguish local-only operations from outbound sinks.
-- [ ] Identify network-capable shell commands.
-- [ ] Identify outbound MCP capabilities.
-- [ ] Identify git/API submission paths.
-- [ ] Account for common wrappers and command nesting.
-- [ ] Consider DDEV commands that invoke network-capable processes inside containers.
-- [ ] Keep sink detection deterministic and conservative.
-- [ ] Add sink-classification tests.
+- [x] Define canonical sink categories.
+- [x] Distinguish local-only operations from outbound sinks.
+- [x] Identify network-capable shell commands.
+- [x] Identify outbound MCP capabilities.
+- [x] Identify git/API submission paths.
+- [x] Account for common wrappers and command nesting.
+- [x] Consider DDEV commands that invoke network-capable processes inside containers.
+- [x] Keep sink detection deterministic and conservative.
+- [x] Add sink-classification tests.
 
 ## 14.6 Source → taint → sink enforcement
 
@@ -1042,14 +1042,14 @@ later outbound sink
 policy decision
 ```
 
-- [ ] Mark a session with sensitivity categories after access to known sensitive sources.
-- [ ] Merge new classifications with existing taint state.
-- [ ] Evaluate current session taint before outbound sink execution.
-- [ ] Define policy for block vs explicit approval.
-- [ ] Treat credential/authentication taint more restrictively than ordinary operational metadata.
-- [ ] Define conservative handling of `unknown_sensitive`.
-- [ ] Ensure future Phase 15 sanitization does not automatically clear taint.
-- [ ] Add end-to-end source → taint → sink integration tests.
+- [x] Mark a session with sensitivity categories after access to known sensitive sources.
+- [x] Merge new classifications with existing taint state.
+- [x] Evaluate current session taint before outbound sink execution.
+- [x] Define policy for block vs explicit approval.
+- [x] Treat credential/authentication taint more restrictively than ordinary operational metadata.
+- [x] Define conservative handling of `unknown_sensitive`.
+- [x] Ensure future Phase 15 sanitization does not automatically clear taint.
+- [x] Add end-to-end source → taint → sink integration tests.
 
 Representative flows include:
 
@@ -1072,14 +1072,14 @@ commerce_order
 
 ## 14.7 Audit safety
 
-- [ ] Never persist raw tool results.
-- [ ] Never persist raw sensitive values.
-- [ ] Never include sensitive values in allow/deny reasons.
-- [ ] Never include raw sensitive data in panic/error output.
-- [ ] Never include raw sensitive data in debug/tracing output.
-- [ ] Audit only classification, rule/source IDs, decisions, sizes, timestamps, and safe metadata.
-- [ ] Add fake-canary tests for audit leakage.
-- [ ] Test malformed/error paths for accidental raw payload serialization.
+- [x] Never persist raw tool results.
+- [x] Never persist raw sensitive values.
+- [x] Never include sensitive values in allow/deny reasons.
+- [x] Never include raw sensitive data in panic/error output.
+- [x] Never include raw sensitive data in debug/tracing output.
+- [x] Audit only classification, rule/source IDs, decisions, sizes, timestamps, and safe metadata.
+- [x] Add fake-canary tests for audit leakage.
+- [x] Test malformed/error paths for accidental raw payload serialization.
 
 ## 14.8 Adapter security capability model
 
@@ -1093,25 +1093,25 @@ observe_only
 unsupported
 ```
 
-- [ ] Define canonical interception-capability categories.
-- [ ] Model capabilities per agent and tool category.
-- [ ] Do not assume every tool in one agent has the same behavior.
-- [ ] Document what `observe_only` means.
-- [ ] Explicitly state that `observe_only` cannot provide pre-context containment.
-- [ ] Add adapter capability fixtures/tests when Phase 14 is implemented.
-- [ ] Keep security capability separate from ordinary policy decisions.
+- [x] Define canonical interception-capability categories.
+- [x] Model capabilities per agent and tool category.
+- [x] Do not assume every tool in one agent has the same behavior.
+- [x] Document what `observe_only` means.
+- [x] Explicitly state that `observe_only` cannot provide pre-context containment.
+- [x] Add adapter capability fixtures/tests when Phase 14 is implemented.
+- [x] Keep security capability separate from ordinary policy decisions.
 
 ### Phase 14 exit criteria
 
-- [ ] Stateless enforcement remains independently usable.
-- [ ] Session taint has a documented threat model.
-- [ ] Persistence/lifetime/cleanup semantics are documented and tested.
-- [ ] Sensitive-source → outbound-sink scenarios are covered.
-- [ ] Raw sensitive content is never stored in session state.
-- [ ] Audit logs cannot contain raw sensitive content.
-- [ ] Canonical sensitivity categories are established for reuse by Phase 15.
-- [ ] Adapter/tool interception capabilities are explicitly represented.
-- [ ] Phase 14 remains useful on `observe_only` integrations.
+- [x] Stateless enforcement remains independently usable.
+- [x] Session taint has a documented threat model.
+- [x] Persistence/lifetime/cleanup semantics are documented and tested.
+- [x] Sensitive-source → outbound-sink scenarios are covered.
+- [x] Raw sensitive content is never stored in session state.
+- [x] Audit logs cannot contain raw sensitive content.
+- [x] Canonical sensitivity categories are established for reuse by Phase 15.
+- [x] Adapter/tool interception capabilities are explicitly represented.
+- [x] Phase 14 remains useful on `observe_only` integrations.
 
 ---
 

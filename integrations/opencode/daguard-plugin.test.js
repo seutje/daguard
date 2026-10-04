@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import plugin, { createToolHook } from "./index.js"
+import plugin, { createPostToolHook, createToolHook } from "./index.js"
 
 const options = {
   guard: "/usr/local/bin/daguard",
@@ -15,20 +15,39 @@ const event = {
 }
 
 test("registers the OpenCode v2 execute.before hook", async () => {
-  let name
-  let callback
+  const registered = new Map()
   await plugin.setup({
     options,
     location: { directory: "/workspace/project" },
     tool: {
       async hook(value, handler) {
-        name = value
-        callback = handler
+        registered.set(value, handler)
       },
     },
   })
-  assert.equal(name, "execute.before")
-  assert.equal(typeof callback, "function")
+  assert.equal(typeof registered.get("execute.before"), "function")
+  assert.equal(typeof registered.get("execute.after"), "function")
+})
+
+test("post hook sends result metadata without raw result content", async () => {
+  let received
+  const hook = createPostToolHook({
+    options,
+    directory: "/workspace/project",
+    run(config, payload, phase) {
+      received = { config, payload, phase }
+      return '{"schema":1,"recorded":true}'
+    },
+  })
+  await hook({
+    ...event,
+    status: "completed",
+    result: { content: "SYNTHETIC_PHASE14_SECRET_CANARY" },
+  })
+  assert.equal(received.phase, "post-tool")
+  assert.equal(received.payload.status, "completed")
+  assert.equal(typeof received.payload.byte_size, "number")
+  assert.equal(JSON.stringify(received.payload).includes("SYNTHETIC_PHASE14_SECRET_CANARY"), false)
 })
 
 test("passes a bounded canonical bridge payload and allows only valid allow", async () => {

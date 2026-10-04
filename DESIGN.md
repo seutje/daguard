@@ -1493,6 +1493,69 @@ capabilities. Source classification and sink classification are independent.
 Phase 14 remains useful on observe-only integrations because it can restrict a
 later pre-tool sink even when it could not contain the earlier result.
 
+#### 21.4.1 Implemented Phase 14 state contract
+
+The implemented post-tool inputs are Codex `PostToolUse`, Cursor `postToolUse`,
+and OpenCode v2 `execute.after`. Adapters discard native result content after
+deriving status, content type, and byte size; the canonical post-tool model has
+no result-content field. Cursor events without a stable session identifier are
+audited and classified but do not create shared state. Missing identity must
+reduce the stateful guarantee rather than merge unrelated conversations.
+
+Session state is enabled by default for native adapter invocations and may be
+disabled explicitly with `--no-session-state`; canonical `daguard check` stays
+stateless unless `--state-dir` is supplied. The default state directory is an
+effective-user-specific directory below the OS temporary directory. Operators
+may select another absolute directory with `--state-dir`. On Unix the directory
+and state files must be owner-only and non-symlink. Session keys combine agent
+and session identity and are SHA-256 pseudonyms, which isolates equal native
+session IDs belonging to different agents.
+
+State survives an individual guard process crash or restart through an atomic
+write-and-rename file. Per-session create-new lock files serialize concurrent
+updates; a lock older than 30 seconds is recoverable. Taint expires 24 hours
+after its most recent sensitive-source classification and has an absolute
+seven-day lifetime even when the identifier is reused.
+Opening the store inspects at most 32 entries for expiry, avoiding an unbounded
+per-hook scan. A reconnect with the same agent/session ID inherits unexpired
+taint; identifier reuse is therefore conservatively over-tainted until expiry.
+OS cleanup or reboot may remove a default temporary state directory. Corrupt,
+oversized, inaccessible, or unsafe matching state fails closed.
+
+The hook process and coding agent normally run as the same OS user. Owner-only
+permissions prevent cross-user contamination and accidental exposure, but they
+cannot stop a deliberately malicious same-user process from deleting or
+replacing otherwise valid state. A missing state file is indistinguishable from
+a new session and therefore cannot fail closed. Phase 14 is a hook-level
+defense against agent workflow mistakes and opportunistic exfiltration, not an
+OS sandbox or a same-user anti-tamper boundary. Stronger managed guarantees
+require an OS-isolated state broker or equivalent platform control in a later
+design.
+
+Each state document stores only schema/version, pseudonymous identity,
+timestamps, category sets, stable source IDs, resource kinds, and resource
+hashes. It stores no path, query, command, returned content, credential, PII,
+database row, or matched value. Category merging is set union. At most 32
+distinct source metadata records are retained, while the union of categories is
+never weakened when an older source record is evicted.
+
+Source mapping is independent from sink mapping. Built-in credential files map
+to `credential` and `authentication`; Drupal settings also map to
+`operational_sensitive`. User/session tables map to authentication, credential,
+and personal-data categories; Webform/comment/profile tables map to personal and
+customer data; Commerce payment/order/shipment tables add financial/customer
+data; watchdog/key-value sources map to operational sensitivity. Organization
+and project read-path sources and configured SQL tables whose precise type is
+not known map to `unknown_sensitive`.
+
+Canonical sink categories are outbound HTTP/network, remote shell, remote file
+transfer, Git remote write, API submission, messaging, browser upload, and
+outbound MCP. Classification covers shell wrappers and DDEV nested execution.
+Credential, authentication, personal, financial, customer, private, and unknown
+taint produce mandatory `exfiltration.tainted_session` denial. A session carrying
+only operational sensitivity produces `exfiltration.tainted_session.review`
+approval; adapters without a supported approval result render it as deny.
+
 ### 21.5 Phase 15: pre-context containment boundary
 
 Raw output from policy-designated sensitive sources must not enter model context.
@@ -1577,6 +1640,14 @@ assumed from naming or generic hook availability. An upstream semantics change
 is security-critical. A supported safe path must never silently downgrade to
 `observe_only`, and no parity is claimed among Codex, Cursor, and OpenCode until
 each relevant agent/tool path has been verified.
+
+Phase 14 records shell, file-read, file-write, MCP, network, and unknown/native
+tool categories separately for each adapter. All implemented post-tool paths are
+declared `observe_only`; this records useful taint but makes no Phase 15
+pre-context guarantee. `daguard capabilities` emits the versioned records.
+Codex records minimum tested CLI version 0.160.0, OpenCode records v2.0.22, and
+Cursor remains `unverified` until a live application compatibility run is
+recorded. These capability records remain separate from allow/ask/deny policy.
 
 ### 21.8 Guarded execution and MCP response gateway
 
@@ -1960,7 +2031,7 @@ Example event:
 
 ```json
 {
-  "schema": 2,
+  "schema": 3,
   "mode": "enforce",
   "enforcement_decision": "deny",
   "enforcement_rule_id": "drupal.secret.settings_php",
@@ -1978,14 +2049,17 @@ Example event:
 }
 ```
 
-Audit schema 2 adds `mode` (`enforce` or `audit_only`),
+Audit schema 2 added `mode` (`enforce` or `audit_only`),
 `enforcement_decision`, and `enforcement_rule_id`. Existing `decision` and rule
 metadata describe the full evaluated policy; the new fields describe the
 canonical decision used to render the actual response. In enforcement mode the
 two decisions agree. A candidate would-deny that is permitted records evaluated
 `deny` with enforcement `allow`. Current adapters render canonical `ask` as deny.
 Only the winning evaluated/enforced rules are recorded; logs do not enumerate
-all matching rules. Consumers must distinguish schema 1 from schema 2 explicitly.
+all matching rules. Audit schema 3 adds metadata-only `post_tool_use` records,
+result status/content-type/byte-size fields, source IDs, sensitivity categories,
+and optional pre-tool sink/category fields. It never adds raw result or resource
+content. Consumers must distinguish all audit schema versions explicitly.
 
 Audit logging is opt-in per invocation through `--audit-log PATH`, and is
 required when organization candidate audit-only evaluation is enabled. The event
@@ -2656,6 +2730,10 @@ daguard/
 │   ├── policy.rs
 │   ├── paths.rs
 │   ├── shell.rs
+│   ├── sensitivity.rs
+│   ├── state.rs
+│   ├── sink.rs
+│   ├── capabilities.rs
 │   ├── audit.rs
 │   ├── project.rs
 │   ├── platform.rs
@@ -3033,11 +3111,12 @@ The team should decide:
 - session taint state
 - network/MCP sink controls
 - source-to-sink exfiltration enforcement
+- metadata-only per-agent/tool interception capability records
 - optional centralized audit export
 
 ### Milestone 7 — sensitive-output containment
 
-- per-agent/tool interception capability matrix
+- pre-context per-agent/tool capability verification
 - pre-context result decisions
 - guarded shell execution
 - MCP response gateway
