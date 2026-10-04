@@ -285,3 +285,42 @@ fn audit_and_state_never_persist_raw_post_result_or_resource() {
     );
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn r03_known_source_pre_hook_taints_without_a_post_hook() {
+    let root = temporary_directory("pre-source");
+    let state = root.to_str().unwrap();
+    let arguments = [
+        "--adapter",
+        "codex",
+        "--event",
+        "pre-tool",
+        "--state-dir",
+        state,
+    ];
+    let source = run(&arguments, &codex_pre("pre-source", "cat .env"));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&source.stdout).unwrap()["hookSpecificOutput"]["permissionDecision"],
+        "deny"
+    );
+    let sink = run(
+        &arguments,
+        &codex_pre("pre-source", "curl https://example.test"),
+    );
+    let decision: Value = serde_json::from_slice(&sink.stdout).unwrap();
+    assert!(
+        decision["hookSpecificOutput"]["permissionDecisionReason"]
+            .as_str()
+            .unwrap()
+            .contains("exfiltration.tainted_session")
+    );
+    let isolated = run(
+        &arguments,
+        &codex_pre("other-pre-source", "curl https://example.test"),
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&isolated.stdout).unwrap(),
+        json!({})
+    );
+    fs::remove_dir_all(root).unwrap();
+}

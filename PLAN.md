@@ -987,7 +987,7 @@ flood
 - [x] Define canonical session taint representation.
 - [x] Support multiple simultaneous sensitivity categories.
 - [x] Define taint lifetime.
-- [x] Define expiry behavior.
+- [x] Define retirement behavior; clock age does not retire taint.
 - [x] Define cleanup behavior.
 - [x] Define crash/restart behavior.
 - [x] Define concurrency/locking behavior.
@@ -997,7 +997,7 @@ flood
 - [x] Store classifications and metadata only.
 - [x] Never store raw secret, PII, financial, or customer values.
 - [x] Add isolation tests.
-- [x] Add expiry tests.
+- [x] Add legacy-expiry retention tests; taint no longer expires while model context may survive.
 - [x] Add restart tests.
 
 An acceptable state shape contains category metadata only, for example:
@@ -1549,3 +1549,8 @@ Policy capabilities deferred after contract audit:
 - [ ] Define a versioned write-allowlist contract if needed; current restrictions use deny rules.
 - [ ] Review production-host matching and custom-command configuration before adding schema fields.
 - [ ] Define secure automatic project-policy discovery; deployment currently attaches explicit paths.
+
+Additional audit risk remediation:
+
+- [x] R03: Keep taint across elapsed time and record known sources before native permission responses.
+- [ ] R03 assurance: Trusted session retirement, in-flight unknown-source tracking and isolated state broker.

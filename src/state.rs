@@ -16,12 +16,9 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use crate::model::{SensitivityCategory, merge_categories};
 use crate::sensitivity::SourceClassification;
 
-const STATE_SCHEMA_VERSION: u16 = 1;
-const IDLE_TTL_SECONDS: u64 = 24 * 60 * 60;
-const MAX_LIFETIME_SECONDS: u64 = 7 * 24 * 60 * 60;
+const STATE_SCHEMA_VERSION: u16 = 2;
 const MAX_STATE_BYTES: usize = 64 * 1024;
 const MAX_SOURCES: usize = 32;
-const CLEANUP_LIMIT: usize = 32;
 const LOCK_ATTEMPTS: usize = 40;
 const LOCK_RETRY: Duration = Duration::from_millis(5);
 const STALE_LOCK_SECONDS: u64 = 30;
@@ -34,7 +31,9 @@ pub(crate) struct SessionTaint {
     pub(crate) agent: String,
     created_unix_seconds: u64,
     updated_unix_seconds: u64,
-    expires_unix_seconds: u64,
+    /// Legacy v1 metadata is accepted but never used to forget taint.
+    #[serde(default, skip_serializing)]
+    expires_unix_seconds: Option<u64>,
     pub(crate) categories: BTreeSet<SensitivityCategory>,
     sources: Vec<StoredSource>,
 }
@@ -74,9 +73,7 @@ impl StateStore {
                 ));
             }
         }
-        let store = Self { root };
-        store.cleanup_expired()?;
-        Ok(store)
+        Ok(Self { root })
     }
 
     pub(crate) fn load(
@@ -84,17 +81,12 @@ impl StateStore {
         agent: &str,
         session_id: &str,
     ) -> Result<Option<SessionTaint>, StateError> {
-        let now = now_seconds()?;
         let path = self.state_path(agent, session_id);
         let _lock = Self::lock(&path)?;
         let Some(state) = read_state(&path)? else {
             return Ok(None);
         };
         validate_state(&state, agent, session_id)?;
-        if expired(&state, now) {
-            remove_if_exists(&path)?;
-            return Ok(None);
-        }
         Ok(Some(state))
     }
 
@@ -128,13 +120,9 @@ impl StateStore {
         let path = self.state_path(agent, session_id);
         let _lock = Self::lock(&path)?;
         let mut state = match read_state(&path)? {
-            Some(state) if !expired(&state, now) => {
+            Some(state) => {
                 validate_state(&state, agent, session_id)?;
                 state
-            }
-            Some(_) => {
-                remove_if_exists(&path)?;
-                new_state(agent, session_id, now)
             }
             None => new_state(agent, session_id, now),
         };
@@ -157,7 +145,8 @@ impl StateStore {
             }
         }
         state.updated_unix_seconds = now;
-        state.expires_unix_seconds = idle_expiry(state.created_unix_seconds, now);
+        state.schema = STATE_SCHEMA_VERSION;
+        state.expires_unix_seconds = None;
         write_state(&path, &state)?;
         Ok(Some(state))
     }
@@ -193,28 +182,6 @@ impl StateStore {
         }
         Err(StateError::Invalid("session state is locked"))
     }
-
-    fn cleanup_expired(&self) -> Result<(), StateError> {
-        let now = now_seconds()?;
-        for entry in fs::read_dir(&self.root)
-            .map_err(StateError::Io)?
-            .take(CLEANUP_LIMIT)
-        {
-            let entry = entry.map_err(StateError::Io)?;
-            let path = entry.path();
-            if path.extension().and_then(|value| value.to_str()) != Some("json") {
-                continue;
-            }
-            match read_state(&path) {
-                Ok(Some(state)) if expired(&state, now) => remove_if_exists(&path)?,
-                Ok(_) | Err(_) => {
-                    // A corrupt state file is not silently deleted: a matching
-                    // session must fail closed when it attempts to load it.
-                }
-            }
-        }
-        Ok(())
-    }
 }
 
 fn new_state(agent: &str, session_id: &str, now: u64) -> SessionTaint {
@@ -224,7 +191,7 @@ fn new_state(agent: &str, session_id: &str, now: u64) -> SessionTaint {
         agent: known_agent(agent).to_owned(),
         created_unix_seconds: now,
         updated_unix_seconds: now,
-        expires_unix_seconds: idle_expiry(now, now),
+        expires_unix_seconds: None,
         categories: BTreeSet::new(),
         sources: Vec::new(),
     }
@@ -242,14 +209,11 @@ fn validate_state(state: &SessionTaint, agent: &str, session_id: &str) -> Result
             return Err(StateError::Invalid("session state is invalid"));
         }
     }
-    if state.schema != STATE_SCHEMA_VERSION
+    if !(1..=STATE_SCHEMA_VERSION).contains(&state.schema)
         || state.session != format!("sha256:{}", digest(session_id))
         || state.agent != known_agent(agent)
         || state.sources.len() > MAX_SOURCES
         || state.created_unix_seconds > state.updated_unix_seconds
-        || state.updated_unix_seconds > state.expires_unix_seconds
-        || state.expires_unix_seconds
-            > idle_expiry(state.created_unix_seconds, state.updated_unix_seconds)
         || state.categories.is_empty()
         || !source_categories.is_subset(&state.categories)
     {
@@ -320,16 +284,6 @@ fn lock_is_stale(path: &Path) -> Result<bool, StateError> {
     Ok(SystemTime::now()
         .duration_since(modified)
         .is_ok_and(|age| age.as_secs() >= STALE_LOCK_SECONDS))
-}
-
-fn expired(state: &SessionTaint, now: u64) -> bool {
-    now >= state.expires_unix_seconds
-        || now.saturating_sub(state.created_unix_seconds) >= MAX_LIFETIME_SECONDS
-}
-
-fn idle_expiry(created: u64, now: u64) -> u64 {
-    now.saturating_add(IDLE_TTL_SECONDS)
-        .min(created.saturating_add(MAX_LIFETIME_SECONDS))
 }
 
 fn now_seconds() -> Result<u64, StateError> {
@@ -496,7 +450,7 @@ mod tests {
     }
 
     #[test]
-    fn expired_state_is_removed_after_restart() {
+    fn r03_old_taint_survives_restart_and_legacy_expiration() {
         let root = fs::canonicalize(std::env::temp_dir())
             .unwrap()
             .join(format!(
@@ -517,12 +471,15 @@ mod tests {
             .unwrap();
         let path = store.state_path("codex", "expired");
         let mut state: SessionTaint = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        state.expires_unix_seconds = 0;
+        state.schema = 1;
+        state.created_unix_seconds = 0;
+        state.updated_unix_seconds = 1;
+        state.expires_unix_seconds = Some(2);
         super::write_state(&path, &state).unwrap();
         drop(store);
 
         let restarted = StateStore::open(Some(&root)).unwrap();
-        assert!(restarted.load("codex", "expired").unwrap().is_none());
+        assert!(restarted.load("codex", "expired").unwrap().is_some());
         fs::remove_dir_all(root).unwrap();
     }
 

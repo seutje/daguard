@@ -1502,12 +1502,16 @@ session IDs belonging to different agents.
 
 State survives an individual guard process crash or restart through an atomic
 write-and-rename file. Per-session create-new lock files serialize concurrent
-updates; a lock older than 30 seconds is recoverable. Taint expires 24 hours
-after its most recent sensitive-source classification and has an absolute
-seven-day lifetime even when the identifier is reused.
-Opening the store inspects at most 32 entries for expiry, avoiding an unbounded
-per-hook scan. A reconnect with the same agent/session ID inherits unexpired
-taint; identifier reuse is therefore conservatively over-tainted until expiry.
+updates; a lock older than 30 seconds is recoverable. State schema 2 never
+expires taint by wall-clock age: live model context has no matching expiry.
+Legacy schema-1 documents are accepted conservatively without honoring their
+expiry timestamps and become schema 2 when merged. No unrelated session scan
+or automatic state deletion occurs. A reused identifier inherits taint until an
+operator retires that conversation's metadata; operators must arrange bounded
+storage/quotas and only remove state after the associated model context is gone.
+Known source classifications are persisted by pre-tool evaluation before a
+response, including denied attempts a fail-open host could ignore. Post hooks
+and contained dynamic detection merge additional categories without clearing them.
 OS cleanup or reboot may remove a default temporary state directory. Corrupt,
 oversized, inaccessible, or unsafe matching state fails closed.
 
@@ -3466,3 +3470,14 @@ the OS-selected temporary parent is canonicalized once for default roots (includ
 macOS system aliases). Later state operations still assume the owning user and
 parent hierarchy are trusted; this does not isolate state from that same user.
 Native Windows ACL enforcement remains a separate assurance gate.
+
+### Session ordering assurance (audit risk R03)
+
+Pre-tool known-source recording prevents a missing, failed or delayed post hook
+from dropping that classification. It does not predict sensitive values emerging
+from an unclassified operation, serialize entire concurrent tool lifetimes, or
+protect metadata against the owning OS user. Unknown in-flight sources, malformed
+post events without trustworthy identity, temporary-directory cleanup and
+same-user deletion still require a trusted session lifecycle and isolated broker
+for stronger guarantees. Native observe-only deployments must not claim those
+guarantees. Taint is now intentionally monotonic across time and process restarts.

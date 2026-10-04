@@ -280,7 +280,13 @@ fn codex_request(tool_name: &str, tool_input: &Value) -> Vec<u8> {
 }
 
 fn run_codex(input: &[u8], extra_args: &[&str]) -> Output {
-    let mut args = vec!["--adapter", "codex", "--event", "pre-tool"];
+    let mut args = vec![
+        "--adapter",
+        "codex",
+        "--event",
+        "pre-tool",
+        "--no-session-state",
+    ];
     args.extend_from_slice(extra_args);
     run(&args, input)
 }
@@ -297,7 +303,13 @@ fn cursor_request(tool_name: &str, tool_input: &Value) -> Vec<u8> {
 }
 
 fn run_cursor(input: &[u8], extra_args: &[&str]) -> Output {
-    let mut args = vec!["--adapter", "cursor", "--event", "pre-tool"];
+    let mut args = vec![
+        "--adapter",
+        "cursor",
+        "--event",
+        "pre-tool",
+        "--no-session-state",
+    ];
     args.extend_from_slice(extra_args);
     run(&args, input)
 }
@@ -315,7 +327,13 @@ fn opencode_request(tool_name: &str, tool_input: &Value) -> Vec<u8> {
 }
 
 fn run_opencode(input: &[u8], extra_args: &[&str]) -> Output {
-    let mut args = vec!["--adapter", "opencode", "--event", "pre-tool"];
+    let mut args = vec![
+        "--adapter",
+        "opencode",
+        "--event",
+        "pre-tool",
+        "--no-session-state",
+    ];
     args.extend_from_slice(extra_args);
     run(&args, input)
 }

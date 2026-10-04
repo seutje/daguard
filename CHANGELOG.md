@@ -14,6 +14,9 @@ once releases begin.
 
 ### Fixed
 
+- Retain session taint until explicit operator retirement (state schema 2) and
+  record known sources before pre-hook responses so missing post hooks cannot clear them.
+
 - Validate state-directory ancestors and ownership before descriptor-based
   permission changes; reject symlinks without changing their targets.
 

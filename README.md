@@ -135,3 +135,10 @@ sensitive tables, result scanning and organization defaults/candidate telemetry.
 See DESIGN section 14 for a loadable example and full-path glob semantics. Remove
 legacy `paths.writable` configuration: it was inert and is now rejected rather
 than implying a write boundary. Command/hostname allowlists remain deferred.
+
+Session taint metadata no longer expires automatically. State schema 2 accepts
+legacy state conservatively, and known sources are recorded before pre-hook
+responses. Use a persistent protected state directory for long-lived sessions;
+retire metadata only when the corresponding model context has been discarded.
+Configure storage quotas/retention through a trusted operator. Native hooks do
+not serialize tool lifetimes or prevent the agent's OS user deleting state.

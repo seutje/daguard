@@ -856,13 +856,27 @@ fn evaluate_and_audit(
             .map_err(|error| CliError::evaluation(error.to_string()))?
             && let Some(taint_decision) = crate::sink::enforce(request, &taint)
         {
-            if effect_rank(taint_decision.decision.effect) >= effect_rank(enforced.effect) {
+            if effect_rank(taint_decision.decision.effect) > effect_rank(enforced.effect) {
                 enforced = taint_decision.decision.clone();
             }
             security_context = Some(audit::SecurityContext {
                 sensitivity_categories: taint_decision.categories,
                 sink: Some(taint_decision.sink),
             });
+        }
+        // Record known sources before returning permission, including a deny
+        // a fail-open host might ignore. Missing/failed post hooks cannot erase
+        // this conservative metadata; raw output is never stored.
+        let sources = crate::sensitivity::classify_request(
+            request,
+            options.organization.as_ref(),
+            options.project.as_ref(),
+        )
+        .map_err(|error| CliError::evaluation(error.to_string()))?;
+        if !sources.is_empty() {
+            store
+                .merge(&request.agent, session_id, &sources)
+                .map_err(|error| CliError::evaluation(error.to_string()))?;
         }
     }
     if let Some(path) = options.audit_log.as_deref() {
