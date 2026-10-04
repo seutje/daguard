@@ -168,8 +168,6 @@ struct PathPolicy {
     deny_read: Vec<String>,
     #[serde(default)]
     deny_write: Vec<String>,
-    #[serde(default)]
-    writable: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -256,21 +254,13 @@ impl Policy {
                 ));
             }
         }
-        if matches!(kind, PolicyKind::Project) {
-            if self.defaults.unknown_tool.is_some() {
-                return Err(PolicyError::Weakening(
-                    "project policy cannot change default decisions",
-                ));
-            }
-            if !self.paths.writable.is_empty() {
-                return Err(PolicyError::Weakening(
-                    "project policy cannot add writable paths",
-                ));
-            }
+        if matches!(kind, PolicyKind::Project) && self.defaults.unknown_tool.is_some() {
+            return Err(PolicyError::Weakening(
+                "project policy cannot change default decisions",
+            ));
         }
         validate_patterns(&self.paths.deny_read)?;
         validate_patterns(&self.paths.deny_write)?;
-        validate_patterns(&self.paths.writable)?;
         if self.sql.sensitive_tables.len() > MAX_PATTERNS_PER_RULE
             || self.sql.sensitive_tables.iter().any(|table| {
                 table.is_empty()
@@ -2071,6 +2061,30 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn a20_inert_writable_setting_is_rejected() {
+        for kind in [PolicyKind::Organization, PolicyKind::Project] {
+            for writable in [json!([]), json!(["**/custom/**"])] {
+                let input = json!({"schema":3,"paths":{"writable":writable}});
+                assert!(Policy::from_slice(&serde_json::to_vec(&input).unwrap(), kind).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn a20_design_policy_example_is_loadable() {
+        let design = include_str!("../DESIGN.md");
+        let section = design.split("## 14. Policy file schema").nth(1).unwrap();
+        let example = section
+            .split("```json\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        assert!(Policy::from_slice(example.as_bytes(), PolicyKind::Organization).is_ok());
     }
 
     #[test]

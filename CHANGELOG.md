@@ -14,6 +14,9 @@ once releases begin.
 
 ### Fixed
 
+- Reject inert `paths.writable` settings and align the loadable design example,
+  project-policy attachment and full-path matching documentation with schema 3.
+
 - Supervise MCP framing and failures, correlate authorized replies, and preserve protocol schemas.
 
 - Enforce guarded deadlines while draining inherited output pipes.

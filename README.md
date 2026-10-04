@@ -127,3 +127,11 @@ Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 ## License
 
 Licensed under the [MIT License](LICENSE).
+
+Project policies are applied only when each hook/guarded route includes
+`--project-policy /absolute/path/to/.daguard/project.json`; root detection does not
+discover them. Policy schema 3 supports path denies, capability/path rules, SQL
+sensitive tables, result scanning and organization defaults/candidate telemetry.
+See DESIGN section 14 for a loadable example and full-path glob semantics. Remove
+legacy `paths.writable` configuration: it was inert and is now rejected rather
+than implying a write boundary. Command/hostname allowlists remain deferred.

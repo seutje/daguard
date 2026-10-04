@@ -24,15 +24,6 @@
       "**/web/themes/contrib/**",
       "**/www/modules/contrib/**",
       "**/www/themes/contrib/**"
-    ],
-    "writable": [
-      "**/web/modules/custom/**",
-      "**/web/themes/custom/**",
-      "**/www/modules/custom/**",
-      "**/www/themes/custom/**",
-      "**/modules/custom/**",
-      "**/themes/custom/**",
-      "**/tests/**"
     ]
   },
   "sql": {

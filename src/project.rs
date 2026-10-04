@@ -1,4 +1,4 @@
-//! Project detection and project-policy discovery.
+//! Project-root detection for trust diagnostics; policies are attached explicitly.
 
 use std::path::{Path, PathBuf};
 

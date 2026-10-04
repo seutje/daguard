@@ -820,7 +820,7 @@ A root-owned `/etc/daguard` deployment is stronger because repositories and norm
 
 ### 13.3 Project policy
 
-Optional file:
+Optional explicitly configured file (the location is a convention):
 
 ```text
 <repo>/.daguard/project.json
@@ -830,10 +830,14 @@ Project policy MAY:
 
 - add deny rules;
 - add sensitive paths;
-- tighten writable areas;
-- add recognized custom Drush commands;
-- add project-specific production hostnames;
+- tighten writable areas by adding path deny rules;
 - add known private data directories.
+
+Attach this file using `--project-policy PATH` in each installed hook or guarded
+route. Project-root detection is used for trust diagnostics only; it does not
+load configuration. Automatic discovery, custom command allow lists and
+production-host matching are deferred capabilities, not supported policy fields.
+Network/source/sink rules remain shared built-in classifiers.
 
 Project policy MUST NOT:
 
@@ -850,16 +854,15 @@ Example organization policy:
 
 ```json
 {
-  "schema": 1,
+  "schema": 3,
   "defaults": {
-    "unknown_tool": "allow_unless_sensitive",
-    "unknown_shell": "ask",
-    "fail_mode": "closed"
+    "unknown_tool": "deny_if_sensitive_otherwise_allow"
   },
   "paths": {
     "deny_read": [
       "**/.env",
       "**/.env.*",
+      "**/env/**",
       "**/auth.json",
       "**/composer-auth.json",
       "**/sites/*/settings.php",
@@ -869,60 +872,16 @@ Example organization policy:
     ],
     "deny_write": [
       "**/web/core/**",
+      "**/www/core/**",
       "**/core/**",
       "**/vendor/**",
       "**/web/modules/contrib/**",
-      "**/web/themes/contrib/**"
-    ],
-    "writable": [
-      "**/web/modules/custom/**",
-      "**/web/themes/custom/**",
-      "**/modules/custom/**",
-      "**/themes/custom/**",
-      "**/tests/**"
-    ]
-  },
-  "shell": {
-    "deny_regex": [
-      "(^|\\s)sudo(\\s|$)",
-      "(^|\\s)rm\\s+-rf\\s+/(\\s|$)",
-      "(^|\\s)chmod\\s+-R\\s+777(\\s|$)"
-    ]
-  },
-  "git": {
-    "deny": [
-      "push --force",
-      "push -f"
-    ]
-  },
-  "drush": {
-    "allow": [
-      "cr",
-      "status",
-      "pm:list",
-      "config:status"
-    ],
-    "deny": [
-      "php:eval",
-      "php-eval",
-      "ev",
-      "sql:dump",
-      "sql:cli"
+      "**/web/themes/contrib/**",
+      "**/www/modules/contrib/**",
+      "**/www/themes/contrib/**"
     ]
   },
   "sql": {
-    "deny_keywords": [
-      "INSERT",
-      "UPDATE",
-      "DELETE",
-      "DROP",
-      "ALTER",
-      "TRUNCATE",
-      "REPLACE",
-      "CREATE",
-      "GRANT",
-      "REVOKE"
-    ],
     "sensitive_tables": [
       "users",
       "users_field_data",
@@ -956,14 +915,43 @@ Example organization policy:
       "commerce_shipment__*"
     ]
   },
-  "network": {
-    "deny_hosts": [],
-    "production_hosts": [
-      "prod.example.com"
-    ]
-  }
+  "result": {
+    "secret_prefixes": [
+      "npm_",
+      "pypi-",
+      "dop_v1_",
+      "hvs.",
+      "hvb.",
+      "hf_"
+    ],
+    "sensitive_fields": {
+      "username": "personal_data",
+      "display_name": "personal_data",
+      "first_name": "personal_data",
+      "last_name": "personal_data",
+      "given_name": "personal_data",
+      "family_name": "personal_data",
+      "account_number": "financial_data",
+      "customer_id": "customer_data",
+      "order_id": "customer_data",
+      "case_reference": "private_content"
+    },
+    "ip_addresses_are_personal": true
+  },
+  "rules": []
 }
 ```
+
+`paths.deny_read`, `paths.deny_write`, and rule `match.paths` use lexical
+normalized full paths with the leading slash removed. They are not implicitly
+relative to the detected project root: use `**/private/**` for a location at any
+project depth, or `home/alice/project/private/**` for a specific normalized Linux
+location. Nonexistent targets are checked, and built-in denials remain mandatory.
+Unknown fields fail closed. The former `paths.writable` field had no enforcement
+semantics and is now rejected in every schema, including when empty. Remove it
+from existing policy files; express restrictions using deny lists/rules. Removal
+preserves the former effective write behavior and does not introduce an allowlist.
+A future write allowlist needs a separately versioned, reviewed contract.
 
 The shipped schema should be represented by strongly typed Rust structures and validated during deserialization plus explicit semantic validation. JSON Schema generation/validation may be used in CI, but the deployed binary must not require an external validator.
 
@@ -981,7 +969,8 @@ adds an optional organization-only `audit_only_rules` array of unique IDs naming
 that organization's explicitly configured deny/ask candidate rules. Unknown IDs,
 built-in/registered rule IDs, allow-rule IDs, and oversized lists are rejected.
 Project policies cannot supply this setting. Absent or empty arrays enforce all
-rules. The shipped organization policy remains schema 1 and fully enforcing.
+rules. The shipped organization policy uses schema 3 (including result-scanner
+configuration) and is fully enforcing.
 
 Evaluation first produces the ordinary policy decision. In pilot mode, the core
 also evaluates with only the named organization candidate rules omitted. This
