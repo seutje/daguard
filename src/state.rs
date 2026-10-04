@@ -475,7 +475,13 @@ mod tests {
         state.created_unix_seconds = 0;
         state.updated_unix_seconds = 1;
         state.expires_unix_seconds = Some(2);
-        super::write_state(&path, &state).unwrap();
+        // Current serialization intentionally omits expiry; create an actual
+        // legacy wire record so the migration regression exercises that field.
+        let mut legacy = serde_json::to_value(&state).unwrap();
+        legacy["expires_unix_seconds"] = 2.into();
+        fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        let persisted: SessionTaint = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(persisted.expires_unix_seconds, Some(2));
         drop(store);
 
         let restarted = StateStore::open(Some(&root)).unwrap();
