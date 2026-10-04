@@ -643,3 +643,182 @@ fn a17_detached_descendant_cannot_extend_capture_deadline() {
     assert_eq!(output.stdout, [] as [u8; 0]);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn a18_mcp_listing_preserves_schema_metadata() {
+    let response = r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"lookup","inputSchema":{"type":"object","properties":{"password":{"type":"string"}}}}]}}"#;
+    let script = format!("IFS= read -r ignored; printf '%s\n' '{response}'");
+    let output = run(
+        &["mcp-proxy", "--", "/bin/sh", "-c", &script],
+        b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}\n",
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        value["result"]["tools"][0]["inputSchema"]["properties"]["password"]["type"],
+        "string"
+    );
+}
+
+#[test]
+fn a18_mcp_control_messages_remain_usable_in_tainted_sessions() {
+    let root = temporary_directory("mcp-control");
+    let state = root.join("state");
+    let seed = run(
+        &[
+            "exec",
+            "--integration-agent",
+            "codex",
+            "--session-id",
+            "synthetic",
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--",
+            "/usr/bin/printf",
+            "%s",
+            "synthetic-control@example.test",
+        ],
+        b"",
+    );
+    assert!(seed.status.success());
+    let initialization = r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{},"serverInfo":{"name":"synthetic","version":"1"}}}"#;
+    let listing = r#"{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"lookup","inputSchema":{"type":"object","properties":{"password":{"type":"string"}}}}]}}"#;
+    let script = format!(
+        "IFS= read -r first; IFS= read -r second; printf '%s\n' '{initialization}' '{listing}'"
+    );
+    let requests = b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"synthetic\",\"version\":\"1\"}}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n";
+    let output = run(
+        &[
+            "mcp-proxy",
+            "--integration-agent",
+            "codex",
+            "--session-id",
+            "synthetic",
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--",
+            "/bin/sh",
+            "-c",
+            &script,
+        ],
+        requests,
+    );
+    assert!(output.status.success());
+    let replies = String::from_utf8(output.stdout).unwrap();
+    let replies = replies
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(replies.len(), 2);
+    assert_eq!(replies[0]["result"]["protocolVersion"], "2025-06-18");
+    assert_eq!(
+        replies[1]["result"]["tools"][0]["inputSchema"]["properties"]["password"]["type"],
+        "string"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a18_mcp_worker_failures_and_partial_frames_stop_connected_clients() {
+    for script in [
+        "IFS= read -r request; printf '%s\n' '{\"jsonrpc\":\"2.0\",\"id\":99,\"result\":\"SYNTHETIC_UNCORRELATED_BODY\"}'; /bin/sleep 3",
+        "IFS= read -r request; printf '%s' '{\"jsonrpc\":'; /bin/sleep 3",
+        "IFS= read -r request; /usr/bin/head -c 1048577 /dev/zero; /bin/sleep 3",
+    ] {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_daguard"))
+            .args([
+                "mcp-proxy",
+                "--timeout-seconds",
+                "1",
+                "--",
+                "/bin/sh",
+                "-c",
+                script,
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut input = child.stdin.take().unwrap();
+        input.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"lookup\",\"arguments\":{}}}\n").unwrap();
+        let started = Instant::now();
+        loop {
+            if child.try_wait().unwrap().is_some() {
+                break;
+            }
+            if started.elapsed() >= Duration::from_millis(1800) {
+                child.kill().unwrap();
+                panic!("MCP supervision did not terminate promptly");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        drop(input);
+        let output = child.wait_with_output().unwrap();
+        assert!(!output.status.success());
+        assert!(!String::from_utf8_lossy(&output.stdout).contains("SYNTHETIC_UNCORRELATED_BODY"));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("MCP gateway failed"));
+    }
+}
+
+#[test]
+fn a18_mcp_dynamic_detection_updates_native_session() {
+    let root = temporary_directory("mcp-native-state");
+    let state = root.join("state");
+    let script = r#"IFS= read -r request; printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"password":"SYNTHETIC_MCP_SECRET"}}'"#;
+    let request = b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"lookup\",\"arguments\":{}}}\n";
+    let output = run(
+        &[
+            "mcp-proxy",
+            "--integration-agent",
+            "codex",
+            "--session-id",
+            "synthetic",
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--",
+            "/bin/sh",
+            "-c",
+            script,
+        ],
+        request,
+    );
+    assert!(output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("SYNTHETIC_MCP_SECRET"));
+    let native = json!({"session_id":"synthetic", "tool_use_id":"synthetic", "cwd":"/workspace/project", "hook_event_name":"PreToolUse", "tool_name":"mcp__remote__read_file", "tool_input":{"path":"README.md"}});
+    let output = run(
+        &[
+            "--adapter",
+            "codex",
+            "--event",
+            "pre-tool",
+            "--state-dir",
+            state.to_str().unwrap(),
+        ],
+        &serde_json::to_vec(&native).unwrap(),
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()["hookSpecificOutput"]["permissionDecision"],
+        "deny"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a18_mcp_cancelled_requests_need_no_reply() {
+    let requests = b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"lookup\",\"arguments\":{}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\",\"params\":{\"requestId\":1}}\n";
+    let script = "IFS= read -r request; IFS= read -r cancel; exit 0";
+    let output = run(
+        &[
+            "mcp-proxy",
+            "--timeout-seconds",
+            "1",
+            "--",
+            "/bin/sh",
+            "-c",
+            script,
+        ],
+        requests,
+    );
+    assert!(output.status.success());
+    assert_eq!(output.stdout, [] as [u8; 0]);
+}

@@ -3,60 +3,21 @@
 //! The CLI gateway owns transport forwarding; this module only validates and
 //! sanitizes complete messages before release.
 
-use std::io::{self, BufRead, BufReader, Read, Write};
-use std::path::{Path, PathBuf};
-use std::process::{ChildStderr, ChildStdout, Command, Stdio};
-use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle};
+use std::io;
+use std::path::Path;
 
 use serde_json::Value;
 
+#[cfg(any(unix, test))]
 use crate::result::ResultDecision;
 use crate::scanner::ScanConfig;
+#[cfg(unix)]
 use crate::state::StateStore;
 
+#[cfg(any(unix, test))]
 pub(crate) const MAX_MCP_MESSAGE_BYTES: usize = crate::scanner::MAX_SCAN_BYTES;
 
-pub(crate) struct Message {
-    pub(crate) bytes: Vec<u8>,
-    pub(crate) oversized: bool,
-}
-
-pub(crate) fn read_message(reader: &mut impl BufRead) -> io::Result<Option<Message>> {
-    let mut bytes = Vec::new();
-    let mut oversized = false;
-    let mut saw_data = false;
-    loop {
-        let buffer = reader.fill_buf()?;
-        if buffer.is_empty() {
-            return Ok(saw_data.then_some(Message { bytes, oversized }));
-        }
-        saw_data = true;
-        let count = buffer
-            .iter()
-            .position(|byte| *byte == b'\n')
-            .map_or(buffer.len(), |index| index + 1);
-        let remaining = MAX_MCP_MESSAGE_BYTES.saturating_sub(bytes.len());
-        if count > remaining {
-            bytes.extend_from_slice(&buffer[..remaining]);
-            oversized = true;
-        } else if !oversized {
-            bytes.extend_from_slice(&buffer[..count]);
-        }
-        let complete = buffer[..count].last() == Some(&b'\n');
-        reader.consume(count);
-        if complete {
-            while bytes
-                .last()
-                .is_some_and(|byte| matches!(*byte, b'\n' | b'\r'))
-            {
-                bytes.pop();
-            }
-            return Ok(Some(Message { bytes, oversized }));
-        }
-    }
-}
-
+#[cfg(any(unix, test))]
 pub(crate) fn inspect_response(line: &[u8], config: &ScanConfig) -> Result<ResultDecision, ()> {
     if line.len() > MAX_MCP_MESSAGE_BYTES {
         return Ok(ResultDecision::block(
@@ -78,6 +39,87 @@ pub(crate) fn inspect_response(line: &[u8], config: &ScanConfig) -> Result<Resul
     Ok(crate::scanner::inspect(line, config))
 }
 
+#[cfg(unix)]
+pub(crate) fn inspect_metadata(bytes: &[u8], config: &ScanConfig) -> Result<ResultDecision, ()> {
+    crate::json::preflight(bytes, MAX_MCP_MESSAGE_BYTES).map_err(|_| ())?;
+    let value: Value = serde_json::from_slice(bytes).map_err(|_| ())?;
+    Ok(if safe(&value, config) {
+        ResultDecision::allow(String::from_utf8(bytes.to_vec()).map_err(|_| ())?)
+    } else {
+        ResultDecision::block(
+            "result.metadata_sensitive",
+            "Sensitive protocol metadata cannot be rewritten safely.",
+        )
+    })
+}
+
+#[cfg(unix)]
+fn safe(value: &Value, config: &ScanConfig) -> bool {
+    safe_metadata(value, config, std::time::Instant::now(), false, false)
+}
+
+#[cfg(unix)]
+fn safe_metadata(
+    value: &Value,
+    config: &ScanConfig,
+    started: std::time::Instant,
+    schema: bool,
+    sensitive_property: bool,
+) -> bool {
+    if started.elapsed() > crate::scanner::MAX_SCAN_DURATION {
+        return false;
+    }
+    match value {
+        Value::Object(values) => values.iter().all(|(key, value)| {
+            let key_safe = matches!(
+                crate::scanner::inspect(key.as_bytes(), config).decision,
+                crate::model::ResultEffect::Allow
+            );
+            if !key_safe {
+                return false;
+            }
+            if schema && key == "properties" {
+                return value.as_object().is_some_and(|properties| {
+                    properties.iter().all(|(name, definition)| {
+                        safe_metadata(&Value::String(name.clone()), config, started, true, false)
+                            && safe_metadata(
+                                definition,
+                                config,
+                                started,
+                                true,
+                                crate::scanner::field_category(name, config).is_some(),
+                            )
+                    })
+                });
+            }
+            if (!schema && crate::scanner::field_category(key, config).is_some()
+                || schema
+                    && sensitive_property
+                    && matches!(key.as_str(), "default" | "enum" | "examples" | "const"))
+                && !value.is_null()
+            {
+                return false;
+            }
+            safe_metadata(
+                value,
+                config,
+                started,
+                schema || matches!(key.as_str(), "inputSchema" | "outputSchema"),
+                sensitive_property,
+            )
+        }),
+        Value::Array(values) => values
+            .iter()
+            .all(|value| safe_metadata(value, config, started, schema, sensitive_property)),
+        Value::String(text) => matches!(
+            crate::scanner::inspect(text.as_bytes(), config).decision,
+            crate::model::ResultEffect::Allow
+        ),
+        _ => true,
+    }
+}
+
+#[cfg(any(unix, test))]
 fn contains_unsupported_binary(value: &Value) -> bool {
     match value {
         Value::Array(values) => values.iter().any(contains_unsupported_binary),
@@ -100,6 +142,7 @@ fn contains_unsupported_binary(value: &Value) -> bool {
     }
 }
 
+#[cfg(any(unix, test))]
 pub(crate) fn blocked_response(id: &Value, rule_id: &str) -> Value {
     serde_json::json!({
         "jsonrpc": "2.0",
@@ -112,7 +155,10 @@ pub(crate) fn blocked_response(id: &Value, rule_id: &str) -> Value {
     })
 }
 
+// Kept for one CLI contract; unsupported platforms fail before accessing fields.
+#[cfg_attr(not(unix), allow(dead_code))]
 pub(crate) struct ProxyOptions<'a> {
+    pub(crate) timeout: std::time::Duration,
     pub(crate) command: &'a [String],
     pub(crate) cwd: &'a Path,
     pub(crate) config: &'a ScanConfig,
@@ -122,154 +168,32 @@ pub(crate) struct ProxyOptions<'a> {
     pub(crate) audit_log: Option<&'a Path>,
 }
 
+// Kept for one CLI contract; unsupported platforms fail before accessing fields.
+#[cfg_attr(not(unix), allow(dead_code))]
+pub(crate) struct Authorization {
+    pub(crate) rule_id: Option<String>,
+    pub(crate) sources: Vec<crate::sensitivity::SourceClassification>,
+}
+
 pub(crate) fn proxy(
     options: &ProxyOptions<'_>,
-    mut authorize: impl FnMut(&Value) -> io::Result<Option<String>>,
+    authorize: impl FnMut(&Value) -> io::Result<Authorization>,
 ) -> io::Result<i32> {
-    let child = Command::new(&options.command[0])
-        .args(&options.command[1..])
-        .current_dir(options.cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    let mut child = crate::guarded::ChildGuard::new(child);
-    let mut upstream_input = child
-        .child_mut()
-        .stdin
-        .take()
-        .ok_or_else(|| io::Error::other("could not open MCP upstream stdin"))?;
-    let upstream_output = child
-        .child_mut()
-        .stdout
-        .take()
-        .ok_or_else(|| io::Error::other("could not open MCP upstream stdout"))?;
-    let upstream_error = child
-        .child_mut()
-        .stderr
-        .take()
-        .ok_or_else(|| io::Error::other("could not open MCP upstream stderr"))?;
-    let output = Arc::new(Mutex::new(io::stdout()));
-    let response_thread = response_worker(
-        Arc::clone(&output),
-        upstream_output,
-        options.config.clone(),
-        options.agent.to_owned(),
-        options.state_dir.map(Path::to_path_buf),
-        options.session_id.map(str::to_owned),
-        options.audit_log.map(Path::to_path_buf),
-    );
-    let error_thread = diagnostic_worker(upstream_error, options.config.clone());
-
-    let mut client = BufReader::new(io::stdin());
-    while let Some(message) = read_message(&mut client)? {
-        if message.oversized {
-            write_response(
-                &output,
-                &blocked_response(&Value::Null, "mcp.request_limit"),
-            )?;
-            continue;
-        }
-        crate::json::preflight(&message.bytes, MAX_MCP_MESSAGE_BYTES)
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "malformed MCP request"))?;
-        let value: Value = serde_json::from_slice(&message.bytes)
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "malformed MCP request"))?;
-        if value.is_array() {
-            write_response(
-                &output,
-                &blocked_response(&Value::Null, "mcp.unsupported_batch"),
-            )?;
-            continue;
-        }
-        if !value.is_object() {
-            write_response(
-                &output,
-                &blocked_response(&Value::Null, "mcp.invalid_request"),
-            )?;
-            continue;
-        }
-        if let Some(rule_id) = authorize(&value)? {
-            if let Some(id) = value.get("id") {
-                write_response(&output, &blocked_response(id, &rule_id))?;
-            }
-            continue;
-        }
-        upstream_input.write_all(&message.bytes)?;
-        upstream_input.write_all(b"\n")?;
-        upstream_input.flush()?;
+    #[cfg(unix)]
+    {
+        crate::mcp_runtime::proxy(options, authorize)
     }
-    drop(upstream_input);
-    join_worker(response_thread, "MCP response worker failed")?;
-    let diagnostic = join_diagnostic(error_thread)?;
-    persist_result_metadata(
-        &diagnostic,
-        options.agent,
-        options.state_dir,
-        options.session_id,
-        options.audit_log,
-    )?;
-    if matches!(diagnostic.decision, crate::model::ResultEffect::Block) {
-        writeln!(
-            io::stderr().lock(),
-            "daguard blocked MCP diagnostic [result.inspection_failed]"
-        )?;
-    } else if let Some(content) = diagnostic.content {
-        io::stderr().lock().write_all(content.as_bytes())?;
+    #[cfg(not(unix))]
+    {
+        let _ = (options, authorize);
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Bounded MCP transport currently requires Unix",
+        ))
     }
-    Ok(child.wait()?.code().unwrap_or(1))
 }
 
-fn response_worker(
-    output: Arc<Mutex<io::Stdout>>,
-    upstream: ChildStdout,
-    config: ScanConfig,
-    agent: String,
-    state_dir: Option<PathBuf>,
-    session_id: Option<String>,
-    audit_log: Option<PathBuf>,
-) -> JoinHandle<io::Result<()>> {
-    thread::spawn(move || {
-        let mut reader = BufReader::new(upstream);
-        while let Some(message) = read_message(&mut reader)? {
-            let decision = if message.oversized {
-                ResultDecision::block(
-                    "result.scan_limit",
-                    "The MCP response exceeded the complete-scan limit.",
-                )
-            } else {
-                inspect_response(&message.bytes, &config).unwrap_or_else(|()| {
-                    ResultDecision::block(
-                        "result.protocol_error",
-                        "The MCP response was malformed and could not be inspected safely.",
-                    )
-                })
-            };
-            persist_result_metadata(
-                &decision,
-                &agent,
-                state_dir.as_deref(),
-                session_id.as_deref(),
-                audit_log.as_deref(),
-            )?;
-            let blocked = matches!(decision.decision, crate::model::ResultEffect::Block);
-            let safe = if blocked {
-                let id = safe_response_id(&message.bytes, &config);
-                serde_json::to_vec(&blocked_response(&id, decision.rule_id))
-                    .map_err(io::Error::other)?
-            } else {
-                decision.content.unwrap_or_default().into_bytes()
-            };
-            let mut writer = output
-                .lock()
-                .map_err(|_| io::Error::other("MCP stdout lock poisoned"))?;
-            writer.write_all(&safe)?;
-            writer.write_all(b"\n")?;
-            writer.flush()?;
-        }
-        Ok(())
-    })
-}
-
+#[cfg(test)]
 fn safe_response_id(message: &[u8], config: &ScanConfig) -> Value {
     let id = serde_json::from_slice::<Value>(message)
         .ok()
@@ -289,14 +213,17 @@ fn safe_response_id(message: &[u8], config: &ScanConfig) -> Value {
     }
 }
 
-fn persist_result_metadata(
+#[cfg(unix)]
+pub(crate) fn persist_result_metadata(
     decision: &ResultDecision,
     agent: &str,
     state_dir: Option<&Path>,
     session_id: Option<&str>,
     audit_log: Option<&Path>,
+    sources: &[crate::sensitivity::SourceClassification],
 ) -> io::Result<()> {
-    let classifications = decision_classifications(decision);
+    let mut classifications = decision_classifications(decision);
+    classifications.extend_from_slice(sources);
     if let Some(session) = session_id
         && !classifications.is_empty()
     {
@@ -321,6 +248,7 @@ fn persist_result_metadata(
     Ok(())
 }
 
+#[cfg(unix)]
 fn decision_classifications(
     decision: &ResultDecision,
 ) -> Vec<crate::sensitivity::SourceClassification> {
@@ -340,38 +268,6 @@ fn decision_classifications(
             crate::sensitivity::SourceClassification::dynamic(detector_id, categories)
         })
         .collect()
-}
-
-fn diagnostic_worker(
-    upstream: ChildStderr,
-    config: ScanConfig,
-) -> JoinHandle<io::Result<ResultDecision>> {
-    thread::spawn(move || {
-        let mut bytes = Vec::new();
-        upstream
-            .take(crate::scanner::MAX_SCAN_BYTES as u64 + 1)
-            .read_to_end(&mut bytes)?;
-        Ok(crate::scanner::inspect(&bytes, &config))
-    })
-}
-
-fn write_response(output: &Arc<Mutex<io::Stdout>>, response: &Value) -> io::Result<()> {
-    let mut writer = output
-        .lock()
-        .map_err(|_| io::Error::other("MCP stdout lock poisoned"))?;
-    serde_json::to_writer(&mut *writer, response).map_err(io::Error::other)?;
-    writeln!(writer)?;
-    writer.flush()
-}
-
-fn join_worker(worker: JoinHandle<io::Result<()>>, message: &'static str) -> io::Result<()> {
-    worker.join().map_err(|_| io::Error::other(message))?
-}
-
-fn join_diagnostic(worker: JoinHandle<io::Result<ResultDecision>>) -> io::Result<ResultDecision> {
-    worker
-        .join()
-        .map_err(|_| io::Error::other("MCP diagnostic worker failed"))?
 }
 
 #[cfg(test)]

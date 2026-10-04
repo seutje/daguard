@@ -67,6 +67,16 @@ mod tests {
         }
     }
 }
+#[cfg(unix)]
+pub(crate) fn nonblocking(fd: std::os::fd::RawFd) -> std::io::Result<()> {
+    // SAFETY: fcntl operates on a live owned pipe descriptor and integer flags.
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
 /// Poll a pipe without allowing an inherited writer to extend the deadline.
 #[cfg(unix)]
 pub(crate) fn read_ready(

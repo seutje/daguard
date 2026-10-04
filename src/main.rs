@@ -8,6 +8,8 @@ mod guarded;
 mod integrity;
 mod json;
 mod mcp;
+#[cfg(unix)]
+mod mcp_runtime;
 mod model;
 mod paths;
 mod platform;

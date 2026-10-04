@@ -61,7 +61,7 @@ const fn observed(
         } else {
             Support::No
         },
-        mcp_proxy_support: if mcp_proxy_support {
+        mcp_proxy_support: if mcp_proxy_support && cfg!(unix) {
             Support::Yes
         } else {
             Support::No
@@ -104,10 +104,15 @@ mod tests {
     #[test]
     fn capability_fixture_is_stable_and_never_claims_phase_15_containment() {
         let actual = serde_json::to_value(ADAPTER_CAPABILITIES).unwrap();
-        let expected: serde_json::Value = serde_json::from_slice(include_bytes!(
+        let mut expected: serde_json::Value = serde_json::from_slice(include_bytes!(
             "../tests/fixtures/adapter_capabilities.json"
         ))
         .unwrap();
+        if !cfg!(unix) {
+            for record in expected.as_array_mut().unwrap() {
+                record["mcp_proxy_support"] = false.into();
+            }
+        }
         assert_eq!(actual, expected);
         assert!(ADAPTER_CAPABILITIES.iter().all(|record| {
             record.schema == CAPABILITY_SCHEMA_VERSION

@@ -217,6 +217,7 @@ pub(crate) struct ChildGuard {
 }
 
 impl ChildGuard {
+    #[cfg(not(unix))]
     pub(crate) const fn new(child: Child) -> Self {
         Self {
             child,

@@ -132,3 +132,29 @@ session, state directory and policy outside model-controlled arguments; a model
 must never choose these values. Without the pair a route is standalone and makes
 no conversation-wide taint claim. Native shell analysis unwraps daguard exec
 commands so wrapping a transfer does not hide its sink from pre-tool checks.
+
+MCP stdio supervision uses bounded reader queues (four frames), 64 pending
+requests, safe bounded IDs and JSON-RPC 2.0 single-object envelopes. Replies must
+match an authorized request ID; method and metadata-only source classifications
+are retained until completion. Known sensitive-source replies are blocked.
+Tools/resources/prompts/completions apply outbound policy; initialize, ping,
+listing, logging controls and supported notifications use validated metadata
+rules. JSON Schema labels remain intact, while secret-bearing metadata, defaults
+and examples cannot be safely rewritten and cause blocking.
+
+Unknown client methods, batches, server sampling/elicitation requests and
+unsupported notifications are denied. Server ping requests are correlated with
+client replies. Cancellation keeps bounded tombstones and discards late replies;
+IDs cannot be reused while their tombstones remain. Partial/oversized frames,
+unsolicited replies, reader failures and expired outstanding requests terminate
+the gateway even when the client stays connected. `--timeout-seconds` bounds
+requests, partial frames and shutdown (default 30 seconds). Idle live sessions
+without outstanding work are allowed. Linux upstream pipe writes are nonblocking
+and timed. Stderr remains private until upstream completion, with a total
+1 MiB lifetime cap; overflow terminates the gateway rather than closing only
+its diagnostic pipe. OS metadata writes/downstream output backpressure and
+portable blocking-reader threads remain platform limits. No live vendor-agent
+containment certification is implied by these synthetic protocol tests.
+
+The supervised MCP route currently requires Unix; native Windows fails explicitly
+with unsupported instead of using a blocking forwarding fallback.

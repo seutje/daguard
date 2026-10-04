@@ -307,6 +307,7 @@ fn mcp_proxy(args: &[String]) -> Result<i32, CliError> {
     crate::mcp::proxy(
         &crate::mcp::ProxyOptions {
             command,
+            timeout: options.timeout,
             cwd: &cwd_path,
             config: &scan_config,
             agent: options.integration_agent.as_deref().unwrap_or("mcp_proxy"),
@@ -315,43 +316,73 @@ fn mcp_proxy(args: &[String]) -> Result<i32, CliError> {
             audit_log: options.audit_log.as_deref(),
         },
         |value| {
-            let method = value
-                .get("method")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("unknown");
-            let native_name = value
-                .pointer("/params/name")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or(method);
-            let request = CanonicalRequest {
-                protocol: PROTOCOL_VERSION,
-                agent: options
-                    .integration_agent
-                    .clone()
-                    .unwrap_or_else(|| "mcp_proxy".to_owned()),
-                event: "pre_tool_use".to_owned(),
-                session_id: options.session_id.clone(),
-                call_id: value.get("id").map(ToString::to_string),
-                cwd: cwd.clone(),
-                tool: Tool {
-                    native_name: native_name.to_owned(),
-                    capability: Capability::McpCall,
-                },
-                input: value
-                    .get("params")
-                    .cloned()
-                    .unwrap_or(serde_json::Value::Null),
-                facts: Facts::default(),
-            };
-            request
-                .validate()
-                .map_err(|error| io::Error::other(error.to_string()))?;
-            let decision = evaluate_and_audit(&evaluation, &request, None)
-                .map_err(|error| io::Error::other(error.message))?;
-            Ok((decision.effect != DecisionEffect::Allow).then_some(decision.rule_id))
+            authorize_mcp(
+                value,
+                options.integration_agent.as_deref(),
+                options.session_id.as_deref(),
+                &evaluation,
+                &cwd,
+            )
         },
     )
     .map_err(|error| CliError::evaluation(format!("MCP gateway failed: {error}")))
+}
+fn authorize_mcp(
+    value: &serde_json::Value,
+    integration_agent: Option<&str>,
+    session_id: Option<&str>,
+    evaluation: &EvaluationOptions,
+    cwd: &str,
+) -> io::Result<crate::mcp::Authorization> {
+    let method = value
+        .get("method")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("unknown");
+    let native_name = value
+        .pointer("/params/name")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or(method);
+    let paths = value
+        .pointer("/params/uri")
+        .and_then(serde_json::Value::as_str)
+        .map(|uri| uri.strip_prefix("file://").unwrap_or(uri).to_owned())
+        .into_iter()
+        .collect();
+    let request = CanonicalRequest {
+        protocol: PROTOCOL_VERSION,
+        agent: integration_agent.unwrap_or("mcp_proxy").to_owned(),
+        event: "pre_tool_use".to_owned(),
+        session_id: session_id.map(str::to_owned),
+        call_id: value.get("id").map(ToString::to_string),
+        cwd: cwd.to_owned(),
+        tool: Tool {
+            native_name: native_name.to_owned(),
+            capability: Capability::McpCall,
+        },
+        input: value
+            .get("params")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+        facts: Facts {
+            paths,
+            ..Facts::default()
+        },
+    };
+    request
+        .validate()
+        .map_err(|error| io::Error::other(error.to_string()))?;
+    let decision = evaluate_and_audit(evaluation, &request, None)
+        .map_err(|error| io::Error::other(error.message))?;
+    let sources = crate::sensitivity::classify_request(
+        &request,
+        evaluation.organization.as_ref(),
+        evaluation.project.as_ref(),
+    )
+    .map_err(|error| io::Error::other(error.to_string()))?;
+    Ok(crate::mcp::Authorization {
+        rule_id: (decision.effect != DecisionEffect::Allow).then_some(decision.rule_id),
+        sources,
+    })
 }
 struct CommandOptions {
     organization: Option<Policy>,
@@ -413,11 +444,6 @@ fn execution_options<'a>(
                 );
             }
             "--timeout-seconds" => {
-                if command_name != "exec" {
-                    return Err(CliError::usage(
-                        "--timeout-seconds is supported only by daguard exec",
-                    ));
-                }
                 let seconds = args
                     .get(index)
                     .and_then(|value| value.parse::<u64>().ok())
@@ -1021,7 +1047,7 @@ fn doctor(args: &[String]) -> Result<(), CliError> {
 }
 
 fn help() -> &'static str {
-    "Usage:\n  daguard version\n  daguard capabilities\n  daguard check [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [FILE|-]\n  daguard inspect-result [--policy PATH] [--project-policy PATH] [-]\n  daguard exec [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--integration-agent codex|cursor|opencode --session-id ID] [--cwd PATH] [--timeout-seconds N] -- COMMAND [ARG ...]\n  daguard mcp-proxy [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--integration-agent codex|cursor|opencode --session-id ID] [--cwd PATH] -- SERVER [ARG ...]\n  daguard explain <rule-id>\n  daguard policy lint [--layer organization|project] <path>\n  daguard doctor [--managed] [--integrity-manifest PATH] [--policy PATH] [--audit-log PATH] [--codex-hooks PATH] [--cursor-hooks PATH] [--opencode-config PATH]\n  daguard doctor <codex|cursor|opencode> <config.json>\n  daguard --adapter <codex|cursor|opencode> --event <pre-tool|post-tool> [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--no-session-state]\n\nPolicy precedence: built-in invariants, organization policy, project tightening, default.\nA lower layer can never override a higher-layer deny."
+    "Usage:\n  daguard version\n  daguard capabilities\n  daguard check [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [FILE|-]\n  daguard inspect-result [--policy PATH] [--project-policy PATH] [-]\n  daguard exec [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--integration-agent codex|cursor|opencode --session-id ID] [--cwd PATH] [--timeout-seconds N] -- COMMAND [ARG ...]\n  daguard mcp-proxy [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--integration-agent codex|cursor|opencode --session-id ID] [--cwd PATH] [--timeout-seconds N] -- SERVER [ARG ...]\n  daguard explain <rule-id>\n  daguard policy lint [--layer organization|project] <path>\n  daguard doctor [--managed] [--integrity-manifest PATH] [--policy PATH] [--audit-log PATH] [--codex-hooks PATH] [--cursor-hooks PATH] [--opencode-config PATH]\n  daguard doctor <codex|cursor|opencode> <config.json>\n  daguard --adapter <codex|cursor|opencode> --event <pre-tool|post-tool> [--managed] [--policy PATH] [--project-policy PATH] [--audit-log PATH] [--state-dir PATH] [--no-session-state]\n\nPolicy precedence: built-in invariants, organization policy, project tightening, default.\nA lower layer can never override a higher-layer deny."
 }
 
 struct CliError {

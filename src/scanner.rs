@@ -409,7 +409,10 @@ fn value_length(value: &Value) -> usize {
     }
 }
 
-fn field_category(key: &str, config: &ScanConfig) -> Option<(SensitivityCategory, &'static str)> {
+pub(crate) fn field_category(
+    key: &str,
+    config: &ScanConfig,
+) -> Option<(SensitivityCategory, &'static str)> {
     let normalized = normalize_field(key);
     let value = normalized.as_str();
     if contains_word(

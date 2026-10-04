@@ -10,6 +10,8 @@ once releases begin.
 
 ### Fixed
 
+- Supervise MCP framing and failures, correlate authorized replies, and preserve protocol schemas.
+
 - Enforce guarded deadlines while draining inherited output pipes.
 
 - Bound scanner work during processing and remove quadratic table/token scans.
