@@ -10,6 +10,8 @@ once releases begin.
 
 ### Fixed
 
+- Apply shared SQL policy to structured MCP query arguments before execution.
+
 - Deny SQL filesystem access and unknown callable expressions.
 
 - Align SQL comments and identifier quoting with conservative MySQL semantics.

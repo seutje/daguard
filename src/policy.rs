@@ -620,6 +620,25 @@ fn request_command_decision(
     ) {
         return Ok(None);
     }
+    let queries = request
+        .candidate_queries()
+        .map_err(|_| PolicyError::Invalid("invalid structured SQL input"))?;
+    let name = request.tool.native_name.to_ascii_lowercase();
+    if matches!(
+        request.tool.capability,
+        Capability::McpCall | Capability::Unknown
+    ) && queries.is_empty()
+        && ["__db__", "database", "sql", "postgres", "mongo"]
+            .iter()
+            .any(|part| name.contains(part))
+    {
+        return Ok(Some(analyzers::sql::uninspectable()));
+    }
+    for query in queries {
+        if let Some(decision) = analyzers::sql::analyze(query, sensitive_tables) {
+            return Ok(Some(decision));
+        }
+    }
     let commands = request.candidate_commands();
     if request.tool.capability == Capability::ShellExecute && commands.is_empty() {
         return Err(PolicyError::Invalid(
@@ -1963,6 +1982,30 @@ mod tests {
     fn shell_request(command: &str) -> CanonicalRequest {
         let value = json!({"protocol":1,"agent":"fixture","event":"pre_tool_use","cwd":"/workspace/project","tool":{"native_name":"Bash","capability":"shell_execute"},"input":{"command":command},"facts":{"command":command}});
         CanonicalRequest::from_slice(serde_json::to_string(&value).unwrap().as_bytes()).unwrap()
+    }
+
+    #[test]
+    fn a10_structured_sql_is_inspected_before_execution() {
+        for (input, expected) in [
+            (
+                serde_json::json!({"query":"DELETE FROM node"}),
+                DecisionEffect::Deny,
+            ),
+            (
+                serde_json::json!({"arguments":{"sql":"SELECT * FROM users_field_data"}}),
+                DecisionEffect::Deny,
+            ),
+            (
+                serde_json::json!({"statement":"SELECT nid FROM node"}),
+                DecisionEffect::Allow,
+            ),
+            (serde_json::json!({}), DecisionEffect::Deny),
+        ] {
+            let mut request = request("mcp_call", "README.md");
+            request.tool.native_name = "mcp__db__query".to_owned();
+            request.input = input;
+            assert_eq!(evaluate(&request, None, None).unwrap().effect, expected);
+        }
     }
 
     #[test]

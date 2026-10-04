@@ -423,7 +423,7 @@ fn guarded_execution_forwards_termination_and_withholds_on_metadata_failure() {
 fn mcp_gateway_sanitizes_responses_and_applies_pre_tool_policy() {
     let response = r#"{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"mcp-canary@example.test"}]}}"#;
     let script = format!("IFS= read -r ignored; printf '%s\\n' '{response}'");
-    let request = br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"lookup","arguments":{"query":"safe"}}}
+    let request = br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"lookup","arguments":{"search_term":"safe"}}}
 "#;
     let output = run(&["mcp-proxy", "--", "/bin/sh", "-c", &script], request);
     assert!(

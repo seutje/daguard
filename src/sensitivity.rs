@@ -3,7 +3,6 @@
 use std::collections::BTreeSet;
 
 use serde::Serialize;
-use serde_json::Value;
 
 use crate::analyzers::{ddev, sql};
 use crate::model::{CanonicalPostToolEvent, Capability, SensitivityCategory, merge_categories};
@@ -63,7 +62,13 @@ pub(crate) fn classify_request(
         request.tool.capability,
         Capability::McpCall | Capability::Unknown
     ) {
-        collect_query_values(&request.input, None, &mut sql_queries);
+        sql_queries.extend(
+            request
+                .candidate_queries()
+                .map_err(|_| PolicyError::Invalid("invalid structured SQL input"))?
+                .into_iter()
+                .map(str::to_owned),
+        );
     }
 
     let mut classifications = Vec::new();
@@ -192,32 +197,6 @@ fn merge_classification(
         merge_categories(&mut existing.categories, classification.categories);
     } else {
         classifications.push(classification);
-    }
-}
-
-fn collect_query_values(value: &Value, key: Option<&str>, queries: &mut Vec<String>) {
-    match value {
-        Value::String(value)
-            if key.is_some_and(|key| {
-                matches!(
-                    key.to_ascii_lowercase().as_str(),
-                    "query" | "sql" | "statement"
-                )
-            }) =>
-        {
-            queries.push(value.clone());
-        }
-        Value::Array(values) => {
-            for value in values {
-                collect_query_values(value, key, queries);
-            }
-        }
-        Value::Object(values) => {
-            for (key, value) in values {
-                collect_query_values(value, Some(key), queries);
-            }
-        }
-        _ => {}
     }
 }
 

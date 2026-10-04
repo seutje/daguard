@@ -303,6 +303,18 @@ impl CanonicalRequest {
         commands
     }
 
+    /// Supported structured SQL fields, inspected by the shared SQL analyzer.
+    pub(crate) fn candidate_queries(&self) -> Result<Vec<&str>, ModelError> {
+        let mut queries = Vec::new();
+        if matches!(
+            self.tool.capability,
+            Capability::McpCall | Capability::Unknown
+        ) {
+            collect_queries(&self.input, None, &mut queries)?;
+        }
+        Ok(queries)
+    }
+
     /// Returns normalized facts plus path-like strings found in unknown tool input.
     ///
     /// Known adapters are expected to populate `facts.paths`. Unknown tools get
@@ -323,6 +335,44 @@ impl CanonicalRequest {
         }
         paths
     }
+}
+
+fn collect_queries<'a>(
+    value: &'a Value,
+    key: Option<&str>,
+    queries: &mut Vec<&'a str>,
+) -> Result<(), ModelError> {
+    if key.is_some_and(|key| {
+        matches!(
+            key.to_ascii_lowercase().as_str(),
+            "query" | "sql" | "statement"
+        )
+    }) {
+        match value {
+            Value::String(query) => queries.push(query),
+            Value::Array(values) => {
+                for value in values {
+                    collect_queries(value, key, queries)?;
+                }
+            }
+            _ => return Err(ModelError::Invalid("structured SQL requires query strings")),
+        }
+    } else {
+        match value {
+            Value::Object(values) => {
+                for (key, value) in values {
+                    collect_queries(value, Some(key), queries)?;
+                }
+            }
+            Value::Array(values) => {
+                for value in values {
+                    collect_queries(value, None, queries)?;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 fn validate_string_collection(message: &'static str, values: &[String]) -> Result<(), ModelError> {

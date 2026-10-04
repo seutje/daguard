@@ -3352,3 +3352,9 @@ expressions. A bounded list of common pure/aggregate native functions remains
 allowed; schema-qualified calls and other routines are denied because database
 privileges and routine bodies cannot be established by lexical inspection.
 Restricted database credentials remain an independent deployment boundary.
+
+MCP/unknown tool inputs with query/sql/statement fields feed the shared SQL
+analyzer before execution, including nested argument objects and query arrays.
+Non-string query inputs fail closed. Named database/SQL tools without inspectable
+queries are denied. Structured source classification reuses the same extraction;
+MCP response correlation and source containment are specified separately.
