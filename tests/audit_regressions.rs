@@ -153,6 +153,23 @@ fn a06_filtered_search_preserves_protections() {
         "**/env/**/settings.local.php",
         "**/*.pem",
         "**/*.key",
+        "**/.ssh/id_rsa",
+        "**/.ssh/id_dsa",
+        "**/.ssh/id_ecdsa",
+        "**/.ssh/id_ecdsa_sk",
+        "**/.ssh/id_ed25519",
+        "**/.ssh/id_ed25519_sk",
+        "**/.aws/credentials",
+        "**/.azure/accessTokens.json",
+        "**/.azure/msal_token_cache.json",
+        "**/.config/gcloud/credentials.db*",
+        "**/.config/gcloud/application_default_credentials.json",
+        "**/.kube/config",
+        "**/.docker/config.json",
+        "**/.netrc",
+        "**/_netrc",
+        "**/.npmrc",
+        "**/.pypirc",
     ];
     let mut flags = String::new();
     for pattern in patterns {
@@ -236,5 +253,19 @@ fn r11_force_push_variants_are_mandatory_denials() {
         ("git push origin main", "ask"),
         ("git push --no-force origin main", "ask"),
         ("git diff --find-renames", "allow"),
+    ]);
+}
+
+#[test]
+fn r07_credential_store_shell_variants_and_nearby_safe_reads() {
+    cases(&[
+        ("cat /home/synthetic/.ssh/id_rsa", "deny"),
+        (
+            "env CHECK=1 cat /home/synthetic/.aws/../.aws/credentials",
+            "deny",
+        ),
+        ("ddev exec cat /var/www/html/.docker/config.json", "deny"),
+        ("cat /home/synthetic/.ssh/id_rsa.pub", "allow"),
+        ("cat /home/synthetic/.aws/config", "allow"),
     ]);
 }

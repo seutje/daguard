@@ -868,7 +868,24 @@ Example organization policy:
       "**/sites/*/settings.php",
       "**/sites/*/settings.local.php",
       "**/*.pem",
-      "**/*.key"
+      "**/*.key",
+      "**/.ssh/id_rsa",
+      "**/.ssh/id_dsa",
+      "**/.ssh/id_ecdsa",
+      "**/.ssh/id_ecdsa_sk",
+      "**/.ssh/id_ed25519",
+      "**/.ssh/id_ed25519_sk",
+      "**/.aws/credentials",
+      "**/.azure/accessTokens.json",
+      "**/.azure/msal_token_cache.json",
+      "**/.config/gcloud/credentials.db*",
+      "**/.config/gcloud/application_default_credentials.json",
+      "**/.kube/config",
+      "**/.docker/config.json",
+      "**/.netrc",
+      "**/_netrc",
+      "**/.npmrc",
+      "**/.pypirc"
     ],
     "deny_write": [
       "**/web/core/**",
@@ -3501,3 +3518,15 @@ scanner guarantee. Metadata-only taint is recorded for the blocked result.
 leading-plus refspecs, including transparent/DDEV wrappers. These do not depend
 on adapters converting approval requests into denials. Ordinary pushes still
 require review; read-only Git workflows retain their existing behavior.
+
+### Known credential stores (audit risk R07)
+
+Mandatory `filesystem.secret.credential_store` protects the explicitly listed
+private SSH identities and common AWS/Azure/GCloud/Kubernetes/Docker/netrc/npm/
+PyPI stores in the shipped policy. Public SSH `.pub` files, `known_hosts`, AWS
+region configuration and custom-code configuration are nearby safe workflows.
+The rule feeds the existing credential/authentication taxonomy and every adapter
+through shared path checks. Nonstandard identities, provider caches, credentials
+inside nominally safe files, environment output, encoding and arbitrary dumps
+still require organization-specific path/source strategy. This bounded list and
+result scanning do not establish universal credential discovery.

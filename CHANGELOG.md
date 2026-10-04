@@ -14,6 +14,9 @@ once releases begin.
 
 ### Fixed
 
+- Protect known extensionless SSH and cloud/container/package credential stores
+  through mandatory `filesystem.secret.credential_store`.
+
 - Apply mandatory `git.force_push` to force-with-lease, force refspecs and clustered flags.
 
 - Block both guarded output streams when incomplete sensitive context could

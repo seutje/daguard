@@ -118,13 +118,13 @@ pub(crate) fn classify_request(
 fn categories_for_path_rule(source_id: &str) -> BTreeSet<SensitivityCategory> {
     use SensitivityCategory::{Authentication, Credential, OperationalSensitive, UnknownSensitive};
     match source_id {
-        "drupal.secret.env" | "composer.secret.auth_json" => {
-            BTreeSet::from([Credential, Authentication])
-        }
+        "drupal.secret.env"
+        | "composer.secret.auth_json"
+        | "filesystem.secret.private_key"
+        | "filesystem.secret.credential_store" => BTreeSet::from([Credential, Authentication]),
         "drupal.secret.settings_php" => {
             BTreeSet::from([Credential, Authentication, OperationalSensitive])
         }
-        "filesystem.secret.private_key" => BTreeSet::from([Credential, Authentication]),
         _ => BTreeSet::from([UnknownSensitive]),
     }
 }

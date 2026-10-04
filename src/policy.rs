@@ -59,6 +59,32 @@ const BUILT_INS: &[BuiltInRule] = &[
         &["**/*.pem", "**/*.key"],
     ),
     BuiltInRule::new(
+        "filesystem.secret.credential_store",
+        "secrets",
+        "Reading known credential stores is prohibited.",
+        Severity::Critical,
+        RuleOperation::Read,
+        &[
+            "**/.ssh/id_rsa",
+            "**/.ssh/id_dsa",
+            "**/.ssh/id_ecdsa",
+            "**/.ssh/id_ecdsa_sk",
+            "**/.ssh/id_ed25519",
+            "**/.ssh/id_ed25519_sk",
+            "**/.aws/credentials",
+            "**/.azure/accessTokens.json",
+            "**/.azure/msal_token_cache.json",
+            "**/.config/gcloud/credentials.db*",
+            "**/.config/gcloud/application_default_credentials.json",
+            "**/.kube/config",
+            "**/.docker/config.json",
+            "**/.netrc",
+            "**/_netrc",
+            "**/.npmrc",
+            "**/.pypirc",
+        ],
+    ),
+    BuiltInRule::new(
         "filesystem.write.core",
         "filesystem",
         "Writing Drupal core is prohibited; use managed dependency workflows.",
@@ -1642,6 +1668,14 @@ const RULE_DOCUMENTATION: &[RuleDocumentation] = &[
         "Use a credential-free development workflow or have a developer perform the authenticated operation."
     ),
     rule_doc!(
+        "filesystem.secret.credential_store",
+        Deny,
+        Critical,
+        "secrets",
+        "Known SSH, cloud, container and package-manager credential stores are protected.",
+        "Use public keys and derived non-secret configuration; keep authenticated access outside agent context."
+    ),
+    rule_doc!(
         "filesystem.write.core",
         Deny,
         High,
@@ -2070,6 +2104,36 @@ mod tests {
                 let input = json!({"schema":3,"paths":{"writable":writable}});
                 assert!(Policy::from_slice(&serde_json::to_vec(&input).unwrap(), kind).is_err());
             }
+        }
+    }
+
+    #[test]
+    fn r07_known_credential_stores_are_protected_without_key_extensions() {
+        for path in [
+            "/home/synthetic/.ssh/id_ed25519",
+            "/home/synthetic/.ssh/id_rsa",
+            "/home/synthetic/.aws/credentials",
+            "/home/synthetic/.kube/config",
+            "/home/synthetic/.docker/config.json",
+            "/home/synthetic/.netrc",
+            "/home/synthetic/.config/gcloud/application_default_credentials.json",
+        ] {
+            let decision = evaluate(&request("file_read", path), None, None).unwrap();
+            assert_eq!(decision.effect, DecisionEffect::Deny);
+            assert_eq!(decision.rule_id, "filesystem.secret.credential_store");
+        }
+        for path in [
+            "/home/synthetic/.ssh/id_ed25519.pub",
+            "/home/synthetic/.ssh/known_hosts",
+            "/home/synthetic/.aws/config",
+            "web/modules/custom/example/config.json",
+        ] {
+            assert_eq!(
+                evaluate(&request("file_read", path), None, None)
+                    .unwrap()
+                    .effect,
+                DecisionEffect::Allow
+            );
         }
     }
 

@@ -1559,3 +1559,6 @@ Additional audit risk remediation:
 - [ ] R04 assurance: Context reconstructed across tools/MCP messages and arbitrary encodings.
 
 - [x] R11: Classify force-with-lease, force refspecs and clustered flags as mandatory Git denials.
+
+- [x] R07: Protect known credential stores with direct/variant and public-file workflow regressions.
+- [ ] R07 deployment: Review organization-specific credential paths, caches and source formats.
