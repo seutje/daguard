@@ -41,3 +41,16 @@ fn a01_effective_directory() {
         ("cd web/core || touch index.php", "deny"),
     ]);
 }
+
+#[test]
+fn a02_shell_uncertainty() {
+    cases(&[
+        ("cat web/sites/default/settings.p?p", "deny"),
+        ("cat web/sites/default/settings.[p]hp", "deny"),
+        ("SECRET_PATH=.env; cat $SECRET_PATH", "deny"),
+        ("( cat .env )", "deny"),
+        ("if true; then cat .env; fi", "deny"),
+        ("cat 'web/modules/custom/example.php'", "allow"),
+        ("echo 'literal $text * [x]'", "allow"),
+    ]);
+}

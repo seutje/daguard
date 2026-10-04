@@ -694,7 +694,7 @@ fn analyze_argv(
         return Ok(None);
     };
     let program = command_name(program);
-    if matches!(program, "cd" | "pushd" | "popd") {
+    if unsupported_control(program) {
         return Ok(Some(command_decision(
             DecisionEffect::Deny,
             "shell.ambiguous",
@@ -762,6 +762,24 @@ fn analyze_argv(
         return Ok(semantic);
     }
     analyze_path_argv(program, args, context)
+}
+
+fn unsupported_control(program: &str) -> bool {
+    matches!(
+        program,
+        "cd" | "pushd"
+            | "popd"
+            | "if"
+            | "then"
+            | "else"
+            | "for"
+            | "while"
+            | "until"
+            | "do"
+            | "case"
+            | "!"
+            | "function"
+    )
 }
 
 fn analyze_ddev(

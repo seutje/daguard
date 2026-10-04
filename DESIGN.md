@@ -3294,3 +3294,8 @@ lexical cwd for each operation and source classification. Mixed sequence, pipe,
 or alternative branches involving `cd`, and unsupported directory changes,
 are denied. Cursor tool `working_directory` overrides the envelope cwd, with
 relative overrides resolved against that envelope; invalid overrides fail closed.
+
+The accepted shell subset retains empty quoted arguments and literal quoted
+metacharacters. Unquoted variable, wildcard, tilde, brace and grouping syntax,
+and shell control programs, are denied rather than interpreted as literal paths.
+Quote wildcard search expressions when they are intended as literal tool input.

@@ -1522,7 +1522,7 @@ Keep these unchecked unless the scope is intentionally expanded.
 # Audit remediation (2026-10-04)
 
 - [x] A01: Paths use the initial working directory after execution context changes.
-- [ ] A02: Unsupported shell expansion and grouping are accepted as literal words.
+- [x] A02: Unsupported shell expansion and grouping are accepted as literal words.
 - [ ] A03: Common wrappers bypass both command and sink analysis.
 - [ ] A04: DDEV aliases and options lose the nested execution target.
 - [ ] A05: Filesystem mutation analysis misses destinations and affected descendants.

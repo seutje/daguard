@@ -45,6 +45,8 @@ impl fmt::Display for ShellError {
 
 /// Tokenizes the deliberately small shell subset used by the policy analyzers.
 /// Expansion is never performed. Unsupported expansion constructs fail closed.
+// Keep the bounded tokenizer state machine together for review.
+#[allow(clippy::too_many_lines)]
 pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, ShellError> {
     if input.len() > MAX_COMMAND_BYTES {
         return Err(ShellError::Limit);
@@ -55,6 +57,7 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, ShellError> {
     let chars = input.chars().collect::<Vec<_>>();
     let mut tokens = Vec::new();
     let mut word = String::new();
+    let mut started = false;
     let mut index = 0;
     let mut quote = None;
     while index < chars.len() {
@@ -79,8 +82,12 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, ShellError> {
             continue;
         }
         match character {
-            '\'' | '"' => quote = Some(character),
+            '\'' | '"' => {
+                started = true;
+                quote = Some(character);
+            }
             '\\' => {
+                started = true;
                 index += 1;
                 let Some(next) = chars.get(index) else {
                     return Err(ShellError::Unsupported("trailing escape"));
@@ -96,18 +103,18 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, ShellError> {
             '<' if chars.get(index + 1) == Some(&'<') => {
                 return Err(ShellError::Unsupported("here document"));
             }
-            ' ' | '\t' | '\r' => push_word(&mut tokens, &mut word),
+            ' ' | '\t' | '\r' => push_word(&mut tokens, &mut word, &mut started),
             '\n' | ';' => {
-                push_word(&mut tokens, &mut word);
+                push_word(&mut tokens, &mut word, &mut started);
                 tokens.push(Token::Operator(Operator::Sequence));
             }
             '&' if chars.get(index + 1) == Some(&'&') => {
-                push_word(&mut tokens, &mut word);
+                push_word(&mut tokens, &mut word, &mut started);
                 tokens.push(Token::Operator(Operator::And));
                 index += 1;
             }
             '|' => {
-                push_word(&mut tokens, &mut word);
+                push_word(&mut tokens, &mut word, &mut started);
                 if chars.get(index + 1) == Some(&'|') {
                     tokens.push(Token::Operator(Operator::Or));
                     index += 1;
@@ -116,7 +123,7 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, ShellError> {
                 }
             }
             '>' => {
-                push_word(&mut tokens, &mut word);
+                push_word(&mut tokens, &mut word, &mut started);
                 let append = chars.get(index + 1) == Some(&'>');
                 if append {
                     index += 1;
@@ -128,7 +135,13 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, ShellError> {
                     "redirection or background execution",
                 ));
             }
-            _ => word.push(character),
+            '$' | '*' | '?' | '[' | ']' | '(' | ')' | '{' | '}' | '~' => {
+                return Err(ShellError::Unsupported("expansion or grouping"));
+            }
+            _ => {
+                started = true;
+                word.push(character);
+            }
         }
         if tokens.len() > MAX_TOKENS {
             return Err(ShellError::Limit);
@@ -138,15 +151,16 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, ShellError> {
     if quote.is_some() {
         return Err(ShellError::UnterminatedQuote);
     }
-    push_word(&mut tokens, &mut word);
+    push_word(&mut tokens, &mut word, &mut started);
     if tokens.len() > MAX_TOKENS {
         return Err(ShellError::Limit);
     }
     Ok(tokens)
 }
 
-fn push_word(tokens: &mut Vec<Token>, word: &mut String) {
-    if !word.is_empty() {
+fn push_word(tokens: &mut Vec<Token>, word: &mut String, started: &mut bool) {
+    if *started {
+        *started = false;
         tokens.push(Token::Word(std::mem::take(word)));
     }
 }
@@ -244,6 +258,14 @@ pub(crate) fn redirect_targets(tokens: &[Token]) -> Result<Vec<&str>, ShellError
 #[cfg(test)]
 mod tests {
     use super::{Operator, ShellError, Token, redirect_targets, segments, tokenize, words};
+
+    #[test]
+    fn preserves_empty_arguments() {
+        assert_eq!(
+            words(&tokenize("printf '%s' '' \"\"").unwrap()),
+            ["printf", "%s", "", ""]
+        );
+    }
 
     #[test]
     fn recognizes_quotes_chaining_pipes_and_redirects() {

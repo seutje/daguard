@@ -10,6 +10,8 @@ once releases begin.
 
 ### Fixed
 
+- Reject unsupported shell expansion and grouping; retain empty arguments.
+
 - Apply effective shell and Cursor tool working directories to protected paths.
 
 ### Changed
