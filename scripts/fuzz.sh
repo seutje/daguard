@@ -11,6 +11,14 @@ cargo +nightly fuzz build
 for target in canonical codex cursor opencode path shell sql policy result_scanner; do
     mkdir "$work/$target"
     cp fuzz/corpus/"$target"/* "$work/$target/"
+    max_len=65537
+    if [ "$target" = result_scanner ]; then
+        max_len=1048577
+        # Exercise the boundary immediately; tiny seeds need not grow to 1 MiB.
+        dd if=/dev/zero bs=1048576 count=1 2>/dev/null | tr '\000' a > "$work/$target/at-limit"
+        cp "$work/$target/at-limit" "$work/$target/over-limit"
+        printf a >> "$work/$target/over-limit"
+    fi
     cargo +nightly fuzz run "$target" "$work/$target" -- \
-        -max_total_time="$seconds" -max_len=65537 -timeout=5 -rss_limit_mb=2048
+        -max_total_time="$seconds" -max_len="$max_len" -timeout=5 -rss_limit_mb=2048
 done

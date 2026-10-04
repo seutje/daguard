@@ -20,7 +20,7 @@ scripts/fuzz.sh 30
 ```
 
 The script runs each target for 30 seconds with AddressSanitizer and libFuzzer's
-leak checks enabled, a 64 KiB + 1 maximum input length, a five-second per-input
+leak checks enabled, a 64 KiB + 1 parser maximum and a 1 MiB + 1 scanner maximum input length, a five-second per-input
 timeout, and a 2 GiB memory limit. Longer manual campaigns (for example 600 seconds
 per target) are recommended before parser changes are released. Bounded smoke
 runs are coverage checks, not proof that no vulnerabilities remain. Builds run
@@ -66,3 +66,14 @@ Dependency checks:
 cargo deny --manifest-path fuzz/Cargo.toml --config fuzz/deny.toml --locked check advisories licenses sources bans
 cargo fmt --manifest-path fuzz/Cargo.toml --check
 ```
+
+Security oracles supplement arbitrary crash inputs: generated literal shell
+wrappers and spacing preserve mandatory denials and nearby safe status commands;
+SQL casing/comments/identifier quotes preserve mutation and sensitive-table
+denials. Scanner assertions require valid JSON after delivery, no content on
+block, and fake canary removal from classified keys/values, placeholder-shaped
+values, incomplete assignments and known-sensitive sources. Failure messages
+never print input or matched data. A deterministic selector matrix exercises
+these oracles with `cargo test --manifest-path fuzz/Cargo.toml --locked --lib`.
+Long-running resource campaigns and cross-route session tests remain distinct
+from parser smoke coverage; no oracle claims universal semantic equivalence.

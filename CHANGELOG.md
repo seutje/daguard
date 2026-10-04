@@ -14,6 +14,9 @@ once releases begin.
 
 ### Fixed
 
+- Add enforcement and synthetic leakage oracles to fuzz targets and exercise
+  the scanner at its production size limit.
+
 - Reject inert `paths.writable` settings and align the loadable design example,
   project-policy attachment and full-path matching documentation with schema 3.
 

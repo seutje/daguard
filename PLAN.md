@@ -1541,7 +1541,7 @@ Keep these unchecked unless the scope is intentionally expanded.
 - [x] A18: MCP scanning does not preserve protocol metadata or full lifecycle behavior.
 - [x] A19: Release publication is independent of required security checks.
 - [x] A20: The architectural policy example cannot be loaded and writable is inert.
-- [ ] A21: Fuzzing mostly checks crashes rather than security properties.
+- [x] A21: Fuzzing mostly checks crashes rather than security properties.
 - [ ] A22: State directory permissions change before symlink validation.
 
 Policy capabilities deferred after contract audit:

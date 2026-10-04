@@ -3442,3 +3442,14 @@ macOS/Windows publication follows independently with separate checksum manifests
 and cannot prevent publication of a passing WSL artifact. Provenance and downloads
 are scoped to this workflow run. CI execution remains required release evidence;
 local workflow syntax/graph validation does not certify a hosted release.
+
+### Fuzz enforcement properties (audit A21)
+
+Fuzz targets retain arbitrary crash exploration and additionally generate
+known semantics-preserving literal shell/SQL variants with deny and safe-workflow
+oracles. Scanner deliverable JSON must parse, blocked decisions carry no content,
+and deterministic fake canaries must disappear from protected keys/values,
+incomplete envelopes and complete known-sensitive sources. Scanner campaigns
+reach the production 1 MiB boundary plus one byte; parser targets retain 64 KiB
+boundaries. Sanitizer campaigns, deterministic matrices and performance limits
+are separate evidence, not proof of complete shell semantics or secret detection.
