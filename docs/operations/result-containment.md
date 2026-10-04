@@ -59,6 +59,33 @@ than forwarded without per-call policy; batched responses are scanned as one
 structured result. Server stderr is buffered and sanitized before release. A
 malformed response becomes a safe JSON-RPC error.
 
+## Native replacement compatibility experiments
+
+The current upstream [Codex hook contract](https://learn.chatgpt.com/docs/hooks)
+describes blocking feedback that replaces a completed result, including distinct
+behavior for nested code-mode calls. The [OpenCode v2 tool hooks](https://opencode.ai/v2/docs/build/plugins)
+permit completed-result mutation. These are candidate APIs; daguard still
+declares native hooks `observe_only` until actual-host containment is proven.
+
+Run each experiment in a separate synthetic workspace and conversation, with
+no production credentials or personal data. A producer returns a deterministic
+fake password marker; the hook returns only static blocking feedback or a
+sanitized replacement. Keep native file reads, shell calls, MCP replies and
+custom tools separate because their delivery semantics may differ.
+
+| Candidate | Required variations | Evidence needed |
+|---|---|---|
+| Codex `PostToolUse` block | Ordinary call, nested code-mode promise, producer error, callback crash/timeout, malformed response | Raw fake marker absent from model requests, running script results and model-visible transcript; failure paths block delivery. |
+| OpenCode v2 completed-result mutation | Text, structured result, producer error, multiple hooks, callback failure | Only replacement reaches model requests/transcript; original metadata, error bodies and later hooks cannot reintroduce the marker. |
+| Cursor | Exact installed API and version | Establish a synchronous replacement contract first; observe-only hooks are insufficient. |
+
+Record host/build/version, tool category, effective immutable configuration,
+guard/policy hashes and pass/fail metadata. Check private test transcripts in
+memory; commit only bounded marker-absence results and sanitized failure reasons.
+Inspect audit/tracing/error paths too. A model saying it did not see a marker,
+or an observer receiving a result, does not prove non-delivery. Do not enable
+native replacement or check Phase 15 transcript gates until these cases pass.
+
 ## Scanner contract and limits
 
 Each stdout stream, stderr stream, standalone result, or MCP message is limited

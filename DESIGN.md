@@ -3632,3 +3632,20 @@ Mandatory deployments requiring failure containment must use an OS-enforced
 tool/egress boundary, pin trusted integration configuration and prohibit direct
 routes around it. They must not rely on a native callback alone. The capability
 matrix exposes this uncertified status and PLAN keeps the live failure gates open.
+
+### Native result replacement investigation (audit risk R02)
+
+Upstream documents candidate mechanisms: Codex can replace a completed result
+with blocking feedback, with distinct nested code-mode promise behavior; OpenCode
+v2 permits mutation of a completed tool result. Neither documents every alternate
+delivery, persistence and failure path needed for a daguard containment claim.
+Sources reviewed 2026-10-04: [Codex hooks](https://learn.chatgpt.com/docs/hooks)
+and [OpenCode tool hooks](https://opencode.ai/v2/docs/build/plugins).
+The existing native capability declarations remain `observe_only`. No raw result
+is redirected into a claiming integration on the basis of documentation alone.
+
+The containment runbook defines versioned candidate experiments and required
+transcript evidence. A future native replacement implementation must introduce
+adapter golden/error fixtures, normal/error/audit/tracing leakage tests and
+actual-host evidence before changing capabilities. Installed version commands
+and synthetic guard tests are not that evidence; the live gates remain open.

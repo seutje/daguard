@@ -1577,3 +1577,6 @@ Additional audit risk remediation:
 
 - [x] R01 contract: Distinguish explicit denial support from verified host fail-closed behavior in capability schema 3.
 - [ ] R01 assurance: Validate vendor callback startup/timeout/crash/malformed-output failures with immutable integration and OS controls.
+
+- [x] R02 investigation: Review current native result APIs and define versioned containment experiments without strengthening unsupported claims.
+- [ ] R02 evidence: Run native replacement/error/code-mode experiments in exact hosts and inspect model requests/transcripts before enabling containment.
