@@ -592,6 +592,7 @@ fn request_command_decision(
     }
     let context = ShellContext {
         cwd: &request.cwd,
+        container: false,
         sensitive_tables,
         organization,
         project,
@@ -609,6 +610,7 @@ fn request_command_decision(
 
 struct ShellContext<'a> {
     cwd: &'a str,
+    container: bool,
     sensitive_tables: &'a [&'a str],
     organization: Option<&'a Policy>,
     project: Option<&'a Policy>,
@@ -794,10 +796,18 @@ fn analyze_ddev(
         analyzers::ddev::Target::Sql(sql) => {
             Ok(analyzers::sql::analyze(sql, context.sensitive_tables))
         }
-        analyzers::ddev::Target::Nested(inner) if inner.len() == 1 => {
-            evaluate_shell(inner[0], context, depth + 1)
+        analyzers::ddev::Target::Nested(inner, cwd) => {
+            let context = ShellContext {
+                cwd,
+                container: true,
+                ..*context
+            };
+            if inner.len() == 1 {
+                evaluate_shell(inner[0], &context, depth + 1)
+            } else {
+                analyze_argv(inner, &context, depth + 1)
+            }
         }
-        analyzers::ddev::Target::Nested(inner) => analyze_argv(inner, context, depth + 1),
     }
 }
 
@@ -977,6 +987,21 @@ fn evaluate_shell_path(
     operation: RuleOperation,
 ) -> Result<Option<Decision>, PolicyError> {
     let normalized = paths::normalize(context.cwd, path).map_err(PolicyError::Path)?;
+    if context.container
+        && matches!(operation, RuleOperation::Write)
+        && ["/modules/contrib", "/themes/contrib"]
+            .iter()
+            .any(|suffix| {
+                normalized.ends_with(suffix) || normalized.contains(&format!("{suffix}/"))
+            })
+    {
+        return Ok(Some(command_decision(
+            DecisionEffect::Deny,
+            "filesystem.write.contrib",
+            "Writing container Composer-managed contrib code is prohibited.",
+            Severity::High,
+        )));
+    }
     for rule in BUILT_INS {
         if matches!(
             (operation, rule.operation),

@@ -3305,3 +3305,13 @@ and BusyBox wrappers share bounded option normalization across policy, source
 and sink analysis. Unsupported wrapper options (including env cwd/split-string)
 and opaque eval/xargs/exec wrappers fail closed. Ordinary project executables
 remain trusted opaque code: lexical analysis cannot establish their behavior.
+
+DDEV execution recognizes `exec` and `.` with web-service and absolute directory
+options. Relative context, other services, project selection, custom commands
+and unknown flags are denied. Default container path analysis uses the synthetic
+Drupal docroot `/var/www/html/web`; lexical suffix checks do not depend on host
+checkout location. Explicit absolute cwd overrides are retained. Destructive
+delete/snapshot/restore, data-removing stop, database transfers and shell access
+are denied; known safe lifecycle commands remain usable without querying DDEV.
+Container contrib write checks also recognize modules/themes beneath arbitrary
+docroot names, including explicit absolute directory overrides.

@@ -269,10 +269,10 @@ fn collect_argv_sources(
     }
     if program == "ddev" {
         match ddev::unwrap(args) {
-            ddev::Target::Nested(inner) if inner.len() == 1 => {
+            ddev::Target::Nested(inner, cwd) if inner.len() == 1 => {
                 collect_shell_sources(inner[0], cwd, depth + 1, paths, queries);
             }
-            ddev::Target::Nested(inner) => {
+            ddev::Target::Nested(inner, cwd) => {
                 collect_argv_sources(inner, cwd, depth + 1, paths, queries);
             }
             ddev::Target::Drush(inner) => collect_drush_query(inner, queries),

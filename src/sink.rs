@@ -134,8 +134,10 @@ fn classify_argv(words: &[&str], depth: usize) -> Option<SinkCategory> {
     }
     if program == "ddev" {
         return match ddev::unwrap(args) {
-            ddev::Target::Nested(inner) if inner.len() == 1 => classify_shell(inner[0], depth + 1),
-            ddev::Target::Nested(inner) => classify_argv(inner, depth + 1),
+            ddev::Target::Nested(inner, _) if inner.len() == 1 => {
+                classify_shell(inner[0], depth + 1)
+            }
+            ddev::Target::Nested(inner, _) => classify_argv(inner, depth + 1),
             _ => None,
         };
     }

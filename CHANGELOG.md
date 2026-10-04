@@ -10,6 +10,8 @@ once releases begin.
 
 ### Fixed
 
+- Inspect DDEV execution aliases, options and container cwd; deny destructive lifecycle operations.
+
 - Share transparent execution-wrapper analysis across policy and taint controls.
 
 - Reject unsupported shell expansion and grouping; retain empty arguments.

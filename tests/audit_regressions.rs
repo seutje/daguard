@@ -68,3 +68,32 @@ fn a03_transparent_wrappers() {
         ("busybox cat web/modules/custom/example.php", "allow"),
     ]);
 }
+
+#[test]
+fn a04_ddev_context() {
+    cases(&[
+        ("ddev . sudo true", "deny"),
+        ("ddev exec --service web drush ev 1", "deny"),
+        (
+            "ddev exec --dir /var/www/html/web/core touch index.php",
+            "deny",
+        ),
+        ("ddev exec touch modules/contrib/example/file.php", "deny"),
+        ("ddev delete -Oy", "deny"),
+        (
+            "ddev exec --dir /var/www/html/docroot touch modules/contrib/example/file.php",
+            "deny",
+        ),
+        ("ddev stop --remove-data -y", "deny"),
+        ("ddev snapshot restore --latest", "deny"),
+        ("ddev unknown-custom-command", "deny"),
+        (
+            "ddev exec --service web --dir /var/www/html/web/modules/custom touch example.php",
+            "allow",
+        ),
+        ("ddev start", "allow"),
+        ("ddev describe", "allow"),
+        ("ddev stop", "allow"),
+        ("ddev . drush cr", "allow"),
+    ]);
+}
