@@ -14,6 +14,9 @@ once releases begin.
 
 ### Fixed
 
+- Inspect DDEV Bash reconstruction/raw mode, require explicit directories for
+  relative filesystem effects, and test harmless live DDEV execution semantics.
+
 - Require complete safe Unix bundle inventories, ship security/containment
   guidance, and stage Windows installs with rollback on ordinary failure.
 

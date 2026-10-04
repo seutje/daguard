@@ -5,7 +5,7 @@ use crate::model::{Decision, DecisionEffect, Severity};
 
 pub(crate) enum Target<'a> {
     Safe,
-    Nested(&'a [&'a str], &'a str),
+    Nested(&'a [&'a str], Option<&'a str>, bool),
     Drush(&'a [&'a str]),
     Composer(&'a [&'a str]),
     Sql(&'a str),
@@ -78,7 +78,8 @@ fn skip_global_options<'a>(args: &'a [&'a str]) -> Result<&'a [&'a str], ()> {
 
 fn execution_target<'a>(args: &'a [&'a str]) -> Target<'a> {
     let mut index = 0;
-    let mut directory = "/var/www/html/web";
+    let mut directory = None;
+    let mut raw = false;
     while let Some(argument) = args.get(index) {
         if *argument == "--" {
             index += 1;
@@ -95,6 +96,7 @@ fn execution_target<'a>(args: &'a [&'a str]) -> Target<'a> {
             };
             (*argument, *value, 2)
         } else if matches!(*argument, "--raw" | "--raw=true") {
+            raw = true;
             index += 1;
             continue;
         } else {
@@ -102,8 +104,8 @@ fn execution_target<'a>(args: &'a [&'a str]) -> Target<'a> {
         };
         match flag {
             "--service" | "-s" if value == "web" => {}
-            "--dir" | "-d" if crate::paths::is_absolute(value) => directory = value,
-            "--raw" if value == "true" => {}
+            "--dir" | "-d" if crate::paths::is_absolute(value) => directory = Some(value),
+            "--raw" if value == "true" => raw = true,
             _ => return blocked("ddev.context.unknown"),
         }
         index += consumed;
@@ -111,5 +113,26 @@ fn execution_target<'a>(args: &'a [&'a str]) -> Target<'a> {
     if index == args.len() {
         return blocked("ddev.context.unknown");
     }
-    Target::Nested(&args[index..], directory)
+    Target::Nested(&args[index..], directory, raw)
+}
+
+/// DDEV 1.25 reconstructs a Bash string unless --raw is explicitly present.
+/// Its quoting differs from the host shell: unquoted metacharacters expand,
+/// while whitespace-containing operands are double-quoted, which still expands
+/// dollars/backticks/backslashes. Classify only literal reconstruction here.
+pub(crate) fn reconstruction_is_literal(args: &[&str]) -> bool {
+    args.iter().all(|arg| {
+        if arg.is_empty() {
+            return false;
+        }
+        let double_quoted = arg.contains(['"', ' ', '\t', '\r', '\n', '#']);
+        if double_quoted {
+            !arg.contains(['$', '`', '\\'])
+        } else {
+            !arg.contains([
+                '$', '`', '\\', '\'', ';', '|', '&', '<', '>', '*', '?', '[', ']', '(', ')', '{',
+                '}', '~',
+            ])
+        }
+    })
 }

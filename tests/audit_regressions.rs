@@ -257,6 +257,25 @@ fn r11_force_push_variants_are_mandatory_denials() {
 }
 
 #[test]
+fn r10_ddev_reconstruction_and_unknown_default_directory_fail_closed() {
+    cases(&[
+        ("ddev exec echo '$(cat .env)'", "deny"),
+        ("ddev exec echo 'safe;cat' .env", "deny"),
+        ("ddev exec cat settings.php", "deny"),
+        ("ddev exec cat '*.php'", "deny"),
+        (
+            "ddev exec --raw --dir=/var/www/html printf '%s' 'literal $text'",
+            "allow",
+        ),
+        (
+            "ddev exec --dir=/var/www/html cat web/modules/custom/example.module",
+            "allow",
+        ),
+        ("ddev exec git status", "allow"),
+    ]);
+}
+
+#[test]
 fn r07_credential_store_shell_variants_and_nearby_safe_reads() {
     cases(&[
         ("cat /home/synthetic/.ssh/id_rsa", "deny"),

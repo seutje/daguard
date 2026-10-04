@@ -3318,9 +3318,9 @@ remain trusted opaque code: lexical analysis cannot establish their behavior.
 
 DDEV execution recognizes `exec` and `.` with web-service and absolute directory
 options. Relative context, other services, project selection, custom commands
-and unknown flags are denied. Default container path analysis uses the synthetic
-Drupal docroot `/var/www/html/web`; lexical suffix checks do not depend on host
-checkout location. Explicit absolute cwd overrides are retained. Destructive
+and unknown flags are denied. Implicit container cwd is unknown; `/var/www/html` is only a lexical anchor
+for mandatory matches, and unclassified relative filesystem effects are denied.
+Explicit absolute cwd overrides are retained. Destructive
 delete/snapshot/restore, data-removing stop, database transfers and shell access
 are denied; known safe lifecycle commands remain usable without querying DDEV.
 Container contrib write checks also recognize modules/themes beneath arbitrary
@@ -3562,3 +3562,24 @@ tests inject a mid-replacement failure and compare the complete previous file se
 This transaction does not promise power-loss recovery, bypass active executable
 locks, or certify Windows ACL enforcement from Linux cross-compilation. Native
 Windows execution is required release evidence.
+
+### Live DDEV semantics (audit risk R10)
+
+DDEV 1.25 reconstructs a Bash command unless raw execution is explicitly
+requested; even host-quoted values can become expansions. The DDEV analyzer
+carries the raw mode and explicit cwd into shared policy/source/sink analysis.
+Literal-reconstruction checks reject unsupported expansions/metacharacters.
+Implicit container cwd is unknown because project type/configuration can change
+it; relative filesystem effects need an explicit absolute `--dir`, while known
+mandatory path/command matches still deny with their stable rules. Absolute paths
+and pure lifecycle/status operations retain their existing handling.
+`tests/wsl_ddev_live.sh` now compares harmless actual pwd/fixture/printf operations
+with classification across aliases, raw flags, option placement, quoted arguments
+and a configured cwd override. Denied operations remain classification-only. The
+temporary project omits database/SSH services and cleanup addresses only
+that project. Normal policy evaluation never invokes DDEV or inspects runtime
+configuration. Upstream contracts: [exec implementation](https://github.com/ddev/ddev/blob/main/cmd/ddev/cmd/exec.go)
+and [working-directory selection](https://github.com/ddev/ddev/blob/main/pkg/ddevapp/ddevapp.go).
+The live suite passed on WSL2 kernel 5.15.167.4-microsoft-standard-WSL2,
+DDEV 1.25.3 and Docker 29.1.0 on 2026-10-04. The configured cwd change required
+restarting the isolated project; the test does so before its second cwd probe.

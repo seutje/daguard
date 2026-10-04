@@ -1568,3 +1568,5 @@ Additional audit risk remediation:
 
 - [x] R09: Require complete Unix inventories and bundle security/containment guidance; verify negative installs.
 - [ ] R09 Windows validation: Run staged-install rollback and policy-preservation tests on native Windows CI.
+
+- [x] R10: Compare real WSL/DDEV alias, raw/quoting, flag and cwd behavior with guard decisions; remove implicit cwd assumptions.

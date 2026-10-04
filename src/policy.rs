@@ -611,6 +611,7 @@ fn request_tree_decision(
         let context = ShellContext {
             cwd: &request.cwd,
             container: false,
+            uncertain_cwd: false,
             sensitive_tables,
             organization,
             project,
@@ -664,6 +665,7 @@ fn request_command_decision(
     let context = ShellContext {
         cwd: &request.cwd,
         container: false,
+        uncertain_cwd: false,
         sensitive_tables,
         organization,
         project,
@@ -682,6 +684,7 @@ fn request_command_decision(
 struct ShellContext<'a> {
     cwd: &'a str,
     container: bool,
+    uncertain_cwd: bool,
     sensitive_tables: &'a [&'a str],
     organization: Option<&'a Policy>,
     project: Option<&'a Policy>,
@@ -867,16 +870,32 @@ fn analyze_ddev(
         analyzers::ddev::Target::Sql(sql) => {
             Ok(analyzers::sql::analyze(sql, context.sensitive_tables))
         }
-        analyzers::ddev::Target::Nested(inner, cwd) => {
+        analyzers::ddev::Target::Nested(inner, cwd, raw) => {
             let context = ShellContext {
-                cwd,
+                cwd: cwd.unwrap_or("/var/www/html"),
                 container: true,
+                uncertain_cwd: cwd.is_none(),
                 ..*context
             };
-            if inner.len() == 1 {
+            if inner.len() == 1 && !raw {
                 evaluate_shell(inner[0], &context, depth + 1)
             } else {
-                analyze_argv(inner, &context, depth + 1)
+                let decision = analyze_argv(inner, &context, depth + 1)?;
+                if decision
+                    .as_ref()
+                    .is_some_and(|decision| decision.effect == DecisionEffect::Deny)
+                {
+                    return Ok(decision);
+                }
+                if !raw && !analyzers::ddev::reconstruction_is_literal(inner) {
+                    return Ok(Some(command_decision(
+                        DecisionEffect::Deny,
+                        "ddev.shell_semantics",
+                        "DDEV shell reconstruction is not provably literal; use explicit --raw.",
+                        Severity::High,
+                    )));
+                }
+                Ok(decision)
             }
         }
     }
@@ -1316,6 +1335,14 @@ fn evaluate_shell_path(
                 suffix, reason, layer, normalized,
             )));
         }
+    }
+    if context.uncertain_cwd && !paths::is_absolute(path) {
+        return Ok(Some(command_decision(
+            DecisionEffect::Deny,
+            "ddev.context.unknown",
+            "Relative filesystem effects require an explicit DDEV --dir.",
+            Severity::High,
+        )));
     }
     Ok(None)
 }
@@ -1890,6 +1917,22 @@ const RULE_DOCUMENTATION: &[RuleDocumentation] = &[
         "sql",
         "Mutating SQL is prohibited.",
         "Have an authorized administrator manage database privileges."
+    ),
+    rule_doc!(
+        "ddev.shell_semantics",
+        Deny,
+        High,
+        "ddev",
+        "DDEV may reconstruct host-literal arguments as expandable Bash syntax.",
+        "Use explicit --raw with literal arguments and an absolute --dir for filesystem effects."
+    ),
+    rule_doc!(
+        "ddev.context.unknown",
+        Deny,
+        High,
+        "ddev",
+        "The DDEV execution directory, service or option context is not known safely.",
+        "Use the web service and an explicit absolute --dir; avoid project/user selection and unknown flags."
     ),
     rule_doc!(
         "git.force_push",
