@@ -674,13 +674,7 @@ fn detect_assignments(text: &str, config: &ScanConfig, ranges: &mut Vec<Range>) 
                         .saturating_sub(trimmed[separator + 1..].trim_start().len());
                 let value_end = trimmed.trim_end_matches(['\r', '\n']).len();
                 let value = trimmed[separator + 1..].trim();
-                let multiline = value.is_empty()
-                    || matches!(value, "|" | ">" | "|-" | ">-" | "|+" | ">+")
-                    || value.ends_with('\\')
-                    || ((value.starts_with('\"') || value.starts_with('\''))
-                        && (value.len() < 2
-                            || !value.ends_with(value.chars().next().unwrap_or('\"'))));
-                if multiline {
+                if assignment_continues(value) {
                     push_range(
                         ranges,
                         offset + leading + separator + 1,
@@ -705,6 +699,51 @@ fn detect_assignments(text: &str, config: &ScanConfig, ranges: &mut Vec<Range>) 
         }
         offset += line.len();
     }
+}
+
+fn assignment_continues(value: &str) -> bool {
+    value.is_empty()
+        || matches!(value, "|" | ">" | "|-" | ">-" | "|+" | ">+")
+        || value.ends_with('\\')
+        || ((value.starts_with('"') || value.starts_with('\''))
+            && (value.len() < 2 || !value.ends_with(value.chars().next().unwrap_or('"'))))
+}
+
+/// Only metadata escapes this helper. An open envelope can continue in another
+/// captured stream; independently redacting its current bytes is insufficient.
+pub(crate) fn has_open_sensitive_context(bytes: &[u8], config: &ScanConfig) -> bool {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return true;
+    };
+    if bytes.len() > MAX_SCAN_BYTES {
+        return true;
+    }
+    if looks_like_json(text) {
+        return false;
+    } // Structured scanning owns its boundaries.
+    let (plain, _) = without_ansi(text);
+    if plain.lines().any(|line| {
+        line.trim_start()
+            .split_once(['=', ':'])
+            .is_some_and(|(key, value)| {
+                field_category(key.trim(), config).is_some() && assignment_continues(value.trim())
+            })
+    }) {
+        return true;
+    }
+    let mut keys = Vec::new();
+    detect_private_keys(&plain, &mut keys);
+    if finding_limit_exceeded(&keys) {
+        return true;
+    }
+    keys.iter().any(|range| {
+        let body = &plain[range.start..range.end];
+        let header = body.lines().next().unwrap_or("").trim();
+        let label = header
+            .strip_prefix("-----BEGIN ")
+            .and_then(|label| label.strip_suffix("-----"));
+        label.is_none_or(|label| !body.contains(&format!("-----END {label}-----")))
+    })
 }
 
 fn detect_tables(text: &str, config: &ScanConfig, ranges: &mut Vec<Range>, started: Instant) {

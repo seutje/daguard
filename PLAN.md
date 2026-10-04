@@ -1554,3 +1554,6 @@ Additional audit risk remediation:
 
 - [x] R03: Keep taint across elapsed time and record known sources before native permission responses.
 - [ ] R03 assurance: Trusted session retirement, in-flight unknown-source tracking and isolated state broker.
+
+- [x] R04: Block both captured streams when a recognized sensitive envelope may cross their boundary.
+- [ ] R04 assurance: Context reconstructed across tools/MCP messages and arbitrary encodings.

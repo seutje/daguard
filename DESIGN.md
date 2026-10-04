@@ -3481,3 +3481,15 @@ post events without trustworthy identity, temporary-directory cleanup and
 same-user deletion still require a trusted session lifecycle and isolated broker
 for stronger guarantees. Native observe-only deployments must not claim those
 guarantees. Taint is now intentionally monotonic across time and process restarts.
+
+### Captured-stream context (audit risk R04)
+
+Guarded execution checks both private buffers for an incomplete sensitive
+assignment, multiline field or private-key envelope before releasing either.
+If the other stream has any content, both are blocked with
+`result.cross_stream_context`; concatenation cannot reconstruct that recognized
+context. Complete independent outputs retain normal sanitization and exit status.
+This conservative check cannot establish ordering or detect arbitrary encodings
+/splits across MCP messages, different tools or model context. Those remain
+limits of pattern detection and require prevention/isolation, not a universal
+scanner guarantee. Metadata-only taint is recorded for the blocked result.

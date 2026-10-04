@@ -99,6 +99,32 @@ pub(crate) fn execute(options: &ExecutionOptions<'_>) -> io::Result<ExecutionRes
         return Ok(blocked_execution(BLOCKED_EXIT_CODE, "result.scan_limit"));
     }
 
+    if (!stderr.bytes.is_empty()
+        && crate::scanner::has_open_sensitive_context(&stdout.bytes, options.config))
+        || (!stdout.bytes.is_empty()
+            && crate::scanner::has_open_sensitive_context(&stderr.bytes, options.config))
+    {
+        synthetic_block(
+            "result.cross_stream_context",
+            "Incomplete sensitive context may span captured streams; output was discarded.",
+        )?;
+        return Ok(blocked_execution(
+            BLOCKED_EXIT_CODE,
+            "result.cross_stream_context",
+        ));
+    }
+
+    inspect_execution(options, &stdout, &stderr, status, termination, deadline)
+}
+
+fn inspect_execution(
+    options: &ExecutionOptions<'_>,
+    stdout: &Capture,
+    stderr: &Capture,
+    status: ExitStatus,
+    termination: Termination,
+    deadline: Instant,
+) -> io::Result<ExecutionResult> {
     let stdout_decision = if options.protect_stdout {
         crate::scanner::inspect_sensitive_source(&stdout.bytes, options.config)
     } else {

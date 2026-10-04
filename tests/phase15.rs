@@ -191,6 +191,47 @@ fn guarded_execution_buffers_and_sanitizes_stdout_stderr_and_tables() {
 }
 
 #[test]
+// Failure messages must never print captured result bytes.
+#[allow(clippy::assert_is_empty)]
+fn r04_incomplete_sensitive_context_blocks_both_streams() {
+    let root = temporary_directory("cross-stream");
+    let program = root.join("synthetic-producer");
+    let canary = "SYNTHETIC_CROSS_STREAM_CANARY";
+    fs::write(
+        &program,
+        b"#!/bin/sh\nprintf 'password=\\n'\nprintf '%s' \"$1\" >&2\n",
+    )
+    .unwrap();
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
+    let output = run(&["exec", "--", program.to_str().unwrap(), canary], b"");
+    assert_eq!(output.status.code(), Some(125));
+    assert!(output.stdout.is_empty());
+    assert!(!String::from_utf8_lossy(&output.stderr).contains(canary));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("result.cross_stream_context"));
+    for script in [
+        "#!/bin/sh\nprintf 'password=\\n' >&2\nprintf '%s' \"$1\"\n",
+        "#!/bin/sh\nprintf '%s\\n' '-----BEGIN PRIVATE KEY-----'\nprintf '%s' \"$1\" >&2\n",
+        "#!/bin/sh\nprintf 'api_key: |\\n'\nprintf '%s' \"$1\" >&2\n",
+    ] {
+        fs::write(&program, script).unwrap();
+        let variant = run(&["exec", "--", program.to_str().unwrap(), canary], b"");
+        assert_eq!(variant.status.code(), Some(125));
+        assert!(variant.stdout.is_empty());
+        assert!(!String::from_utf8_lossy(&variant.stderr).contains(canary));
+    }
+    fs::write(
+        &program,
+        b"#!/bin/sh\nprintf 'normal output'\nprintf 'normal diagnostic' >&2\n",
+    )
+    .unwrap();
+    let safe = run(&["exec", "--", program.to_str().unwrap()], b"");
+    assert!(safe.status.success());
+    assert_eq!(safe.stdout, b"normal output");
+    assert_eq!(safe.stderr, b"normal diagnostic");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn guarded_sql_denies_sensitive_sources_and_redacts_permitted_sensitive_columns() {
     let root = temporary_directory("sql-source");
     let ddev = root.join("ddev");
@@ -611,7 +652,7 @@ fn a14_truncated_secrets_are_contained_on_error_streams() {
         ],
         b"",
     );
-    assert_eq!(output.status.code(), Some(7));
+    assert_eq!(output.status.code(), Some(125));
     assert!(!String::from_utf8_lossy(&output.stdout).contains("SYNTHETIC_AUDIT_KEY_BODY"));
     assert!(!String::from_utf8_lossy(&output.stderr).contains("SYNTHETIC_AUDIT_KEY_BODY"));
     assert!(

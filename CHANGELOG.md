@@ -14,6 +14,9 @@ once releases begin.
 
 ### Fixed
 
+- Block both guarded output streams when incomplete sensitive context could
+  continue in the other stream (`result.cross_stream_context`).
+
 - Retain session taint until explicit operator retirement (state schema 2) and
   record known sources before pre-hook responses so missing post hooks cannot clear them.
 
