@@ -41,7 +41,7 @@ pub(crate) enum Capability {
 
 impl Capability {
     pub(crate) const fn is_read(self) -> bool {
-        matches!(self, Self::FileRead)
+        matches!(self, Self::FileRead | Self::FileMove)
     }
 
     pub(crate) const fn is_write(self) -> bool {

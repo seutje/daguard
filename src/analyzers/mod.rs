@@ -3,6 +3,7 @@
 pub(crate) mod composer;
 pub(crate) mod ddev;
 pub(crate) mod drush;
+pub(crate) mod filesystem;
 pub(crate) mod git;
 pub(crate) mod network;
 pub(crate) mod sql;

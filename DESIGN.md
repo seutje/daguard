@@ -3315,3 +3315,12 @@ delete/snapshot/restore, data-removing stop, database transfers and shell access
 are denied; known safe lifecycle commands remain usable without querying DDEV.
 Container contrib write checks also recognize modules/themes beneath arbitrary
 docroot names, including explicit absolute directory overrides.
+
+Supported cp/mv/install commands extract target-directory and positional
+operands; moves apply read and subtree-mutation checks to sources as well as
+write checks to destinations. Canonical FileMove path facts conservatively
+cover both endpoints for read and mutation policy (roles never remove checks).
+Deletion checks include protected literal-prefix descendants. Curl/wget explicit
+output destinations are writes; remote filename modes and wget without an
+explicit destination fail closed. Custom-code moves and subtree deletes remain
+allowed when they do not overlap protected prefixes.

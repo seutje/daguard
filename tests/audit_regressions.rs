@@ -97,3 +97,28 @@ fn a04_ddev_context() {
         ("ddev . drush cr", "allow"),
     ]);
 }
+
+#[test]
+fn a05_filesystem_effects() {
+    cases(&[
+        ("cp -t web/core README.md", "deny"),
+        ("cp -tweb/core README.md", "deny"),
+        ("cp -r /tmp/core web", "deny"),
+        ("cp --target-directory=web/core README.md", "deny"),
+        ("mv web/core/index.php /tmp/file", "deny"),
+        ("rm -rf web", "deny"),
+        ("mv web /tmp/web", "deny"),
+        ("curl -o web/core/index.php https://example.test", "deny"),
+        ("wget -Oweb/core/index.php https://example.test", "deny"),
+        ("cp -t web/modules/custom README.md", "allow"),
+        (
+            "mv web/modules/custom/example.php /tmp/example.php",
+            "allow",
+        ),
+        ("rm -rf web/modules/custom/example", "allow"),
+        (
+            "curl -o web/modules/custom/example.php https://example.test",
+            "allow",
+        ),
+    ]);
+}

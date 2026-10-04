@@ -1525,7 +1525,7 @@ Keep these unchecked unless the scope is intentionally expanded.
 - [x] A02: Unsupported shell expansion and grouping are accepted as literal words.
 - [x] A03: Common wrappers bypass both command and sink analysis.
 - [x] A04: DDEV aliases and options lose the nested execution target.
-- [ ] A05: Filesystem mutation analysis misses destinations and affected descendants.
+- [x] A05: Filesystem mutation analysis misses destinations and affected descendants.
 - [ ] A06: Bulk reads and alternate representations bypass sensitive file rules.
 - [ ] A07: Value-taking and attached command options bypass semantic rules.
 - [ ] A08: SQL lexical assumptions differ from the target database grammar.

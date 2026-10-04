@@ -183,6 +183,7 @@ fn has_drive_prefix(path: &str) -> bool {
 }
 
 pub(crate) struct PathPattern {
+    pattern: String,
     matcher: GlobMatcher,
     windows_matcher: GlobMatcher,
     directory_root_matcher: Option<GlobMatcher>,
@@ -241,10 +242,37 @@ impl PathPattern {
             })
             .transpose()?;
         Ok(Self {
+            pattern: pattern.to_owned(),
             matcher,
             windows_matcher,
             directory_root_matcher,
             windows_directory_root_matcher,
+        })
+    }
+
+    /// Whether a directory operand contains a protected literal prefix.
+    pub(crate) fn covers_descendants(&self, normalized: &str) -> bool {
+        if self.matches(normalized) {
+            return true;
+        }
+        let prefix = self
+            .pattern
+            .strip_prefix("**/")
+            .unwrap_or(&self.pattern)
+            .split('/')
+            .take_while(|part| !part.contains(['*', '?', '[', '{']))
+            .collect::<Vec<_>>();
+        if prefix.is_empty() {
+            return true;
+        }
+        let parts = normalized.trim_matches('/').split('/').collect::<Vec<_>>();
+        (0..parts.len()).any(|start| {
+            let suffix = &parts[start..];
+            suffix.len() < prefix.len()
+                && suffix
+                    .iter()
+                    .zip(&prefix)
+                    .all(|(a, b)| a.eq_ignore_ascii_case(b))
         })
     }
 

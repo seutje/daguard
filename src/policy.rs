@@ -503,6 +503,15 @@ fn evaluate_inner(
         .into_iter()
         .map(|path| paths::normalize(&request.cwd, path).map_err(PolicyError::Path))
         .collect::<Result<Vec<_>, _>>()?;
+    if let Some(decision) = request_tree_decision(
+        request,
+        &normalized_paths,
+        &sensitive_tables,
+        organization,
+        project,
+    )? {
+        return Ok(decision);
+    }
     if let Some(decision) = evaluate_built_ins(request, &normalized_paths)? {
         return Ok(decision);
     }
@@ -570,6 +579,33 @@ fn evaluate_inner(
         policy_layer: PolicyLayer::Default,
         details: Evidence { matched_path: None },
     })
+}
+
+fn request_tree_decision(
+    request: &CanonicalRequest,
+    normalized_paths: &[String],
+    sensitive_tables: &[&str],
+    organization: Option<&Policy>,
+    project: Option<&Policy>,
+) -> Result<Option<Decision>, PolicyError> {
+    if matches!(
+        request.tool.capability,
+        Capability::FileDelete | Capability::FileMove
+    ) {
+        let context = ShellContext {
+            cwd: &request.cwd,
+            container: false,
+            sensitive_tables,
+            organization,
+            project,
+        };
+        for path in normalized_paths {
+            if let Some(decision) = evaluate_tree_write(&context, path)? {
+                return Ok(Some(decision));
+            }
+        }
+    }
+    Ok(None)
 }
 
 fn request_command_decision(
@@ -816,6 +852,29 @@ fn analyze_path_argv(
     args: &[&str],
     context: &ShellContext<'_>,
 ) -> Result<Option<Decision>, PolicyError> {
+    let Ok(effects) = analyzers::filesystem::effects(program, args) else {
+        return Ok(Some(command_decision(
+            DecisionEffect::Deny,
+            "filesystem.ambiguous",
+            "Filesystem operand effects cannot be established safely.",
+            Severity::High,
+        )));
+    };
+    for effect in effects {
+        use analyzers::filesystem::Effect;
+        let (path, operation) = match effect {
+            Effect::Read(path) => (path, RuleOperation::Read),
+            Effect::Write(path) | Effect::TreeWrite(path) => (path, RuleOperation::Write),
+        };
+        if let Some(decision) = evaluate_shell_path(context, path, operation)? {
+            return Ok(Some(decision));
+        }
+        if matches!(effect, Effect::TreeWrite(_))
+            && let Some(decision) = evaluate_tree_write(context, path)?
+        {
+            return Ok(Some(decision));
+        }
+    }
     if let Some(candidates) = analyzers::network::protected_file_candidates(program, args) {
         for candidate in candidates {
             if let Some(decision) = evaluate_shell_path(context, candidate, RuleOperation::Read)? {
@@ -844,10 +903,7 @@ fn analyze_path_argv(
         "cat" | "head" | "tail" | "less" | "more" | "sed" | "awk" | "wc" => {
             Some((RuleOperation::Read, args))
         }
-        "rm" | "touch" | "mkdir" | "tee" => Some((RuleOperation::Write, args)),
-        "cp" | "mv" | "install" => args
-            .last()
-            .map(|target| (RuleOperation::Write, std::slice::from_ref(target))),
+        "touch" | "mkdir" | "tee" => Some((RuleOperation::Write, args)),
         _ => None,
     };
     if let Some((operation, candidates)) = path_operation {
@@ -979,6 +1035,55 @@ fn search_option_takes_value(program: &str, argument: &str) -> bool {
 
 fn command_name(program: &str) -> &str {
     program.rsplit('/').next().unwrap_or(program)
+}
+
+fn evaluate_tree_write(
+    context: &ShellContext<'_>,
+    path: &str,
+) -> Result<Option<Decision>, PolicyError> {
+    let normalized = paths::normalize(context.cwd, path).map_err(PolicyError::Path)?;
+    for rule in BUILT_INS
+        .iter()
+        .filter(|rule| matches!(rule.operation, RuleOperation::Write))
+    {
+        for pattern in rule.patterns {
+            if paths::PathPattern::compile(pattern)
+                .map_err(PolicyError::Path)?
+                .covers_descendants(&normalized)
+            {
+                return Ok(Some(rule.decision(normalized)));
+            }
+        }
+    }
+    for (policy, layer) in [
+        (context.organization, PolicyLayer::Organization),
+        (context.project, PolicyLayer::Project),
+    ] {
+        if let Some(policy) = policy {
+            for pattern in &policy.paths.deny_write {
+                if paths::PathPattern::compile(pattern)
+                    .map_err(PolicyError::Path)?
+                    .covers_descendants(&normalized)
+                {
+                    return Ok(Some(policy_path_decision(
+                        "path.deny_write",
+                        "Deleting protected descendants is prohibited.",
+                        layer,
+                        normalized,
+                    )));
+                }
+            }
+        }
+    }
+    if path == "." || normalized == "/" {
+        return Ok(Some(command_decision(
+            DecisionEffect::Deny,
+            "filesystem.write.ancestor",
+            "Deleting an entire execution root cannot be inspected safely.",
+            Severity::High,
+        )));
+    }
+    Ok(None)
 }
 
 fn evaluate_shell_path(

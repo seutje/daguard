@@ -10,6 +10,8 @@ once releases begin.
 
 ### Fixed
 
+- Check mutation endpoints, protected ancestors and explicit download outputs.
+
 - Inspect DDEV execution aliases, options and container cwd; deny destructive lifecycle operations.
 
 - Share transparent execution-wrapper analysis across policy and taint controls.
