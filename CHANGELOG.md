@@ -8,6 +8,8 @@ once releases begin.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-04
+
 - Capability schema 3 reports `host_fail_closed_verified` separately from explicit
   denial support; all native routes remain uncertified for host callback failures.
 
