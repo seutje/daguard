@@ -71,6 +71,25 @@ fn a03_transparent_wrappers() {
 }
 
 #[test]
+fn r06_explicit_execution_environment() {
+    cases(&[
+        ("PATH=/tmp/synthetic git status", "deny"),
+        ("env BASH_ENV=/tmp/synthetic bash -c 'git status'", "deny"),
+        (
+            "timeout 5 env LD_PRELOAD=/tmp/synthetic.so git diff",
+            "deny",
+        ),
+        (
+            "env DYLD_INSERT_LIBRARIES=/tmp/synthetic.dylib git status",
+            "deny",
+        ),
+        ("CDPATH=/tmp/synthetic git status", "deny"),
+        ("env -i LC_ALL=C git status", "allow"),
+        ("TZ=UTC git diff", "allow"),
+    ]);
+}
+
+#[test]
 fn a04_ddev_context() {
     cases(&[
         ("ddev . sudo true", "deny"),

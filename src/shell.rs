@@ -189,6 +189,12 @@ pub(crate) fn segments(tokens: &[Token]) -> Vec<&[Token]> {
 pub(crate) fn normalize_argv<'a>(mut words: &'a [&'a str]) -> Result<&'a [&'a str], ShellError> {
     for _ in 0..8 {
         while words.first().is_some_and(|word| is_assignment(word)) {
+            if words
+                .first()
+                .is_some_and(|word| execution_environment_assignment(word))
+            {
+                return Err(ShellError::Unsupported("execution environment override"));
+            }
             words = &words[1..];
         }
         let Some((program, args)) = words.split_first() else {
@@ -238,6 +244,16 @@ pub(crate) fn normalize_argv<'a>(mut words: &'a [&'a str]) -> Result<&'a [&'a st
             .ok_or(ShellError::Unsupported("missing wrapped command"))?;
     }
     Err(ShellError::Limit)
+}
+
+fn execution_environment_assignment(word: &str) -> bool {
+    word.split_once('=').is_some_and(|(name, _)| {
+        matches!(
+            name,
+            "PATH" | "BASH_ENV" | "ENV" | "CDPATH" | "SHELLOPTS" | "BASHOPTS"
+        ) || name.starts_with("LD_")
+            || name.starts_with("DYLD_")
+    })
 }
 
 fn is_assignment(word: &str) -> bool {

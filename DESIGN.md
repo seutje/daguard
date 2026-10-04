@@ -3649,3 +3649,21 @@ transcript evidence. A future native replacement implementation must introduce
 adapter golden/error fixtures, normal/error/audit/tracing leakage tests and
 actual-host evidence before changing capabilities. Installed version commands
 and synthetic guard tests are not that evidence; the live gates remain open.
+
+### Executable behavior trust (audit risk R06)
+
+Explicit shell/wrapper assignments changing PATH, shell startup/options,
+CDPATH or dynamic-loader variables (`LD_*`, `DYLD_*`) are uninspectable execution
+context and deny through shared `shell.ambiguous` handling. Locale/timezone and
+ordinary project variable assignments retain their existing classification.
+Direct and wrapped regressions exercise denials and nearby safe workflows.
+
+Program names and absolute executable paths are classifications, not code
+authentication. Inherited PATH, functions, startup files, Git aliases/hooks/
+filters, Composer plugins/scripts, DDEV hooks and project executables can add
+effects. Development tools intentionally run project code. Mandatory deployments
+must pin a reviewed execution environment and configuration outside agent writes,
+limit credentials available to that OS identity, and enforce protected files/
+egress using OS isolation. daguard neither executes code to discover effects nor
+hashes an entire project/toolchain per call. Safe-name decisions alone never
+establish that arbitrary project code is confined.

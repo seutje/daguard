@@ -30,6 +30,14 @@ in the release bundle.
 
 ## Installation
 
+Pin reviewed executables, inherited PATH, shell startup files, Git hooks/filters,
+Composer scripts/plugins and DDEV hooks. Keep enforced configuration outside
+agent writes. Standard tooling can execute project code; limit available
+credentials and apply OS filesystem/egress isolation where mandatory boundaries
+must hold independently of lexical command classification. Explicit execution
+environment overrides are rejected, but inherited or file-driven behavior is
+not authenticated by command names.
+
 1. Obtain the versioned
    `daguard-<version>-x86_64-unknown-linux-musl.tar.gz`, release `SHA256SUMS`,
    and GitHub provenance attestation from the trusted release channel.

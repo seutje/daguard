@@ -1580,3 +1580,6 @@ Additional audit risk remediation:
 
 - [x] R02 investigation: Review current native result APIs and define versioned containment experiments without strengthening unsupported claims.
 - [ ] R02 evidence: Run native replacement/error/code-mode experiments in exact hosts and inspect model requests/transcripts before enabling containment.
+
+- [x] R06: Deny explicit execution-environment overrides and define executable/project-code trust assumptions.
+- [ ] R06 deployment: Pin reviewed executables/startup/plugin configuration and enforce OS filesystem/egress isolation.

@@ -17,6 +17,8 @@ once releases begin.
 
 ### Fixed
 
+- Deny explicit PATH, shell startup/options and dynamic-loader overrides in analyzed wrappers.
+
 - Reject ambiguous native Windows device, stream, trailing-dot/space and short-alias paths.
 
 - Preserve valid top-level JSON strings when sanitizing sensitive contents,
