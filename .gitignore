@@ -5,6 +5,8 @@
 .idea/
 .vscode/
 
+/docs/audits/
+
 /fuzz/target/
 /fuzz/artifacts/
 /fuzz/coverage/
