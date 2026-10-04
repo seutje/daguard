@@ -58,6 +58,11 @@ in the release bundle.
    nonexistent path ending in `sites/default/settings.php` through the live
    agent. A configuration parse or `doctor` result alone does not prove that the
    agent blocks tool execution.
+   In an isolated synthetic workspace, separately inject missing executable,
+   callback timeout, crash/nonzero exit and malformed response cases. Record
+   whether the host executes the tool despite failure. Do not mark host
+   fail-closed behavior verified from an ordinary allow/deny test; Codex native
+   callbacks remain insufficient as a mandatory process-failure boundary.
 8. Record the release version, policy fingerprint, agent versions, test result,
    operator, and time in the organization's deployment record.
 

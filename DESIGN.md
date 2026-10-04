@@ -1645,6 +1645,12 @@ host. The capability record also identifies pre-call denial, input-rewrite and
 pre-context replacement support, guarded-execution support, security mode, and
 minimum tested version.
 
+Capability schema 3 adds `host_fail_closed_verified`, separate from
+`pre_call_denial` (the ability to render an explicit denial). It is false for
+every current native route: adapter/bridge tests do not certify host behavior
+when a callback cannot start, times out, crashes or returns malformed output.
+Native payload and response schemas are unchanged.
+
 Integration security capabilities must be tested and versioned rather than
 assumed from naming or generic hook availability. An upstream semantics change
 is security-critical. A supported safe path must never silently downgrade to
@@ -3611,3 +3617,18 @@ uses a case-sensitive Linux checkout with reviewed mounts and no alternate
 links to protected content; stronger isolation requires OS controls that deny
 access by identity. Native Windows/macOS filesystem enforcement and mounted
 volume variants still require separate live release evidence.
+
+### Host callback failure boundary (audit risk R01)
+
+The core fails closed while it controls evaluation and emits a response. A
+vendor host decides whether callback startup/failure prevents tool execution.
+Codex's documented failure behavior can continue execution; root-owned guard
+files and explicit deny translations cannot repair that upstream behavior.
+Cursor's `failClosed` configuration and OpenCode bridge exceptions need live
+failure-injection validation in the exact configured host, independent of unit
+tests. See [Codex hooks](https://learn.chatgpt.com/docs/hooks).
+
+Mandatory deployments requiring failure containment must use an OS-enforced
+tool/egress boundary, pin trusted integration configuration and prohibit direct
+routes around it. They must not rely on a native callback alone. The capability
+matrix exposes this uncertified status and PLAN keeps the live failure gates open.

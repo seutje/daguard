@@ -8,6 +8,9 @@ once releases begin.
 
 ## [Unreleased]
 
+- Capability schema 3 reports `host_fail_closed_verified` separately from explicit
+  denial support; all native routes remain uncertified for host callback failures.
+
 - Require shared same-commit quality and dependency checks before release builds
   and WSL publication; pin Actions/tools and publish optional platforms independently.
 

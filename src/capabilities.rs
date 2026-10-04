@@ -9,7 +9,7 @@ use serde::{Serialize, Serializer};
 
 use crate::model::{Capability, InterceptionCapability};
 
-pub(crate) const CAPABILITY_SCHEMA_VERSION: u16 = 2;
+pub(crate) const CAPABILITY_SCHEMA_VERSION: u16 = 3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Support {
@@ -30,6 +30,9 @@ pub(crate) struct AdapterCapability {
     pub(crate) tool_category: Capability,
     pub(crate) interception: InterceptionCapability,
     pub(crate) pre_call_denial: Support,
+    /// Explicit denial translation is independent of vendor callback failures.
+    /// True requires versioned live failure-injection evidence for this route.
+    pub(crate) host_fail_closed_verified: Support,
     pub(crate) input_rewrite: Support,
     pub(crate) result_observation: Support,
     pub(crate) pre_context_output_replacement: Support,
@@ -53,6 +56,7 @@ const fn observed(
         tool_category,
         interception: InterceptionCapability::ObserveOnly,
         pre_call_denial: Support::Yes,
+        host_fail_closed_verified: Support::No,
         input_rewrite: Support::No,
         result_observation: Support::Yes,
         pre_context_output_replacement: Support::No,
@@ -117,6 +121,7 @@ mod tests {
         assert!(ADAPTER_CAPABILITIES.iter().all(|record| {
             record.schema == CAPABILITY_SCHEMA_VERSION
                 && record.pre_context_containment == super::Support::No
+                && record.host_fail_closed_verified == super::Support::No
         }));
     }
 }

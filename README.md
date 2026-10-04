@@ -83,6 +83,10 @@ Always finish setup with a harmless live allow/deny test in the exact agent
 version being deployed. Configuration validation alone does not prove that the
 host blocks a denied tool call.
 
+`daguard capabilities` schema 3 distinguishes explicit denial support from
+`host_fail_closed_verified`; the latter is currently false for all native routes.
+Mandatory failure containment requires trusted routing and OS enforcement.
+
 ## Use the CLI
 
 ```bash

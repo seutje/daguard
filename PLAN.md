@@ -1574,3 +1574,6 @@ Additional audit risk remediation:
 
 - [x] R05: Reject ambiguous Windows lexical aliases and define filesystem-identity support limits.
 - [ ] R05 assurance: Validate native filesystem aliases/mounts and enforce stronger OS identity confinement.
+
+- [x] R01 contract: Distinguish explicit denial support from verified host fail-closed behavior in capability schema 3.
+- [ ] R01 assurance: Validate vendor callback startup/timeout/crash/malformed-output failures with immutable integration and OS controls.
