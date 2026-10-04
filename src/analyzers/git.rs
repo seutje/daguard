@@ -6,9 +6,15 @@ use crate::model::{Decision, DecisionEffect, Severity};
 pub(crate) fn analyze(args: &[&str]) -> Option<Decision> {
     let command = command(args)?;
     if command == "push"
-        && args
-            .iter()
-            .any(|arg| matches!(*arg, "--force" | "-f") || arg.starts_with("--force="))
+        && args.iter().any(|arg| {
+            matches!(
+                *arg,
+                "--force" | "--force-with-lease" | "--force-if-includes"
+            ) || arg.starts_with("--force=")
+                || arg.starts_with("--force-with-lease=")
+                || (arg.starts_with('-') && !arg.starts_with("--") && arg[1..].contains('f'))
+                || arg.starts_with('+')
+        })
     {
         return Some(decision(
             DecisionEffect::Deny,
@@ -65,6 +71,16 @@ mod tests {
     use super::analyze;
     #[test]
     fn force_variants_deny_without_flag_substring_false_positives() {
+        for arguments in [
+            vec!["push", "--force-with-lease"],
+            vec!["push", "--force-with-lease=refs/heads/main:synthetic"],
+            vec!["push", "-vf", "origin", "main"],
+            vec!["push", "origin", "+main:main"],
+        ] {
+            let decision = analyze(&arguments).unwrap();
+            assert_eq!(decision.rule_id, "git.force_push");
+            assert_eq!(decision.effect, crate::model::DecisionEffect::Deny);
+        }
         assert_eq!(
             analyze(&["push", "origin", "main", "--force"])
                 .unwrap()

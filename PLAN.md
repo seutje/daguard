@@ -1557,3 +1557,5 @@ Additional audit risk remediation:
 
 - [x] R04: Block both captured streams when a recognized sensitive envelope may cross their boundary.
 - [ ] R04 assurance: Context reconstructed across tools/MCP messages and arbitrary encodings.
+
+- [x] R11: Classify force-with-lease, force refspecs and clustered flags as mandatory Git denials.

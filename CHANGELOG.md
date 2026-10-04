@@ -14,6 +14,8 @@ once releases begin.
 
 ### Fixed
 
+- Apply mandatory `git.force_push` to force-with-lease, force refspecs and clustered flags.
+
 - Block both guarded output streams when incomplete sensitive context could
   continue in the other stream (`result.cross_stream_context`).
 

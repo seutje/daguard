@@ -221,3 +221,20 @@ fn a09_sql_side_effects() {
         ("mysql -e 'SELECT (1 + 2)'", "allow"),
     ]);
 }
+
+#[test]
+fn r11_force_push_variants_are_mandatory_denials() {
+    cases(&[
+        ("git push --force-with-lease origin main", "deny"),
+        (
+            "git push --force-with-lease=refs/heads/main:synthetic origin main",
+            "deny",
+        ),
+        ("git push -vf origin main", "deny"),
+        ("git push origin '+main:main'", "deny"),
+        ("ddev exec git push -vf origin main", "deny"),
+        ("git push origin main", "ask"),
+        ("git push --no-force origin main", "ask"),
+        ("git diff --find-renames", "allow"),
+    ]);
+}

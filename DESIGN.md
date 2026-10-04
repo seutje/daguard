@@ -3493,3 +3493,11 @@ This conservative check cannot establish ordering or detect arbitrary encodings
 /splits across MCP messages, different tools or model context. Those remain
 limits of pattern detection and require prevention/isolation, not a universal
 scanner guarantee. Metadata-only taint is recorded for the blocked result.
+
+### Git force intent (audit risk R11)
+
+`git.force_push` is a mandatory deny for `--force`, clustered short `f`,
+`--force-with-lease` (including expected-ref values), `--force-if-includes`, and
+leading-plus refspecs, including transparent/DDEV wrappers. These do not depend
+on adapters converting approval requests into denials. Ordinary pushes still
+require review; read-only Git workflows retain their existing behavior.
