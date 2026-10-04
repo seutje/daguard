@@ -3373,3 +3373,10 @@ session, state directory and policy outside model-controlled arguments; a model
 must never choose these values. Without the pair a route is standalone and makes
 no conversation-wide taint claim. Native shell analysis unwraps daguard exec
 commands so wrapping a transfer does not hide its sink from pre-tool checks.
+
+Classified JSON subtrees redact every key and scalar, including objects whose
+values are null. Keys become deterministic category placeholders with local
+ordinals, checked for collisions. Complete sensitive-source JSON traversal
+also covers keys and never trusts placeholder-shaped input strings. Classified
+object property names therefore change; consumers must accept that sanitized
+shape or treat the result as unavailable.

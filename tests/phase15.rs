@@ -548,3 +548,46 @@ fn a12_session_binding_requires_complete_host_identity() {
         assert_eq!(output.stdout, [] as [u8; 0]);
     }
 }
+
+#[test]
+fn a13_classified_key_is_absent_from_output_errors_and_metadata() {
+    let root = temporary_directory("classified-key");
+    let script = root.join("synthetic-producer");
+    fs::write(&script, b"#!/bin/sh\nprintf '%s' '{\"password\":{\"SYNTHETIC_AUDIT_SECRET\":null}}'\nprintf '%s' '{\"password\":[{\"SYNTHETIC_AUDIT_SECRET\":\"value\"}]}' >&2\nexit 7\n").unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+    let state = root.join("state");
+    let audit = root.join("audit.jsonl");
+    let output = run(
+        &[
+            "exec",
+            "--integration-agent",
+            "codex",
+            "--session-id",
+            "synthetic",
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--audit-log",
+            audit.to_str().unwrap(),
+            "--",
+            script.to_str().unwrap(),
+        ],
+        b"",
+    );
+    assert_eq!(output.status.code(), Some(7));
+    for bytes in [&output.stdout, &output.stderr] {
+        assert!(!String::from_utf8_lossy(bytes).contains("SYNTHETIC_AUDIT_SECRET"));
+    }
+    assert!(
+        !fs::read_to_string(audit)
+            .unwrap()
+            .contains("SYNTHETIC_AUDIT_SECRET")
+    );
+    for entry in fs::read_dir(state).unwrap() {
+        assert!(
+            !fs::read_to_string(entry.unwrap().path())
+                .unwrap()
+                .contains("SYNTHETIC_AUDIT_SECRET")
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}

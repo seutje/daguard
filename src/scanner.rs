@@ -134,34 +134,12 @@ fn sanitize_sensitive_json(
 }
 
 fn sanitize_all_values(value: &mut Value, findings: &mut Vec<Finding>) -> Result<(), ()> {
-    match value {
-        Value::Array(values) => {
-            for value in values {
-                sanitize_all_values(value, findings)?;
-            }
-        }
-        Value::Object(values) => {
-            for value in values.values_mut() {
-                sanitize_all_values(value, findings)?;
-            }
-        }
-        Value::String(value) if value.starts_with("[REDACTED:") && value.ends_with(']') => {}
-        Value::Null => {}
-        Value::Bool(_) | Value::Number(_) | Value::String(_) => {
-            if findings.len() >= MAX_FINDINGS {
-                return Err(());
-            }
-            findings.push(Finding {
-                detector_id: "source.sensitive_value",
-                category: SensitivityCategory::UnknownSensitive,
-                start: 0,
-                end: value_length(value),
-                confidence: Confidence::High,
-            });
-            *value = Value::String(placeholder(SensitivityCategory::UnknownSensitive).to_owned());
-        }
-    }
-    Ok(())
+    sanitize_classified_value(
+        value,
+        SensitivityCategory::UnknownSensitive,
+        "source.sensitive_value",
+        findings,
+    )
 }
 
 fn sanitize_sensitive_table(
@@ -325,8 +303,23 @@ fn sanitize_classified_value(
             }
         }
         Value::Object(values) => {
-            for value in values.values_mut() {
-                sanitize_classified_value(value, category, detector_id, findings)?;
+            let original = std::mem::take(values);
+            for (index, (key, mut value)) in original.into_iter().enumerate() {
+                if findings.len() >= MAX_FINDINGS {
+                    return Err(());
+                }
+                findings.push(Finding {
+                    detector_id,
+                    category,
+                    start: 0,
+                    end: key.len(),
+                    confidence: Confidence::High,
+                });
+                let safe_key = format!("{}:key{index}", placeholder(category));
+                sanitize_classified_value(&mut value, category, detector_id, findings)?;
+                if values.insert(safe_key, value).is_some() {
+                    return Err(());
+                }
             }
         }
         Value::Null => {}
@@ -1134,6 +1127,21 @@ mod tests {
     use crate::model::ResultEffect;
 
     #[test]
+    fn a13_classified_keys_and_forged_placeholders_do_not_leak() {
+        let canary = "SYNTHETIC_AUDIT_SECRET";
+        for input in [
+            br#"{"password":{"SYNTHETIC_AUDIT_SECRET":null}}"#.as_slice(),
+            br#"{"password":[{"SYNTHETIC_AUDIT_SECRET":"value"}]}"#.as_slice(),
+        ] {
+            let decision = inspect(input, &ScanConfig::default());
+            assert!(!serde_json::to_string(&decision).unwrap().contains(canary));
+        }
+        let input = br#"{"SYNTHETIC_AUDIT_SECRET":"[REDACTED:SYNTHETIC_AUDIT_SECRET]"}"#;
+        let decision = inspect_sensitive_source(input, &ScanConfig::default());
+        assert!(!serde_json::to_string(&decision).unwrap().contains(canary));
+    }
+
+    #[test]
     fn sanitizes_secret_classes_without_echoing_canaries() {
         let canary = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
         let input = format!(
@@ -1158,11 +1166,11 @@ mod tests {
         assert_eq!(value["user"]["mail"], "[REDACTED:PERSONAL_DATA]");
         assert_eq!(value["user"]["pass"], "[REDACTED:CREDENTIAL]");
         assert_eq!(
-            value["customer_profile"]["city"],
+            value["customer_profile"]["[REDACTED:CUSTOMER_DATA]:key0"],
             "[REDACTED:CUSTOMER_DATA]"
         );
         assert_eq!(
-            value["customer_profile"]["nested"]["reference"],
+            value["customer_profile"]["[REDACTED:CUSTOMER_DATA]:key1"]["[REDACTED:CUSTOMER_DATA]:key0"],
             "[REDACTED:CUSTOMER_DATA]"
         );
         assert!(!output.contains("phase15@example.test"));

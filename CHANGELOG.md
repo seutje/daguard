@@ -10,6 +10,8 @@ once releases begin.
 
 ### Fixed
 
+- Redact classified JSON keys and reject trust in input-shaped redaction markers.
+
 - Bind session-containing routes to the trusted native agent taint namespace.
 
 - Preserve outbound MCP identity for tools with file-operation names.
