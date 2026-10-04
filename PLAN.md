@@ -1531,7 +1531,7 @@ Keep these unchecked unless the scope is intentionally expanded.
 - [x] A08: SQL lexical assumptions differ from the target database grammar.
 - [x] A09: SELECT is treated as read only even when it has filesystem effects.
 - [x] A10: Structured MCP SQL bypasses pre execution SQL protection.
-- [ ] A11: Codex loses MCP transport identity for file named tools.
+- [x] A11: Codex loses MCP transport identity for file named tools.
 - [ ] A12: Guarded execution and MCP use separate taint namespaces from the agent.
 - [ ] A13: Classified JSON objects can retain sensitive keys.
 - [ ] A14: Incomplete private keys and multiline assignments are released.

@@ -55,6 +55,16 @@ pub(crate) struct Tool {
     pub(crate) capability: Capability,
 }
 
+impl Tool {
+    /// Transport identity survives semantic suffix mapping in native adapters.
+    pub(crate) fn is_mcp(&self) -> bool {
+        let name = self.native_name.to_ascii_lowercase();
+        self.capability == Capability::McpCall
+            || name.starts_with("mcp__")
+            || name.starts_with("mcp:")
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct Facts {
     #[serde(default)]
@@ -294,10 +304,7 @@ impl CanonicalRequest {
             .iter()
             .map(String::as_str)
             .collect::<Vec<_>>();
-        if matches!(
-            self.tool.capability,
-            Capability::Unknown | Capability::McpCall
-        ) {
+        if self.tool.is_mcp() || self.tool.capability == Capability::Unknown {
             collect_command_values(&self.input, None, &mut commands);
         }
         commands
@@ -306,10 +313,7 @@ impl CanonicalRequest {
     /// Supported structured SQL fields, inspected by the shared SQL analyzer.
     pub(crate) fn candidate_queries(&self) -> Result<Vec<&str>, ModelError> {
         let mut queries = Vec::new();
-        if matches!(
-            self.tool.capability,
-            Capability::McpCall | Capability::Unknown
-        ) {
+        if self.tool.is_mcp() || self.tool.capability == Capability::Unknown {
             collect_queries(&self.input, None, &mut queries)?;
         }
         Ok(queries)
@@ -327,10 +331,7 @@ impl CanonicalRequest {
             .iter()
             .map(String::as_str)
             .collect::<Vec<_>>();
-        if matches!(
-            self.tool.capability,
-            Capability::Unknown | Capability::McpCall
-        ) {
+        if self.tool.is_mcp() || self.tool.capability == Capability::Unknown {
             collect_path_values(&self.input, None, &mut paths);
         }
         paths

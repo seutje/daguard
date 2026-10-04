@@ -3358,3 +3358,9 @@ analyzer before execution, including nested argument objects and query arrays.
 Non-string query inputs fail closed. Named database/SQL tools without inspectable
 queries are denied. Structured source classification reuses the same extraction;
 MCP response correlation and source containment are specified separately.
+
+Transport identity is derived independently of semantic capability from native
+MCP prefixes and canonical mcp_call. A native MCP read/write/delete suffix may
+retain its file capability, but always remains an outbound MCP sink and receives
+universal MCP path, command and SQL checks. Existing canonical fields retain
+their meanings; no protocol schema change is required.

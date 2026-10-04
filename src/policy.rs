@@ -614,20 +614,20 @@ fn request_command_decision(
     organization: Option<&Policy>,
     project: Option<&Policy>,
 ) -> Result<Option<Decision>, PolicyError> {
-    if !matches!(
-        request.tool.capability,
-        Capability::ShellExecute | Capability::Unknown | Capability::McpCall
-    ) {
+    if !request.tool.is_mcp()
+        && !matches!(
+            request.tool.capability,
+            Capability::ShellExecute | Capability::Unknown
+        )
+    {
         return Ok(None);
     }
     let queries = request
         .candidate_queries()
         .map_err(|_| PolicyError::Invalid("invalid structured SQL input"))?;
     let name = request.tool.native_name.to_ascii_lowercase();
-    if matches!(
-        request.tool.capability,
-        Capability::McpCall | Capability::Unknown
-    ) && queries.is_empty()
+    if (request.tool.is_mcp() || request.tool.capability == Capability::Unknown)
+        && queries.is_empty()
         && ["__db__", "database", "sql", "postgres", "mongo"]
             .iter()
             .any(|part| name.contains(part))
@@ -1350,7 +1350,7 @@ fn evaluate_built_ins(
         )));
     }
     for rule in BUILT_INS {
-        if rule.operation.applies(request.tool.capability)
+        if (rule.operation.applies(request.tool.capability) || request.tool.is_mcp())
             && let Some(path) = first_matching_path(paths, rule.patterns)?
         {
             return Ok(Some(rule.decision(path)));
@@ -1366,7 +1366,8 @@ fn evaluate_policy(
     layer: PolicyLayer,
     omit_candidates: bool,
 ) -> Result<Option<Decision>, PolicyError> {
-    if (request.tool.capability.is_read()
+    if (request.tool.is_mcp()
+        || request.tool.capability.is_read()
         || matches!(
             request.tool.capability,
             Capability::McpCall | Capability::Unknown
@@ -1380,7 +1381,8 @@ fn evaluate_policy(
             path,
         )));
     }
-    if (request.tool.capability.is_write()
+    if (request.tool.is_mcp()
+        || request.tool.capability.is_write()
         || matches!(
             request.tool.capability,
             Capability::McpCall | Capability::Unknown

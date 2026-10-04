@@ -10,6 +10,8 @@ once releases begin.
 
 ### Fixed
 
+- Preserve outbound MCP identity for tools with file-operation names.
+
 - Apply shared SQL policy to structured MCP query arguments before execution.
 
 - Deny SQL filesystem access and unknown callable expressions.

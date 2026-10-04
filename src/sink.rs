@@ -18,6 +18,9 @@ pub(crate) struct TaintSinkDecision {
 }
 
 pub(crate) fn classify(request: &CanonicalRequest) -> Option<SinkCategory> {
+    if request.tool.is_mcp() {
+        return Some(SinkCategory::OutboundMcp);
+    }
     match request.tool.capability {
         Capability::NetworkWrite | Capability::NetworkRequest => {
             return Some(SinkCategory::OutboundNetwork);
@@ -198,6 +201,20 @@ mod tests {
             "facts": {"command": command}
         });
         CanonicalRequest::from_slice(&serde_json::to_vec(&input).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn a11_mcp_file_names_preserve_transport() {
+        for operation in ["read_file", "write_file", "delete_file"] {
+            let payload = serde_json::json!({"hook_event_name":"PreToolUse", "cwd":"/workspace/project", "session_id":"synthetic", "tool_use_id":"synthetic",
+                "tool_name": format!("mcp__remote__{operation}"), "tool_input":{"path":"README.md"}});
+            let request =
+                crate::adapters::codex::normalize(&serde_json::to_vec(&payload).unwrap()).unwrap();
+            assert_eq!(
+                classify(&request),
+                Some(crate::model::SinkCategory::OutboundMcp)
+            );
+        }
     }
 
     #[test]

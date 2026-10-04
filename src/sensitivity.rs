@@ -58,10 +58,7 @@ pub(crate) fn classify_request(
     for command in request.candidate_commands() {
         collect_shell_sources(command, &request.cwd, 0, &mut paths, &mut sql_queries);
     }
-    if matches!(
-        request.tool.capability,
-        Capability::McpCall | Capability::Unknown
-    ) {
+    if request.tool.is_mcp() || request.tool.capability == Capability::Unknown {
         sql_queries.extend(
             request
                 .candidate_queries()
