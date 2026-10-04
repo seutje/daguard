@@ -8,6 +8,15 @@ once releases begin.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-04
+
+### Fixed
+
+- Make Phase 15 guarded-execution and MCP gateway tests deterministic across
+  host environments.
+- Restore native Windows compilation for guarded execution by limiting Unix
+  signal handling to Unix targets.
+
 ## [0.1.0] - 2026-10-04
 
 ### Added
