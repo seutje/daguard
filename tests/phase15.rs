@@ -151,8 +151,24 @@ fn guarded_execution_buffers_and_sanitizes_stdout_stderr_and_tables() {
     assert!(stdout.contains("kept"));
     assert!(stdout.contains("also-kept"));
 
-    let stderr_output = run(&["exec", "--", "/usr/bin/ls", stderr_canary], b"");
-    assert_eq!(stderr_output.status.code(), Some(2));
+    let root = temporary_directory("stderr");
+    let stderr_program = root.join("stderr-program");
+    fs::write(
+        &stderr_program,
+        b"#!/bin/sh\nprintf '%s\\n' \"$1\" >&2\nexit 23\n",
+    )
+    .unwrap();
+    fs::set_permissions(&stderr_program, fs::Permissions::from_mode(0o700)).unwrap();
+    let stderr_output = run(
+        &[
+            "exec",
+            "--",
+            stderr_program.to_str().unwrap(),
+            stderr_canary,
+        ],
+        b"",
+    );
+    assert_eq!(stderr_output.status.code(), Some(23));
     let stderr = String::from_utf8(stderr_output.stderr).unwrap();
     assert!(!stderr.contains(stderr_canary));
     assert!(stderr.contains("[REDACTED:CREDENTIAL]"));
@@ -169,6 +185,7 @@ fn guarded_execution_buffers_and_sanitizes_stdout_stderr_and_tables() {
     );
     assert!(split.status.success());
     assert!(!String::from_utf8_lossy(&split.stdout).contains("phase15-split@example.test"));
+    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -253,9 +270,10 @@ fn guarded_execution_preserves_exit_status_and_blocks_before_sensitive_read() {
         b"",
     );
     assert!(current.status.success());
+    let expected = fs::canonicalize(&root).unwrap();
     assert_eq!(
-        String::from_utf8_lossy(&current.stdout).trim(),
-        root.to_str().unwrap()
+        PathBuf::from(String::from_utf8_lossy(&current.stdout).trim()),
+        expected
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -419,10 +437,14 @@ fn mcp_gateway_sanitizes_responses_and_applies_pre_tool_policy() {
     serde_json::from_str::<Value>(safe.trim()).unwrap();
 
     let diagnostic_canary = "mcp-diagnostic@example.test";
+    let root = temporary_directory("mcp-diagnostic");
+    let server = root.join("mcp-server");
     let script = format!(
-        "IFS= read -r ignored; /usr/bin/ls '{diagnostic_canary}'; printf '%s\\n' '{response}'"
+        "#!/bin/sh\nIFS= read -r ignored\nprintf '%s\\n' '{diagnostic_canary}' >&2\nprintf '%s\\n' '{response}'\n"
     );
-    let output = run(&["mcp-proxy", "--", "/bin/sh", "-c", &script], request);
+    fs::write(&server, script).unwrap();
+    fs::set_permissions(&server, fs::Permissions::from_mode(0o700)).unwrap();
+    let output = run(&["mcp-proxy", "--", server.to_str().unwrap()], request);
     let diagnostic = String::from_utf8(output.stderr).unwrap();
     assert!(!diagnostic.contains(diagnostic_canary));
     assert!(diagnostic.contains("[REDACTED:PERSONAL_DATA]"));
@@ -458,4 +480,5 @@ fn mcp_gateway_sanitizes_responses_and_applies_pre_tool_policy() {
     let response: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(response["id"], 8);
     assert_eq!(response["error"]["data"]["rule_id"], "drupal.secret.env");
+    fs::remove_dir_all(root).unwrap();
 }
