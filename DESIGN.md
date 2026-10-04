@@ -3346,3 +3346,9 @@ comments fail closed. Double quotes and backticks are retained as identifiers
 for sensitive-table checks. Mode-dependent backslash escaping/client commands
 are rejected; single-quoted literal keywords do not become mutation tokens.
 No database connection or SQL mode discovery occurs during evaluation.
+
+Read-only SQL excludes LOAD_FILE, INTO OUTFILE/DUMPFILE and unknown callable
+expressions. A bounded list of common pure/aggregate native functions remains
+allowed; schema-qualified calls and other routines are denied because database
+privileges and routine bodies cannot be established by lexical inspection.
+Restricted database credentials remain an independent deployment boundary.

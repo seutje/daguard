@@ -197,3 +197,27 @@ fn a08_mysql_lexing() {
         ("drush sql:query \"SELECT 'DELETE' FROM node\"", "allow"),
     ]);
 }
+
+#[test]
+fn a09_sql_side_effects() {
+    cases(&[
+        (
+            "drush sql:query \"SELECT LOAD_FILE('/var/www/html/.env')\"",
+            "deny",
+        ),
+        (
+            "mysql -e \"SELECT 1 INTO OUTFILE '/tmp/synthetic'\"",
+            "deny",
+        ),
+        (
+            "ddev mysql \"SELECT 1 INTO DUMPFILE '/tmp/synthetic'\"",
+            "deny",
+        ),
+        ("mysql -e 'SELECT synthetic_custom_routine()'", "deny"),
+        ("mysql -e 'SELECT untrusted.COUNT(1)'", "deny"),
+        ("mysql -e 'SELECT SLEEP(100)'", "deny"),
+        ("mysql -e 'SELECT COUNT(*) FROM node'", "allow"),
+        ("mysql -e 'SELECT COALESCE(nid, 0) FROM node'", "allow"),
+        ("mysql -e 'SELECT (1 + 2)'", "allow"),
+    ]);
+}

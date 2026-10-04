@@ -10,6 +10,8 @@ once releases begin.
 
 ### Fixed
 
+- Deny SQL filesystem access and unknown callable expressions.
+
 - Align SQL comments and identifier quoting with conservative MySQL semantics.
 
 - Normalize Drush/Composer global options and SQL client query options.

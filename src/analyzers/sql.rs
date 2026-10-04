@@ -25,6 +25,9 @@ pub(crate) fn analyze(sql: &str, configured_sensitive_tables: &[&str]) -> Option
                 ));
             }
         }
+        if let Some(decision) = side_effects(statement) {
+            return Some(decision);
+        }
         if !statement.is_empty()
             && !statement.first().is_some_and(|word| {
                 matches!(word.as_str(), "SELECT" | "SHOW" | "EXPLAIN" | "DESCRIBE")
@@ -44,6 +47,73 @@ pub(crate) fn analyze(sql: &str, configured_sensitive_tables: &[&str]) -> Option
                 "sql.read.sensitive_table",
                 "sql",
                 "Reading sensitive Drupal database tables is prohibited.",
+                Severity::High,
+            ));
+        }
+    }
+    None
+}
+
+fn side_effects(words: &[String]) -> Option<Decision> {
+    if words
+        .iter()
+        .any(|word| matches!(word.as_str(), "LOAD_FILE" | "OUTFILE" | "DUMPFILE"))
+    {
+        return Some(decision(
+            DecisionEffect::Deny,
+            "sql.filesystem_access",
+            "sql",
+            "Database filesystem access is prohibited.",
+            Severity::Critical,
+        ));
+    }
+    for (index, pair) in words.windows(2).enumerate() {
+        if pair[1] != "(" || !pair[0].bytes().any(|byte| byte.is_ascii_alphabetic()) {
+            continue;
+        }
+        let safe = matches!(
+            pair[0].as_str(),
+            "COUNT"
+                | "SUM"
+                | "AVG"
+                | "MIN"
+                | "MAX"
+                | "COALESCE"
+                | "IFNULL"
+                | "NULLIF"
+                | "CONCAT"
+                | "LOWER"
+                | "UPPER"
+                | "LENGTH"
+                | "CHAR_LENGTH"
+                | "ROUND"
+                | "ABS"
+                | "DATE_FORMAT"
+                | "NOW"
+                | "CURRENT_TIMESTAMP"
+                | "CAST"
+                | "CONVERT"
+                | "JSON_EXTRACT"
+                | "SUBSTRING"
+                | "TRIM"
+                | "SELECT"
+                | "FROM"
+                | "IN"
+                | "EXISTS"
+                | "AS"
+                | "WHEN"
+                | "OVER"
+        );
+        if !safe
+            || index
+                .checked_sub(1)
+                .is_some_and(|index| words[index] == ".")
+        {
+            return Some(decision(
+                DecisionEffect::Deny,
+                "sql.function.unknown",
+                "sql",
+                "SQL callable expressions require known read-only builtins.",
                 Severity::High,
             ));
         }
@@ -269,6 +339,9 @@ fn lexical_words(sql: &str) -> Option<Vec<String>> {
             index += 1;
         } else if character == '\\' {
             return None; // Client meta commands and mode-dependent escapes.
+        } else if matches!(character, '(' | ')' | '.') {
+            push(&mut result, &mut word);
+            result.push(character.to_string());
         } else if character == ';' {
             push(&mut result, &mut word);
             result.push(";".to_owned());

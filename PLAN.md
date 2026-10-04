@@ -1529,7 +1529,7 @@ Keep these unchecked unless the scope is intentionally expanded.
 - [x] A06: Bulk reads and alternate representations bypass sensitive file rules.
 - [x] A07: Value-taking and attached command options bypass semantic rules.
 - [x] A08: SQL lexical assumptions differ from the target database grammar.
-- [ ] A09: SELECT is treated as read only even when it has filesystem effects.
+- [x] A09: SELECT is treated as read only even when it has filesystem effects.
 - [ ] A10: Structured MCP SQL bypasses pre execution SQL protection.
 - [ ] A11: Codex loses MCP transport identity for file named tools.
 - [ ] A12: Guarded execution and MCP use separate taint namespaces from the agent.
