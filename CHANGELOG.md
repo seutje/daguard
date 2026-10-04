@@ -8,6 +8,8 @@ once releases begin.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-04
+
 ### Added
 
 - Phase 15 canonical allow/sanitize/block result decisions; bounded secret,
