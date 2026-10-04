@@ -1539,7 +1539,7 @@ Keep these unchecked unless the scope is intentionally expanded.
 - [x] A16: Scanner runtime is measured after work rather than bounded during work.
 - [x] A17: Guarded execution timeout does not bound pipe draining.
 - [x] A18: MCP scanning does not preserve protocol metadata or full lifecycle behavior.
-- [ ] A19: Release publication is independent of required security checks.
+- [x] A19: Release publication is independent of required security checks.
 - [ ] A20: The architectural policy example cannot be loaded and writable is inert.
 - [ ] A21: Fuzzing mostly checks crashes rather than security properties.
 - [ ] A22: State directory permissions change before symlink validation.

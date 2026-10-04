@@ -8,6 +8,10 @@ once releases begin.
 
 ## [Unreleased]
 
+- Require shared same-commit quality and dependency checks before release builds
+  and WSL publication; pin Actions/tools and publish optional platforms independently.
+
+
 ### Fixed
 
 - Supervise MCP framing and failures, correlate authorized replies, and preserve protocol schemas.

@@ -14,11 +14,15 @@ env:
   TARGET: x86_64-unknown-linux-musl
 
 jobs:
+  required:
+    uses: ./.github/workflows/required.yml
+
   package-linux:
+    needs: required
     name: Build and verify WSL release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install pinned Rust toolchain and target
         run: rustup show active-toolchain
       - name: Select release version
@@ -48,6 +52,10 @@ jobs:
           binary="target/$TARGET/release/daguard"
           file "$binary" | tee binary-file.txt
           file "$binary" | grep -E 'ELF 64-bit.*x86-64'
+          if readelf -d "$binary" | grep -q NEEDED; then
+            echo "release binary unexpectedly has dynamic dependencies" >&2
+            exit 1
+          fi
           if readelf -l "$binary" | grep -q 'Requesting program interpreter'; then
             echo "release binary unexpectedly has a dynamic interpreter" >&2
             exit 1
@@ -63,7 +71,7 @@ jobs:
             --binary "target/$TARGET/release/daguard" \
             --samples 200 --iterations 10 > performance.json
       - name: Upload release performance report for review
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-performance-${{ github.sha }}
           path: performance.json
@@ -90,12 +98,13 @@ jobs:
             --licenses license-inventory.json
           tests/release_install.sh "dist/daguard-${{ steps.version.outputs.value }}-$TARGET"
       - name: Upload verified release artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-${{ env.TARGET }}
           path: dist/*.tar.gz
 
   package-macos:
+    needs: required
     name: Build and verify ${{ matrix.target }} release
     strategy:
       fail-fast: false
@@ -111,7 +120,7 @@ jobs:
     env:
       TARGET: ${{ matrix.target }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Verify native runner and install pinned Rust target
         run: |
           test "$(uname -m)" = "${{ matrix.machine }}"
@@ -170,18 +179,19 @@ jobs:
             --licenses license-inventory.json
           tests/release_install.sh "dist/daguard-${{ steps.version.outputs.value }}-$TARGET"
       - name: Upload verified release artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-${{ matrix.target }}
           path: dist/*.tar.gz
 
   package-windows:
+    needs: required
     name: Build and verify native Windows release
     runs-on: windows-latest
     env:
       TARGET: x86_64-pc-windows-msvc
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install pinned Rust target
         shell: pwsh
         run: |
@@ -246,50 +256,42 @@ jobs:
             -Licenses license-inventory.json
           tests/windows_release.ps1 -Bundle "dist\daguard-${{ steps.version.outputs.value }}-$env:TARGET"
       - name: Upload verified release artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-${{ env.TARGET }}
           path: dist/*.zip
 
   publish:
-    name: Attest and publish release artifacts
-    needs: [package-linux, package-macos, package-windows]
-    runs-on: ubuntu-latest
+    name: Publish primary WSL release
+    needs: [required, package-linux]
+    uses: ./.github/workflows/publish.yml
     permissions:
       attestations: write
       contents: write
       id-token: write
-    steps:
-      - name: Check out tagged source
-        uses: actions/checkout@v4
-      - name: Download verified platform archives
-        uses: actions/download-artifact@v4
-        with:
-          pattern: release-*
-          path: dist
-          merge-multiple: true
-      - name: Create combined release checksums
-        run: cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS
-      - name: Attest release archives
-        uses: actions/attest-build-provenance@v3
-        with:
-          subject-path: |
-            dist/*.tar.gz
-            dist/*.zip
-      - name: Attest checksum manifest
-        uses: actions/attest-build-provenance@v3
-        with:
-          subject-path: "dist/SHA256SUMS"
-      - name: Upload complete verified release set
-        uses: actions/upload-artifact@v4
-        with:
-          name: daguard-release-${{ github.sha }}
-          path: |
-            dist/*.tar.gz
-            dist/*.zip
-            dist/SHA256SUMS
-      - name: Publish tagged release
-        if: github.ref_type == 'tag'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.zip dist/SHA256SUMS --verify-tag --generate-notes
+    with:
+      artifact-pattern: release-x86_64-unknown-linux-musl
+      checksum-name: SHA256SUMS
+      create-release: true
+
+  publish-macos:
+    needs: [publish, package-macos]
+    uses: ./.github/workflows/publish.yml
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    with:
+      artifact-pattern: release-*-apple-darwin
+      checksum-name: SHA256SUMS-macos
+
+  publish-windows:
+    needs: [publish, package-windows]
+    uses: ./.github/workflows/publish.yml
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    with:
+      artifact-pattern: release-x86_64-pc-windows-msvc
+      checksum-name: SHA256SUMS-windows

@@ -11,25 +11,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  quality:
-    name: Formatting, linting, and tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install pinned Rust toolchain
-        run: rustup show active-toolchain
-      - name: Verify lockfile is current
-        run: cargo check --locked
-      - name: Check formatting
-        run: |
-          cargo fmt --check
-          cargo fmt --manifest-path fuzz/Cargo.toml --check
-      - name: Lint
-        run: cargo clippy --all-targets --all-features -- -D warnings
-      - name: Test
-        run: cargo test --locked
-      - name: Test OpenCode bridge
-        run: node --test integrations/opencode/daguard-plugin.test.js
+  required:
+    uses: ./.github/workflows/required.yml
 
   macos:
     name: Native macOS smoke (${{ matrix.target }})
@@ -45,7 +28,7 @@ jobs:
             machine: x86_64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Verify native runner and pinned toolchain
         run: |
           test "$(uname -m)" = "${{ matrix.machine }}"
@@ -71,7 +54,7 @@ jobs:
     env:
       TARGET: x86_64-pc-windows-msvc
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install pinned Rust target
         shell: pwsh
         run: |
@@ -98,36 +81,11 @@ jobs:
             throw 'Native Windows target metadata verification failed.'
           }
 
-  supply-chain:
-    name: Dependency security and licenses
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install pinned Rust toolchain
-        run: rustup show active-toolchain
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
-      - name: Scan dependency vulnerabilities
-        run: cargo audit
-      - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
-      - name: Check dependency licenses and sources
-        run: cargo deny check licenses sources bans
-      - name: Check fuzz-only dependency vulnerabilities and licenses
-        run: cargo deny --manifest-path fuzz/Cargo.toml --config fuzz/deny.toml --locked check advisories licenses sources bans
-      - name: Write dependency license inventory
-        run: cargo metadata --locked --format-version 1 > dependency-inventory.json
-      - name: Upload dependency license inventory
-        uses: actions/upload-artifact@v4
-        with:
-          name: dependency-license-inventory
-          path: dependency-inventory.json
-
   performance:
     name: Release performance report (informational timings)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install pinned Rust toolchain and target
         run: rustup show active-toolchain
       - name: Build optimized guard and benchmark harness
@@ -143,7 +101,7 @@ jobs:
             --binary target/x86_64-unknown-linux-musl/release/daguard \
             --samples 200 --iterations 10 > performance.json
       - name: Upload performance report for review
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: performance-${{ github.sha }}
           path: performance.json

@@ -1,0 +1,71 @@
+name: Publish verified platform archives
+
+on:
+  workflow_call:
+    inputs:
+      artifact-pattern:
+        required: true
+        type: string
+      checksum-name:
+        required: true
+        type: string
+      create-release:
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Download verified archives from this workflow run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: ${{ inputs.artifact-pattern }}
+          path: dist
+          merge-multiple: true
+      - name: Check archive set and create platform checksums
+        env:
+          CHECKSUM_NAME: ${{ inputs.checksum-name }}
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          cd dist
+          shopt -s nullglob
+          archives=(*.tar.gz *.zip)
+          test "${#archives[@]}" -gt 0
+          sha256sum "${archives[@]}" > "$CHECKSUM_NAME"
+      - name: Attest release archives and checksum manifest
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/${{ inputs.checksum-name }}
+      - name: Upload verified platform release set
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: daguard-${{ inputs.checksum-name }}-${{ github.sha }}
+          path: dist/*
+      - name: Publish tagged release assets
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKSUM_NAME: ${{ inputs.checksum-name }}
+          CREATE_RELEASE: ${{ inputs.create-release }}
+        shell: bash
+        run: |
+          shopt -s nullglob
+          archives=(dist/*.tar.gz dist/*.zip)
+          if [[ "$CREATE_RELEASE" == true ]]; then
+            gh release create "$GITHUB_REF_NAME" "${archives[@]}" "dist/$CHECKSUM_NAME" --verify-tag --generate-notes
+          else
+            gh release upload "$GITHUB_REF_NAME" "${archives[@]}" "dist/$CHECKSUM_NAME"
+          fi

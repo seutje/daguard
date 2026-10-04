@@ -3439,3 +3439,17 @@ The supervised MCP gateway currently requires Unix. Native Windows returns an
 explicit unsupported error for this route, withholds results, and does not
 downgrade to an observe-only path. Windows transport containment needs a tested
 interruptible pipe implementation before being advertised as supported.
+
+### Release security check dependencies (audit A19)
+
+CI and release builds invoke the same reusable required workflow at the caller's
+Git SHA: formatting, linting, Rust/bridge tests, fuzz compilation, and production
+and fuzz dependency advisory, license, source and ban checks. Both workflows
+verify the checkout SHA. Cargo-deny is pinned to 0.20.2; third-party Actions use
+full reviewed commit identities rather than mutable tags. The Linux package
+requires these checks and inspects both ELF interpreter and NEEDED entries.
+Primary WSL publication requires the checks and verified Linux package; optional
+macOS/Windows publication follows independently with separate checksum manifests
+and cannot prevent publication of a passing WSL artifact. Provenance and downloads
+are scoped to this workflow run. CI execution remains required release evidence;
+local workflow syntax/graph validation does not certify a hosted release.
