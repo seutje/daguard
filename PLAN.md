@@ -754,6 +754,14 @@ adapter contracts, or dependencies changed.
 
 - [x] Close directory-only recursive search and shell policy-path enforcement gaps.
 
+- [x] Fix `filesystem.read.bulk` false positives for recursive grep on explicit
+  regular host files, with metadata checks, conservative subtree/container
+  handling, regression coverage and full Rust validation.
+  Regression reproduced before the fix; `cargo fmt --check`, strict all-target /
+  all-feature Clippy and `cargo test --locked` passed. No new rule IDs,
+  dependencies or adapter protocol changes; metadata checks do not provide
+  race-free path enforcement.
+
 - [ ] Review every false positive by rule ID.
 - [ ] Add narrowly scoped exceptions only where justified.
 - [x] Add missing Drupal-specific sensitive SQL tables identified by the team,

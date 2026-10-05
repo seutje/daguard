@@ -8,6 +8,11 @@ once releases begin.
 
 ## [Unreleased]
 
+### Fixed
+
+- Allow recursive grep flags on explicit regular host files, preserving protected
+  reads and bulk-search checks for directories, unknown paths and container paths.
+
 ## [0.1.2] - 2026-10-04
 
 - Capability schema 3 reports `host_fail_closed_verified` separately from explicit

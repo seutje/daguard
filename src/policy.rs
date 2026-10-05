@@ -998,17 +998,33 @@ fn analyze_search(
             return Ok(Some(decision));
         }
     }
-    let bulk = candidates.is_empty()
-        || candidates.iter().any(|path| {
-            *path == "."
-                || *path == ".."
-                || path.ends_with('/')
-                || !path.rsplit('/').next().unwrap_or(path).contains('.')
-        })
-        || args.iter().any(|arg| {
-            matches!(*arg, "--files" | "--recursive" | "--dereference-recursive")
-                || (arg.starts_with('-') && !arg.starts_with("--") && arg.contains(['r', 'R']))
+    let recursive = args.iter().any(|arg| {
+        matches!(*arg, "--recursive" | "--dereference-recursive")
+            || (arg.starts_with('-') && !arg.starts_with("--") && arg.contains(['r', 'R']))
+    });
+    // A recursive flag only traverses a subtree when an operand is a directory.
+    // Confirm regular host files using metadata, never their contents. A dotted
+    // name alone is insufficient here: directories can also be named Term.php.
+    // Container operands cannot be verified against the host filesystem.
+    let explicit_regular_files = recursive
+        && !context.container
+        && !candidates.is_empty()
+        && candidates.iter().all(|path| {
+            paths::normalize(context.cwd, path)
+                .ok()
+                .and_then(|path| fs::symlink_metadata(path).ok())
+                .is_some_and(|metadata| metadata.file_type().is_file())
         });
+    let bulk = args.contains(&"--files")
+        || (recursive && !explicit_regular_files)
+        || (!explicit_regular_files
+            && (candidates.is_empty()
+                || candidates.iter().any(|path| {
+                    *path == "."
+                        || *path == ".."
+                        || path.ends_with('/')
+                        || !path.rsplit('/').next().unwrap_or(path).contains('.')
+                })));
     if bulk && !search_excludes_protected(program, args, context) {
         return Ok(Some(command_decision(
             DecisionEffect::Deny,

@@ -144,6 +144,65 @@ fn a05_filesystem_effects() {
 }
 
 #[test]
+fn recursive_search_explicit_regular_files() {
+    let root = std::env::temp_dir().join(format!("daguard-search-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("directory.php")).unwrap();
+    let file = root.join("Term.php");
+    let extensionless = root.join("README");
+    std::fs::write(&file, "synthetic source\n").unwrap();
+    std::fs::write(&extensionless, "synthetic source\n").unwrap();
+    let operand =
+        |path: &std::path::Path| format!("'{}'", path.to_str().unwrap().replace('\\', "/"));
+    let file_operand = operand(&file);
+    let extensionless = operand(&extensionless);
+    // The reported combined flag must not turn a single regular file into a subtree.
+    assert_eq!(
+        check(&format!(
+            "grep -rn 'EntityPublishedTrait\\|isPublished' {file_operand}"
+        )),
+        "allow"
+    );
+    for flags in ["-R", "--recursive", "--dereference-recursive"] {
+        assert_eq!(
+            check(&format!("grep {flags} value {file_operand}")),
+            "allow"
+        );
+    }
+    assert_eq!(
+        check(&format!("grep -rn value {file_operand} {extensionless}")),
+        "allow"
+    );
+    for name in ["directory.php", "missing.php", ".env"] {
+        assert_eq!(
+            check(&format!(
+                "grep -rn value {file_operand} {}",
+                operand(&root.join(name))
+            )),
+            "deny"
+        );
+    }
+    std::fs::write(root.join(".env"), "synthetic fixture\n").unwrap();
+    assert_eq!(
+        check(&format!("grep -rn value {}", operand(&root.join(".env")))),
+        "deny"
+    );
+    assert_eq!(
+        check(&format!("ddev exec --raw grep -rn value {file_operand}")),
+        "deny"
+    );
+    #[cfg(unix)]
+    {
+        let alias = root.join("alias.php");
+        std::os::unix::fs::symlink(&file, &alias).unwrap();
+        assert_eq!(
+            check(&format!("grep -rn value {}", operand(&alias))),
+            "deny"
+        );
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a06_bulk_and_historical_reads() {
     cases(&[
         ("rg --hidden --no-ignore secret .", "deny"),

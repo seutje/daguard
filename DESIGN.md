@@ -3346,6 +3346,14 @@ and configured deny-read pattern, placed after inclusion globs; preprocessors
 and symlink following are not accepted as a filtered boundary. Explicit safe
 file operands remain usable. Unfiltered custom-directory searches also require
 these exclusions because protected files may exist anywhere in the subtree.
+For recursive search flags, explicit host operands are exempt from the bulk
+check only when every operand passes lexical read policy and metadata confirms
+an existing regular file. This bounded metadata check reads no file contents;
+missing/inaccessible operands, final-component symlinks, special files and
+directories retain bulk checks, including directories with dotted names.
+Container paths cannot be verified using host metadata and retain bulk checks.
+Path matching remains lexical; ancestor symlink aliases and replacement races
+remain subject to the existing OS-permission and filesystem-race limitations.
 Git show/cat-file path selectors are checked, including -C and index selectors;
 opaque object reads and alternate Git work-tree contexts are denied. This is
 lexical operand enforcement, not complete Git history/diff content containment.
