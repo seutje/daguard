@@ -8,6 +8,8 @@ once releases begin.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-06
+
 ### Fixed
 
 - Allow recursive grep flags on explicit regular host files, preserving protected
