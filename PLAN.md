@@ -1554,6 +1554,7 @@ Keep these unchecked unless the scope is intentionally expanded.
 - [x] A22: State directory permissions change before symlink validation.
 - [x] Scanner follow-up: Root JSON string redaction preserves valid JSON and removes synthetic canaries.
 - [x] CI hardening follow-up: Disable session state for stateless native adapter tests; reproduce the metadata-compatibility failure with a held shared-session lock and verify the fix plus the full Rust suite.
+- [x] Windows search-fixture follow-up: Use the real host cwd for metadata-backed regular-file search tests instead of mixing Windows operands with a synthetic Unix cwd; verify the Linux suite. Native execution remains subject to Windows CI validation.
 
 Policy capabilities deferred after contract audit:
 

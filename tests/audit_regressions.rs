@@ -5,8 +5,12 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 fn check(command: &str) -> String {
+    check_in("/workspace/project", command)
+}
+
+fn check_in(cwd: &str, command: &str) -> String {
     let input = json!({"protocol":1,"agent":"fixture","event":"pre_tool_use",
-        "cwd":"/workspace/project","tool":{"native_name":"shell","capability":"shell_execute"},
+        "cwd":cwd,"tool":{"native_name":"shell","capability":"shell_execute"},
         "input":{},"facts":{"command":command}});
     let mut child = Command::new(env!("CARGO_BIN_EXE_daguard"))
         .arg("check")
@@ -147,6 +151,10 @@ fn a05_filesystem_effects() {
 fn recursive_search_explicit_regular_files() {
     let root = std::env::temp_dir().join(format!("daguard-search-{}", std::process::id()));
     std::fs::create_dir_all(root.join("directory.php")).unwrap();
+    // Metadata-backed checks must use the host's path namespace. A synthetic
+    // Unix cwd would interpret Windows drive-rooted operands as relative paths.
+    let cwd = root.to_str().unwrap();
+    let check = |command: &str| check_in(cwd, command);
     let file = root.join("Term.php");
     let extensionless = root.join("README");
     std::fs::write(&file, "synthetic source\n").unwrap();
