@@ -1553,6 +1553,7 @@ Keep these unchecked unless the scope is intentionally expanded.
 - [x] A21: Fuzzing mostly checks crashes rather than security properties.
 - [x] A22: State directory permissions change before symlink validation.
 - [x] Scanner follow-up: Root JSON string redaction preserves valid JSON and removes synthetic canaries.
+- [x] CI hardening follow-up: Disable session state for stateless native adapter tests; reproduce the metadata-compatibility failure with a held shared-session lock and verify the fix plus the full Rust suite.
 
 Policy capabilities deferred after contract audit:
 

@@ -4,8 +4,15 @@ use std::io::Write;
 use std::process::{Command, Output, Stdio};
 
 fn run(args: &[&str], input: &[u8]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_daguard"))
-        .args(args)
+    let mut command = Command::new(env!("CARGO_BIN_EXE_daguard"));
+    command.args(args);
+    // These tests cover stateless parsing/policy contracts. Native hooks enable
+    // state by default, so shared fixture IDs would otherwise contend on locks
+    // and inherit persistent taint. Stateful behavior is covered in phase14.rs.
+    if args.first() == Some(&"--adapter") {
+        command.arg("--no-session-state");
+    }
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
