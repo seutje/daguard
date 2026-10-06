@@ -8,6 +8,15 @@ once releases begin.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-06
+
+### Fixed
+
+- Isolate stateless native adapter hardening tests from persistent session state
+  and shared-session lock contention.
+- Use the host working directory for metadata-backed recursive-search fixtures
+  so Windows file paths are evaluated in the correct path namespace.
+
 ## [0.1.3] - 2026-10-06
 
 ### Fixed
